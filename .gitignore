@@ -29,6 +29,7 @@ npm-debug.log*
 /config/
 /docs/
 /archive/
+/history/
 /node_modules_old/
 
 # typescript
