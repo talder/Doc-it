@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#1d4ed8"/>
+    </linearGradient>
+    <linearGradient id="pencil" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded square background -->
+  <rect x="32" y="32" width="448" height="448" rx="96" fill="url(#bg)"/>
+  <!-- Document shape -->
+  <path d="M168 112h112l64 64v224a16 16 0 01-16 16H168a16 16 0 01-16-16V128a16 16 0 0116-16z" fill="white" opacity="0.95"/>
+  <!-- Folded corner -->
+  <path d="M280 112v48a16 16 0 0016 16h48" fill="none" stroke="white" stroke-width="2" opacity="0.5"/>
+  <path d="M280 112l64 64h-48a16 16 0 01-16-16z" fill="white" opacity="0.7"/>
+  <!-- Text lines on document -->
+  <rect x="192" y="208" width="120" height="10" rx="5" fill="#3b82f6" opacity="0.35"/>
+  <rect x="192" y="236" width="96" height="10" rx="5" fill="#3b82f6" opacity="0.25"/>
+  <rect x="192" y="264" width="108" height="10" rx="5" fill="#3b82f6" opacity="0.35"/>
+  <rect x="192" y="292" width="72" height="10" rx="5" fill="#3b82f6" opacity="0.25"/>
+  <!-- Pencil overlay (bottom-right) -->
+  <g transform="translate(288, 268) rotate(-45)">
+    <!-- Pencil body -->
+    <rect x="0" y="-12" width="120" height="24" rx="4" fill="url(#pencil)"/>
+    <!-- Pencil tip -->
+    <polygon points="-20,0 0,-12 0,12" fill="#fbbf24"/>
+    <polygon points="-20,0 -8,-5 -8,5" fill="#374151"/>
+    <!-- Pencil top -->
+    <rect x="120" y="-12" width="16" height="24" rx="3" fill="#f472b6"/>
+    <!-- Pencil detail line -->
+    <line x1="20" y1="-12" x2="20" y2="12" stroke="#d97706" stroke-width="2" opacity="0.4"/>
+  </g>
+  <!-- Checkmark badge -->
+  <circle cx="364" cy="388" r="36" fill="#22c55e"/>
+  <path d="M344 388l14 14 22-28" stroke="white" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>
