@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { readJsonConfig, writeJsonConfig } from "@/lib/config";
+import { auditLog } from "@/lib/audit";
 
 const SMTP_FILE = "smtp.json";
 
@@ -52,6 +53,7 @@ export async function PUT(request: NextRequest) {
     };
 
     await writeJsonConfig(SMTP_FILE, updated);
+    auditLog(request, { event: "settings.update", outcome: "success", actor: user.username, resource: "smtp", resourceType: "settings" });
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("SMTP PUT error:", error);

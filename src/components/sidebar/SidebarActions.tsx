@@ -1,14 +1,15 @@
 "use client";
 
-import { FilePlus, FolderPlus } from "lucide-react";
+import { FilePlus, FolderPlus, LayoutTemplate } from "lucide-react";
 
 interface SidebarActionsProps {
   onNewDoc: () => void;
   onNewCategory: () => void;
+  onNewTemplate: () => void;
   canWrite: boolean;
 }
 
-export default function SidebarActions({ onNewDoc, onNewCategory, canWrite }: SidebarActionsProps) {
+export default function SidebarActions({ onNewDoc, onNewCategory, onNewTemplate, canWrite }: SidebarActionsProps) {
   if (!canWrite) return null;
 
   return (
@@ -20,6 +21,13 @@ export default function SidebarActions({ onNewDoc, onNewCategory, canWrite }: Si
         >
           <FilePlus className="w-4 h-4" />
           New Document
+        </button>
+        <button
+          onClick={onNewTemplate}
+          className="flex items-center justify-center px-3 py-2.5 bg-tpl-action text-white text-sm rounded-lg hover:bg-tpl-action-hover transition-colors"
+          title="New Template"
+        >
+          <LayoutTemplate className="w-4 h-4" />
         </button>
         <button
           onClick={onNewCategory}

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, getUsers, writeUsers, hashPassword, getUserByUsername } from "@/lib/auth";
+import { auditLog } from "@/lib/audit";
 import type { User } from "@/lib/types";
 
 export async function GET() {
@@ -57,6 +58,7 @@ export async function POST(request: NextRequest) {
   users.push(newUser);
   await writeUsers(users);
 
+  auditLog(request, { event: "user.create", outcome: "success", actor: admin.username, resource: username, resourceType: "user", details: { isAdmin: !!isAdmin } });
   return NextResponse.json(
     { username: newUser.username, isAdmin: newUser.isAdmin, createdAt: newUser.createdAt },
     { status: 201 }

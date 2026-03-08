@@ -176,7 +176,7 @@ export default function HistoryModal({
 
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal-container" style={{ maxWidth: 900, maxHeight: "85vh" }}>
+      <div className="modal-container" style={{ maxWidth: 1400, height: "85vh", display: "flex", flexDirection: "column" }}>
         <div className="modal-header">
           <div className="flex items-center gap-2">
             <History className="w-5 h-5 text-text-muted" />
@@ -186,7 +186,7 @@ export default function HistoryModal({
             <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="modal-body" style={{ overflowY: "auto", maxHeight: "calc(85vh - 60px)", display: "flex", gap: 0 }}>
+        <div className="modal-body" style={{ display: "flex", flexDirection: "row", gap: 0, padding: 0, flex: 1, overflow: "hidden" }}>
           {/* Revision list */}
           <div className="history-sidebar">
             {loading ? (
@@ -221,7 +221,7 @@ export default function HistoryModal({
           </div>
 
           {/* Diff / Compare pane */}
-          <div className="history-diff-pane">
+          <div className="history-diff-pane" style={{ paddingTop: 16, paddingBottom: 16 }}>
             {previewRev === null ? (
               <div className="flex items-center justify-center h-full text-text-muted text-sm py-12">
                 Select a revision to compare with current version

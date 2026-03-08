@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { X, Folder, ChevronDown } from "lucide-react";
-import type { Category } from "@/lib/types";
+import { X, Folder, ChevronDown, LayoutTemplate } from "lucide-react";
+import type { Category, TemplateInfo } from "@/lib/types";
 
 interface CreateDocModalProps {
   isOpen: boolean;
@@ -10,6 +10,8 @@ interface CreateDocModalProps {
   defaultCategory?: string;
   onClose: () => void;
   onCreate: (name: string, category: string) => void;
+  templates?: TemplateInfo[];
+  onSelectTemplate?: (template: TemplateInfo) => void;
 }
 
 export default function CreateDocModal({
@@ -18,15 +20,21 @@ export default function CreateDocModal({
   defaultCategory,
   onClose,
   onCreate,
+  templates,
+  onSelectTemplate,
 }: CreateDocModalProps) {
+  const [mode, setMode] = useState<"blank" | "template">("blank");
   const [name, setName] = useState("");
   const [category, setCategory] = useState(defaultCategory || categories[0]?.path || "General");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  const hasTemplates = templates && templates.length > 0;
+
   useEffect(() => {
     if (isOpen) {
+      setMode("blank");
       setName("");
       setCategory(defaultCategory || categories[0]?.path || "General");
       setTimeout(() => inputRef.current?.focus(), 100);
@@ -64,6 +72,51 @@ export default function CreateDocModal({
           </button>
         </div>
 
+        {/* Mode tabs */}
+        {hasTemplates && (
+          <div className="create-doc-tabs">
+            <button
+              type="button"
+              className={`create-doc-tab${mode === "blank" ? " active" : ""}`}
+              onClick={() => setMode("blank")}
+            >
+              Blank
+            </button>
+            <button
+              type="button"
+              className={`create-doc-tab${mode === "template" ? " active" : ""}`}
+              onClick={() => setMode("template")}
+            >
+              <LayoutTemplate className="w-3.5 h-3.5" />
+              From Template
+            </button>
+          </div>
+        )}
+
+        {/* From Template grid */}
+        {mode === "template" && hasTemplates && (
+          <div className="modal-body">
+            <div className="tpl-card-grid">
+              {templates!.map((tpl) => (
+                <button
+                  key={`${tpl.category}/${tpl.name}`}
+                  type="button"
+                  className="tpl-card"
+                  onClick={() => { onSelectTemplate?.(tpl); onClose(); }}
+                >
+                  <LayoutTemplate className="w-5 h-5 tpl-folder-icon mb-1" />
+                  <span className="tpl-card-name">{tpl.name}</span>
+                  {tpl.fields.length > 0 && (
+                    <span className="tpl-card-badge">{tpl.fields.length} field{tpl.fields.length !== 1 ? "s" : ""}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Blank form */}
+        {mode === "blank" && (
         <form onSubmit={handleSubmit} className="modal-body">
           <div className="modal-field">
             <label className="modal-label">Category</label>
@@ -119,6 +172,7 @@ export default function CreateDocModal({
             </button>
           </div>
         </form>
+        )}
       </div>
     </div>
   );

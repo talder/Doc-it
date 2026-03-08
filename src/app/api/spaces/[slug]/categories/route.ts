@@ -5,7 +5,7 @@ import { requireSpaceRole } from "@/lib/permissions";
 import { getSpaceDir, ensureDir } from "@/lib/config";
 import type { Category } from "@/lib/types";
 
-const EXCLUDED = ["attachments", ".git", ".DS_Store"];
+const EXCLUDED = ["attachments", ".git", ".DS_Store", ".databases"];
 
 type Params = { params: Promise<{ slug: string }> };
 

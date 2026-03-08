@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUsers, writeUsers, hashPassword, createSession, getSessionCookieName } from "@/lib/auth";
 import { notifyAdminNewUser } from "@/lib/email";
+import { auditLog } from "@/lib/audit";
 
 export async function POST(request: NextRequest) {
   try {
@@ -49,6 +50,7 @@ export async function POST(request: NextRequest) {
       maxAge: 60 * 60 * 24 * 30,
     });
 
+    auditLog(request, { event: "auth.register", outcome: "success", actor: username, sessionType: "session" });
     return response;
   } catch (error) {
     console.error("Register error:", error);

@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { getCurrentUser } from "@/lib/auth";
 import { getAccessibleSpaces, getSpaces } from "@/lib/permissions";
 import { writeJsonConfig, ensureDir, getSpaceDir } from "@/lib/config";
+import { auditLog } from "@/lib/audit";
 import type { Space } from "@/lib/types";
 
 export async function GET() {
@@ -48,5 +49,6 @@ export async function POST(request: NextRequest) {
   const generalDir = `${getSpaceDir(newSpace.slug)}/General`;
   await ensureDir(generalDir);
 
+  auditLog(request, { event: "space.create", outcome: "success", actor: user.username, spaceSlug: newSpace.slug, resource: newSpace.name, resourceType: "space" });
   return NextResponse.json(newSpace, { status: 201 });
 }

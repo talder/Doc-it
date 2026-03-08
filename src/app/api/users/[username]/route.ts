@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, getUsers, writeUsers, hashPassword } from "@/lib/auth";
+import { auditLog } from "@/lib/audit";
 
 type Params = { params: Promise<{ username: string }> };
 
@@ -49,6 +50,12 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
   await writeUsers(users);
 
+  const changes: Record<string, unknown> = {};
+  if (newUsername && newUsername !== targetUsername) changes.newUsername = newUsername;
+  if (password) changes.passwordChanged = true;
+  if (isAdmin !== undefined) changes.isAdmin = isAdmin;
+  auditLog(request, { event: "user.update", outcome: "success", actor: admin.username, resource: targetUsername, resourceType: "user", details: changes });
+
   const { passwordHash, ...safe } = users[idx];
   return NextResponse.json(safe);
 }
@@ -76,5 +83,6 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
   const filtered = users.filter((u) => u.username !== targetUsername);
   await writeUsers(filtered);
 
+  auditLog(_req, { event: "user.delete", outcome: "success", actor: admin.username, resource: targetUsername, resourceType: "user" });
   return NextResponse.json({ success: true });
 }

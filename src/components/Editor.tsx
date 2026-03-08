@@ -3,7 +3,7 @@
 import { useEditor, EditorContent, ReactNodeViewRenderer } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
-import Image from "@tiptap/extension-image";
+import { ResizableImage } from "./extensions/ResizableImage";
 import { Table } from "@tiptap/extension-table";
 import { TableRow } from "@tiptap/extension-table-row";
 import { TableCell } from "@tiptap/extension-table-cell";
@@ -20,16 +20,21 @@ import Color from "@tiptap/extension-color";
 import { TextStyle } from "@tiptap/extension-text-style";
 import TextAlign from "@tiptap/extension-text-align";
 import { common, createLowlight } from "lowlight";
+import powershell from "highlight.js/lib/languages/powershell";
 import { useEffect, useRef, useCallback, useState } from "react";
 import { marked, type MarkedExtension } from "marked";
 import TurndownService from "turndown";
+import { createPortal } from "react-dom";
 import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough, Code,
   Link as LinkIcon, Superscript as SuperscriptIcon, Subscript as SubscriptIcon,
   Highlighter, Eraser, Palette, Type,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
+  ExternalLink, Copy, Pencil, Trash2, Globe, Loader2,
 } from "lucide-react";
 
+import Mathematics from "@tiptap/extension-mathematics";
+import "katex/dist/katex.min.css";
 import { SlashCommands } from "./extensions/SlashCommands";
 import { CalloutExtension } from "./extensions/CalloutExtension";
 import { CodeBlockNodeView } from "./extensions/CodeBlockNodeView";
@@ -40,8 +45,152 @@ import { FontSize } from "./extensions/FontSize";
 import { TagLink, setTagClickHandler } from "./extensions/TagLink";
 import { TagSuggestion } from "./extensions/TagSuggestion";
 import { CollapsibleList } from "./extensions/CollapsibleList";
+import { LinkedDocExtension, setLinkedDocClickHandler } from "./extensions/LinkedDocExtension";
+import type { LinkedDocAttrs } from "./extensions/LinkedDocExtension";
+import { AttachmentExtension } from "./extensions/AttachmentExtension";
+import type { AttachmentAttrs } from "./extensions/AttachmentExtension";
+import { PDFEmbedExtension } from "./extensions/PDFEmbedExtension";
+import type { PDFEmbedAttrs } from "./extensions/PDFEmbedExtension";
+import { TemplatePlaceholderExtension } from "./extensions/TemplatePlaceholderExtension";
+import { EmojiShortcodeExtension } from "./extensions/EmojiShortcodeExtension";
+import { DatabaseBlockExtension } from "./extensions/DatabaseBlockExtension";
+import type { DatabaseBlockAttrs } from "./extensions/DatabaseBlockExtension";
+import Picker from "@emoji-mart/react";
+// @ts-ignore
+import emojiPickerData from "@emoji-mart/data";
+import { toSafeB64, fromSafeB64 } from "@/lib/base64";
+import type { TplField, DocFile } from "@/lib/types";
+import TemplateFieldModal from "@/components/modals/TemplateFieldModal";
+import DatabaseCreateModal from "@/components/modals/DatabaseCreateModal";
+import { Search, FileText as FileTextIcon, Database as DatabaseIcon } from "lucide-react";
+import UrlInputModal from "@/components/modals/UrlInputModal";
+import MathEditorModal from "@/components/modals/MathEditorModal";
+
+// ── Database picker (insert existing DB into doc) ────────────────────────────
+function DatabasePicker({
+  spaceSlug,
+  onSelect,
+  onClose,
+}: {
+  spaceSlug: string;
+  onSelect: (db: { id: string; title: string; viewId: string }) => void;
+  onClose: () => void;
+}) {
+  const [dbs, setDbs] = useState<{ id: string; title: string; views?: { id: string }[] }[]>([]);
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    fetch(`/api/spaces/${encodeURIComponent(spaceSlug)}/databases`)
+      .then((r) => r.json())
+      .then(setDbs)
+      .catch(() => {});
+  }, [spaceSlug]);
+
+  const filtered = dbs.filter((db) => db.title.toLowerCase().includes(query.toLowerCase()));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div
+        className="bg-surface rounded-xl shadow-xl border border-border w-full max-w-sm"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+          <Search className="w-4 h-4 text-text-muted flex-shrink-0" />
+          <input
+            autoFocus
+            className="flex-1 bg-transparent outline-none text-sm text-text-primary placeholder:text-text-muted"
+            placeholder="Search databases…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
+          />
+        </div>
+        <div className="max-h-72 overflow-y-auto p-2 space-y-0.5">
+          {filtered.length === 0 && (
+            <div className="px-2 py-6 text-center text-sm text-text-muted">
+              {dbs.length === 0 ? "No databases yet" : "No databases found"}
+            </div>
+          )}
+          {filtered.map((db) => (
+            <button
+              key={db.id}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-muted text-left transition-colors"
+              onClick={() => onSelect({ id: db.id, title: db.title, viewId: db.views?.[0]?.id || "" })}
+            >
+              <DatabaseIcon className="w-4 h-4 flex-shrink-0" style={{ color: "#14b8a6" }} />
+              <span className="font-medium text-sm text-text-primary truncate">{db.title}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const lowlight = createLowlight(common);
+lowlight.register("powershell", powershell);
+
+// ── Table cell color palette ─────────────────────────────────────────────
+const TABLE_CELL_COLORS: (string | null)[] = [
+  null, "#f8fafc", "#e2e8f0", "#dbeafe", "#dcfce7",
+  "#fef9c3", "#fee2e2", "#f3e8ff", "#ffedd5", "#cffafe",
+  "#fce7f3", "#1e3a5f", "#14532d",
+];
+
+// ── Custom table extensions (cell background color + striped rows) ────────
+const CustomTableCell = TableCell.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      backgroundColor: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("data-cell-bg") || null,
+        renderHTML: (attributes) => {
+          if (!attributes.backgroundColor) return {};
+          return {
+            "data-cell-bg": attributes.backgroundColor as string,
+            style: `background-color: ${attributes.backgroundColor}`,
+          };
+        },
+      },
+    };
+  },
+});
+
+const CustomTableHeader = TableHeader.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      backgroundColor: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("data-cell-bg") || null,
+        renderHTML: (attributes) => {
+          if (!attributes.backgroundColor) return {};
+          return {
+            "data-cell-bg": attributes.backgroundColor as string,
+            style: `background-color: ${attributes.backgroundColor}`,
+          };
+        },
+      },
+    };
+  },
+});
+
+const CustomTable = Table.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      striped: {
+        default: false,
+        parseHTML: (element) => element.classList.contains("table-striped"),
+        renderHTML: (attributes) => {
+          if (!attributes.striped) return {};
+          return { class: "table-striped" };
+        },
+      },
+    };
+  },
+}).configure({ resizable: true });
 
 // Custom marked extensions for callouts and excalidraw
 const calloutTypes = ["info", "warning", "success", "danger"];
@@ -71,27 +220,76 @@ const markedCalloutExtension: MarkedExtension = {
       return `<blockquote>${inner}</blockquote>\n`;
     },
     html({ text }) {
-      // Handle excalidraw HTML comments: <!-- excalidraw:drawing-id -->
-      const trimmed = text.trim();
-      const excalidrawMatch = trimmed.match(/^<!--\s*excalidraw:([\w-]+)\s*-->$/);
-      if (excalidrawMatch) {
-        const drawingId = excalidrawMatch[1];
-        return `<div data-excalidraw="" data-drawing-id="${drawingId}">[Excalidraw Drawing]</div>\n`;
-      }
-      // Handle drawio HTML comments: <!-- drawio:{base64-xml} -->
-      const drawioMatch = trimmed.match(/^<!--\s*drawio:([A-Za-z0-9+/=]+)\s*-->$/);
-      if (drawioMatch) {
-        const xml = atob(drawioMatch[1]);
-        return `<div data-drawio="" data-drawio-data="${xml.replace(/"/g, '&quot;')}">[Draw.io Diagram]</div>\n`;
-      }
-      // Handle drawio with SVG: <!-- drawio:{base64-xml}|{base64-svg} -->
-      const drawioSvgMatch = trimmed.match(/^<!--\s*drawio:([A-Za-z0-9+/=]+)\|([A-Za-z0-9+/=]+)\s*-->$/);
-      if (drawioSvgMatch) {
-        const xml = atob(drawioSvgMatch[1]);
-        const svg = atob(drawioSvgMatch[2]);
-        return `<div data-drawio="" data-drawio-data="${xml.replace(/"/g, '&quot;')}" data-drawio-svg="${svg.replace(/"/g, '&quot;')}">[Draw.io Diagram]</div>\n`;
-      }
-      return text;
+      // Helper: replace an HTML-comment embed pattern within a (possibly merged) HTML block.
+      // marked may combine adjacent HTML elements into one block, so we cannot rely on ^…$ anchors.
+      const replaceComment = (
+        src: string,
+        re: RegExp,
+        build: (m: RegExpMatchArray) => string | null,
+      ): string | null => {
+        const m = src.match(re);
+        if (!m) return null;
+        const html = build(m);
+        if (html === null) return null;
+        return src.replace(m[0], html);
+      };
+
+      let out = text;
+
+      // excalidraw: <!-- excalidraw:drawing-id -->
+      out = replaceComment(out, /<!--\s*excalidraw:([\w-]+)\s*-->/, (m) =>
+        `<div data-excalidraw="" data-drawing-id="${m[1]}">[Excalidraw Drawing]</div>`,
+      ) ?? out;
+
+      // drawio with SVG: <!-- drawio:{b64-xml}|{b64-svg} -->  (check BEFORE plain drawio)
+      out = replaceComment(out, /<!--\s*drawio:([A-Za-z0-9+/=]+)\|([A-Za-z0-9+/=]+)\s*-->/, (m) => {
+        try {
+          const xml = atob(m[1]); const svg = atob(m[2]);
+          return `<div data-drawio="" data-drawio-data="${xml.replace(/"/g, '&quot;')}" data-drawio-svg="${svg.replace(/"/g, '&quot;')}">[Draw.io Diagram]</div>`;
+        } catch { return null; }
+      }) ?? out;
+
+      // drawio: <!-- drawio:{b64-xml} -->
+      out = replaceComment(out, /<!--\s*drawio:([A-Za-z0-9+/=]+)\s*-->/, (m) => {
+        try {
+          const xml = atob(m[1]);
+          return `<div data-drawio="" data-drawio-data="${xml.replace(/"/g, '&quot;')}">[Draw.io Diagram]</div>`;
+        } catch { return null; }
+      }) ?? out;
+
+      // linked-doc
+      out = replaceComment(out, /<!--\s*linked-doc:([A-Za-z0-9+/=]+)\s*-->/, (m) => {
+        try {
+          const a = JSON.parse(atob(m[1]));
+          return `<div data-linked-doc="" data-doc-name="${a.docName}" data-doc-category="${a.docCategory}" data-view-mode="${a.viewMode || 'card'}" data-space-slug="${a.spaceSlug}"></div>`;
+        } catch { return null; }
+      }) ?? out;
+
+      // attachment
+      out = replaceComment(out, /<!--\s*attachment:([A-Za-z0-9+/=]+)\s*-->/, (m) => {
+        try {
+          const a = JSON.parse(atob(m[1]));
+          return `<div data-attachment="" data-filename="${a.filename}" data-original-name="${a.originalName}" data-mime-type="${a.mimeType}" data-size="${a.size}" data-category="${a.category}" data-space-slug="${a.spaceSlug}" data-url="${a.url}"></div>`;
+        } catch { return null; }
+      }) ?? out;
+
+      // pdf-embed
+      out = replaceComment(out, /<!--\s*pdf-embed:([A-Za-z0-9+/=]+)\s*-->/, (m) => {
+        try {
+          const a = JSON.parse(atob(m[1]));
+          return `<div data-pdf-embed="" data-filename="${a.filename}" data-original-name="${a.originalName}" data-category="${a.category}" data-space-slug="${a.spaceSlug}" data-url="${a.url}"></div>`;
+        } catch { return null; }
+      }) ?? out;
+
+      // database block
+      out = replaceComment(out, /<!--\s*database:([A-Za-z0-9+/=]+)\s*-->/, (m) => {
+        try {
+          const a = JSON.parse(atob(m[1]));
+          return `<div data-database-block="" data-db-id="${a.dbId}" data-view-id="${a.viewId || ""}" data-space-slug="${a.spaceSlug}"></div>`;
+        } catch { return null; }
+      }) ?? out;
+
+      return out;
     },
   },
 };
@@ -129,6 +327,9 @@ const turndown = new TurndownService({
   headingStyle: "atx",
   codeBlockStyle: "fenced",
 });
+
+// Preserve table HTML as-is (keeps cell colors, striped class, etc.)
+turndown.keep(["table"]);
 
 // Custom turndown rule for callouts
 turndown.addRule("callout", {
@@ -240,6 +441,89 @@ turndown.addRule("tagLink", {
     const el = node as HTMLElement;
     const tag = el.getAttribute("data-tag") || "";
     return `<span data-tag="${tag}">#${tag}</span>`;
+  },
+});
+
+// Turndown rules for new embedded nodes
+turndown.addRule("linkedDoc", {
+  filter: (node) => node.nodeName === "DIV" && node.hasAttribute("data-linked-doc"),
+  replacement: (_content, node) => {
+    const el = node as HTMLElement;
+    const attrs = {
+      docName:     el.getAttribute("data-doc-name")     || "",
+      docCategory: el.getAttribute("data-doc-category") || "",
+      viewMode:    el.getAttribute("data-view-mode")    || "card",
+      spaceSlug:   el.getAttribute("data-space-slug")   || "",
+    };
+    return `\n<!-- linked-doc:${btoa(JSON.stringify(attrs))} -->\n\n`;
+  },
+});
+turndown.addRule("attachment", {
+  filter: (node) => node.nodeName === "DIV" && node.hasAttribute("data-attachment"),
+  replacement: (_content, node) => {
+    const el = node as HTMLElement;
+    const attrs = {
+      filename:     el.getAttribute("data-filename")      || "",
+      originalName: el.getAttribute("data-original-name") || "",
+      mimeType:     el.getAttribute("data-mime-type")     || "",
+      size:         parseInt(el.getAttribute("data-size") || "0", 10),
+      category:     el.getAttribute("data-category")      || "",
+      spaceSlug:    el.getAttribute("data-space-slug")    || "",
+      url:          el.getAttribute("data-url")           || "",
+    };
+    return `\n<!-- attachment:${btoa(JSON.stringify(attrs))} -->\n\n`;
+  },
+});
+turndown.addRule("pdfEmbed", {
+  filter: (node) => node.nodeName === "DIV" && node.hasAttribute("data-pdf-embed"),
+  replacement: (_content, node) => {
+    const el = node as HTMLElement;
+    const attrs = {
+      filename:     el.getAttribute("data-filename")      || "",
+      originalName: el.getAttribute("data-original-name") || "",
+      category:     el.getAttribute("data-category")      || "",
+      spaceSlug:    el.getAttribute("data-space-slug")    || "",
+      url:          el.getAttribute("data-url")           || "",
+    };
+    return `\n<!-- pdf-embed:${btoa(JSON.stringify(attrs))} -->\n\n`;
+  },
+});
+turndown.addRule("databaseBlock", {
+  filter: (node) => node.nodeName === "DIV" && node.hasAttribute("data-database-block"),
+  replacement: (_content, node) => {
+    const el = node as HTMLElement;
+    const attrs = {
+      dbId:      el.getAttribute("data-db-id")       || "",
+      viewId:    el.getAttribute("data-view-id")     || "",
+      spaceSlug: el.getAttribute("data-space-slug")  || "",
+    };
+    return `\n<!-- database:${btoa(JSON.stringify(attrs))} -->\n\n`;
+  },
+});
+// Preserve template placeholder spans
+turndown.addRule("templatePlaceholder", {
+  filter: (node) => node.nodeName === "SPAN" && !!(node as HTMLElement).getAttribute("data-tpl-field"),
+  replacement: (_content, node) => {
+    const el = node as HTMLElement;
+    const b64 = el.getAttribute("data-tpl-field") || "";
+    let name = "field";
+    try { name = (fromSafeB64(b64) as TplField).name; } catch {}
+    return `<span data-tpl-field="${b64}">[${name}]</span>`;
+  },
+});
+
+// Preserve image width — emit <img> HTML when width is set, else standard markdown
+turndown.addRule("resizableImage", {
+  filter: (node) => node.nodeName === "IMG",
+  replacement: (_content, node) => {
+    const el = node as HTMLElement;
+    const src = el.getAttribute("src") || "";
+    const alt = el.getAttribute("alt") || "";
+    const w = el.getAttribute("width");
+    if (w) {
+      return `\n<img src="${src}" alt="${alt}" width="${w}" />\n`;
+    }
+    return `\n![${alt}](${src})\n`;
   },
 });
 
@@ -458,6 +742,90 @@ function FontSizeButton({ editor }: { editor: ReturnType<typeof useEditor> }) {
   );
 }
 
+// ─── Doc Picker Dialog ────────────────────────────────────────────────────────
+function DocPickerDialog({
+  spaceSlug,
+  editor,
+  onClose,
+}: {
+  spaceSlug: string;
+  editor: any;
+  onClose: () => void;
+}) {
+  const [docs, setDocs] = useState<DocFile[]>([]);
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    fetch(`/api/spaces/${encodeURIComponent(spaceSlug)}/docs`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setDocs)
+      .catch(() => {});
+  }, [spaceSlug]);
+
+  const filtered = docs.filter(
+    (d) =>
+      d.name.toLowerCase().includes(query.toLowerCase()) ||
+      d.category.toLowerCase().includes(query.toLowerCase())
+  );
+
+  const selectDoc = (doc: DocFile) => {
+    editor?.commands.insertLinkedDoc({
+      docName: doc.name,
+      docCategory: doc.category,
+      viewMode: "card",
+      spaceSlug,
+    });
+    onClose();
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onClick={onClose}
+    >
+      <div
+        className="bg-surface rounded-xl shadow-xl border border-border w-full max-w-md p-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2 mb-3 border-b border-border pb-3">
+          <Search className="w-4 h-4 text-text-muted flex-shrink-0" />
+          <input
+            autoFocus
+            className="flex-1 bg-transparent outline-none text-sm text-text-primary placeholder:text-text-muted"
+            placeholder="Search documents…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
+        <div className="max-h-72 overflow-y-auto space-y-0.5">
+          {filtered.length === 0 && (
+            <div className="px-2 py-6 text-center text-sm text-text-muted">No documents found</div>
+          )}
+          {filtered.map((doc) => (
+            <button
+              key={`${doc.category}/${doc.name}`}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-muted text-left transition-colors"
+              onClick={() => selectDoc(doc)}
+            >
+              <FileTextIcon className="w-4 h-4 text-accent flex-shrink-0" />
+              <span className="font-medium text-sm text-text-primary flex-1">{doc.name}</span>
+              <span className="text-xs text-text-muted">{doc.category}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type PageWidth = "narrow" | "wide" | "max";
+
+const PAGE_WIDTH_MAX: Record<PageWidth, string | undefined> = {
+  narrow: "896px",
+  wide: "1344px",
+  max: undefined,
+};
+
 interface EditorProps {
   filename: string;
   initialMarkdown: string;
@@ -466,11 +834,87 @@ interface EditorProps {
   category?: string;
   onTagClick?: (tag: string) => void;
   editable?: boolean;
+  lineSpacing?: "compact" | "spaced";
+  isTemplate?: boolean;
+  pageWidth?: PageWidth;
+  onPageWidthChange?: (w: PageWidth) => void;
 }
 
-export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, category, onTagClick, editable = true }: EditorProps) {
+export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, category, onTagClick, editable = true, lineSpacing = "compact", isTemplate = false, pageWidth = "narrow", onPageWidthChange }: EditorProps) {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLoadingRef = useRef(false);
+  const pendingSaveFnRef = useRef<null | (() => void)>(null);
+  const onSaveRef = useRef(onSave);
+  useEffect(() => { onSaveRef.current = onSave; }, [onSave]);
+
+  // ── Flush any pending debounced save on unmount ────────────────────────────
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current && pendingSaveFnRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        try { pendingSaveFnRef.current(); } catch {}
+      }
+    };
+  }, []); // empty deps — uses refs only, intentionally captures nothing
+
+  // ── Slash command dialog / upload state ──────────────────────────────────────
+  const [showDocPicker, setShowDocPicker] = useState(false);
+  const [pendingSlashEditor, setPendingSlashEditor] = useState<any>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
+
+  // ── URL input modal state (link + image) ──────────────────────────────────────
+  const [urlModal, setUrlModal] = useState<{
+    open: boolean;
+    mode: "link" | "image";
+    context: "slash" | "bubble";  // slash = insert url as text; bubble = apply to selection
+    initialValue: string;
+    initialOpenInNewTab: boolean;
+    targetEditor: any;
+  }>({ open: false, mode: "link", context: "slash", initialValue: "", initialOpenInNewTab: false, targetEditor: null });
+
+  // ── Link copy-URL feedback state ──────────────────────────────────────────
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  // ── Emoji picker state ────────────────────────────────────────────────────
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [emojiPickerPos, setEmojiPickerPos] = useState<{ x: number; y: number } | null>(null);
+  const [pendingEmojiEditor, setPendingEmojiEditor] = useState<any>(null);
+
+  // ── Math editor state ───────────────────────────────────────────────────────
+  const [mathEditorOpen, setMathEditorOpen] = useState(false);
+  const [mathEditorInitial, setMathEditorInitial] = useState("");
+  const [mathEditorPos, setMathEditorPos] = useState<number | null>(null);
+  const [pendingMathEditor, setPendingMathEditor] = useState<any>(null);
+
+  // ── Database create modal state ──────────────────────────────────────────
+  const [showDatabaseCreateModal, setShowDatabaseCreateModal] = useState(false);
+  const [pendingDatabaseEditor, setPendingDatabaseEditor] = useState<any>(null);
+  const [showDbPicker, setShowDbPicker] = useState(false);
+  const [pendingDbPickerEditor, setPendingDbPickerEditor] = useState<any>(null);
+
+  // ── Template field insertion / edit state ──────────────────────────────────
+  const [tplFieldModalOpen, setTplFieldModalOpen] = useState(false);
+  const [pendingTplEditor, setPendingTplEditor]   = useState<any>(null);
+  const [tplEditPos,     setTplEditPos]           = useState<number | null>(null);
+  const [tplEditInitial, setTplEditInitial]       = useState<Partial<TplField> | undefined>();
+
+  // ── Link hover preview ────────────────────────────────────────────────────────
+  const ogCacheRef = useRef<Map<string, { title?: string; description?: string; image?: string; favicon?: string }>>(new Map());
+  const hoverHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const editorWrapRef = useRef<HTMLDivElement>(null);
+  const [linkHover, setLinkHover] = useState<{
+    href: string;
+    rect: DOMRect;
+    data: { title?: string; description?: string; image?: string; favicon?: string } | null;
+    loading: boolean;
+  } | null>(null);
+
+  const [linkHoverFavErr, setLinkHoverFavErr] = useState(false);
+  const [linkHoverImgErr, setLinkHoverImgErr] = useState(false);
+
+  // ── Table toolbar state ───────────────────────────────────────────
+  const [tableToolbar, setTableToolbar] = useState<{ rect: DOMRect; striped: boolean } | null>(null);
 
   const editor = useEditor({
     extensions: [
@@ -478,17 +922,34 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
         codeBlock: false,
       }),
       CodeBlockLowlight.extend({
+        addAttributes() {
+          return {
+            ...this.parent?.(),
+            theme: {
+              default:
+                typeof window !== "undefined"
+                  ? (localStorage.getItem("codeblock-theme") ?? "dark")
+                  : "dark",
+              parseHTML: (element: HTMLElement) =>
+                element.getAttribute("data-cb-theme") ?? null,
+              renderHTML: (attributes: Record<string, unknown>) => {
+                if (!attributes.theme) return {};
+                return { "data-cb-theme": attributes.theme };
+              },
+            },
+          };
+        },
         addNodeView() {
           return ReactNodeViewRenderer(CodeBlockNodeView);
         },
       }).configure({
         lowlight,
       }),
-      Image,
-      Table.configure({ resizable: true }),
+      ResizableImage,
+      CustomTable,
       TableRow,
-      TableCell,
-      TableHeader,
+      CustomTableCell,
+      CustomTableHeader,
       TaskList,
       TaskItem.configure({ nested: true }),
       Underline,
@@ -500,6 +961,16 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
       Color,
       FontSize,
       TextAlign.configure({ types: ["heading", "paragraph"] }),
+      Mathematics.configure({
+        inlineOptions: {
+          onClick: (node: any, pos: number) => {
+            setMathEditorInitial(node.attrs.latex || "");
+            setMathEditorPos(pos);
+            setPendingMathEditor(null);
+            setMathEditorOpen(true);
+          },
+        },
+      }),
       TagLink,
       TagSuggestion,
       SlashCommands,
@@ -508,6 +979,12 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
       ExcalidrawExtension,
       DrawioExtension,
       CollapsibleList,
+      LinkedDocExtension,
+      AttachmentExtension,
+      PDFEmbedExtension,
+      TemplatePlaceholderExtension,
+      EmojiShortcodeExtension,
+      DatabaseBlockExtension,
     ],
     content: "",
     editable,
@@ -515,11 +992,16 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
     onUpdate: ({ editor }) => {
       if (isLoadingRef.current) return;
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = setTimeout(() => {
-        const html = editor.getHTML();
-        const md = turndown.turndown(html);
-        onSave(md);
-      }, 1000);
+      const doSave = () => {
+        try {
+          const html = editor.getHTML();
+          const md = turndown.turndown(html);
+          onSaveRef.current(md);
+        } catch {}
+        pendingSaveFnRef.current = null;
+      };
+      pendingSaveFnRef.current = doSave;
+      saveTimeoutRef.current = setTimeout(doSave, 10000);
     },
   });
 
@@ -535,6 +1017,10 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
     isLoadingRef.current = true;
     const html = marked.parse(initialMarkdown, { async: false }) as string;
     editor.commands.setContent(html);
+    // Reset scroll to top after TipTap's internal scrollIntoView runs
+    requestAnimationFrame(() => {
+      if (editorWrapRef.current) editorWrapRef.current.scrollTop = 0;
+    });
     setTimeout(() => {
       isLoadingRef.current = false;
     }, 100);
@@ -545,6 +1031,171 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
     setTagClickHandler(onTagClick || null);
     return () => setTagClickHandler(null);
   }, [onTagClick]);
+
+  // ── Slash custom-event handlers ( /attachment, /pdf, /linked-doc ) ──────────────
+  useEffect(() => {
+    const handleLinkedDoc = (e: Event) => {
+      const ev = e as CustomEvent;
+      setPendingSlashEditor(ev.detail.editor);
+      setShowDocPicker(true);
+    };
+    const handleAttachment = (e: Event) => {
+      const ev = e as CustomEvent;
+      setPendingSlashEditor(ev.detail.editor);
+      setTimeout(() => attachmentInputRef.current?.click(), 50);
+    };
+    const handlePdf = (e: Event) => {
+      const ev = e as CustomEvent;
+      setPendingSlashEditor(ev.detail.editor);
+      setTimeout(() => pdfInputRef.current?.click(), 50);
+    };
+    const handleLink = (e: Event) => {
+      const ev = e as CustomEvent;
+      setUrlModal({ open: true, mode: "link", context: "slash", initialValue: "", initialOpenInNewTab: false, targetEditor: ev.detail.editor });
+    };
+    const handleEmoji = (e: Event) => {
+      const ev = e as CustomEvent;
+      setPendingEmojiEditor(ev.detail.editor);
+      const coords = ev.detail.coords as { left: number; bottom: number };
+      // Clamp so picker stays on screen (picker is ~355px wide, ~435px tall)
+      const x = typeof window !== "undefined"
+        ? Math.min(coords.left, window.innerWidth - 380)
+        : coords.left;
+      const y = typeof window !== "undefined" && coords.bottom + 450 > window.innerHeight
+        ? Math.max(4, coords.bottom - 460)
+        : coords.bottom + 8;
+      setEmojiPickerPos({ x, y });
+      setShowEmojiPicker(true);
+    };
+    const handleImage = (e: Event) => {
+      const ev = e as CustomEvent;
+      setUrlModal({ open: true, mode: "image", context: "slash", initialValue: "", initialOpenInNewTab: false, targetEditor: ev.detail.editor });
+    };
+    const handleTemplateField = (e: Event) => {
+      const ev = e as CustomEvent;
+      setPendingTplEditor(ev.detail.editor);
+      setTplEditPos(null);
+      setTplEditInitial(undefined);
+      setTplFieldModalOpen(true);
+    };
+    const handleTplEditField = (e: Event) => {
+      const ev = e as CustomEvent;
+      setPendingTplEditor(ev.detail.editor);
+      setTplEditPos(ev.detail.pos as number);
+      setTplEditInitial(ev.detail.field as TplField);
+      setTplFieldModalOpen(true);
+    };
+    const handleMath = (e: Event) => {
+      const ev = e as CustomEvent;
+      setPendingMathEditor(ev.detail.editor);
+      setMathEditorInitial("");
+      setMathEditorPos(null);
+      setMathEditorOpen(true);
+    };
+    const handleDatabase = (e: Event) => {
+      const ev = e as CustomEvent;
+      setPendingDatabaseEditor(ev.detail.editor);
+      setShowDatabaseCreateModal(true);
+    };
+    const handleDatabaseExisting = (e: Event) => {
+      const ev = e as CustomEvent;
+      setPendingDbPickerEditor(ev.detail.editor);
+      setShowDbPicker(true);
+    };
+    document.addEventListener("slash:math", handleMath);
+    document.addEventListener("slash:database", handleDatabase);
+    document.addEventListener("slash:database-existing", handleDatabaseExisting);
+    document.addEventListener("tpl:edit-field", handleTplEditField);
+    document.addEventListener("slash:template-field", handleTemplateField);
+    document.addEventListener("slash:linked-doc", handleLinkedDoc);
+    document.addEventListener("slash:attachment", handleAttachment);
+    document.addEventListener("slash:pdf", handlePdf);
+    document.addEventListener("slash:link", handleLink);
+    document.addEventListener("slash:image", handleImage);
+    document.addEventListener("slash:emoji", handleEmoji);
+    return () => {
+      document.removeEventListener("slash:math", handleMath);
+      document.removeEventListener("slash:database", handleDatabase);
+      document.removeEventListener("slash:database-existing", handleDatabaseExisting);
+      document.removeEventListener("tpl:edit-field", handleTplEditField);
+      document.removeEventListener("slash:template-field", handleTemplateField);
+      document.removeEventListener("slash:linked-doc", handleLinkedDoc);
+      document.removeEventListener("slash:attachment", handleAttachment);
+      document.removeEventListener("slash:pdf", handlePdf);
+      document.removeEventListener("slash:link", handleLink);
+      document.removeEventListener("slash:image", handleImage);
+      document.removeEventListener("slash:emoji", handleEmoji);
+    };
+  }, []);
+
+  // ── Linked-doc navigation handler ───────────────────────────────────────
+  useEffect(() => {
+    setLinkedDocClickHandler((docName, docCategory, linkedSpaceSlug) => {
+      document.dispatchEvent(
+        new CustomEvent("navigate:doc", {
+          detail: { docName, docCategory, spaceSlug: linkedSpaceSlug },
+          bubbles: true,
+        })
+      );
+    });
+    return () => setLinkedDocClickHandler(null);
+  }, []);
+
+  // ── File upload handler ───────────────────────────────────────────────────
+  const handleFileUpload = useCallback(
+    async (file: File, isPdf: boolean) => {
+      if (!spaceSlug) return;
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("category", category || "General");
+      const res = await fetch(
+        `/api/spaces/${encodeURIComponent(spaceSlug)}/attachments`,
+        { method: "POST", body: formData }
+      );
+      if (!res.ok) return;
+      const data = await res.json();
+      const target = pendingSlashEditor || editor;
+      if (isPdf) {
+        target?.commands.insertPDFEmbed({
+          filename:     data.filename,
+          originalName: data.originalName,
+          category:     data.category,
+          spaceSlug,
+          url:          data.url,
+        } as PDFEmbedAttrs);
+      } else {
+        target?.commands.insertAttachment({
+          filename:     data.filename,
+          originalName: data.originalName,
+          mimeType:     data.mimeType,
+          size:         data.size,
+          category:     data.category,
+          spaceSlug,
+          url:          data.url,
+        } as AttachmentAttrs);
+      }
+      setPendingSlashEditor(null);
+    },
+    [spaceSlug, category, pendingSlashEditor, editor]
+  );
+
+  // ── Image upload handler (for UrlInputModal upload tab) ─────────────────
+  const handleImageUpload = useCallback(
+    async (file: File): Promise<string | null> => {
+      if (!spaceSlug) return null;
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("category", category || "General");
+      const res = await fetch(
+        `/api/spaces/${encodeURIComponent(spaceSlug)}/attachments`,
+        { method: "POST", body: formData }
+      );
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.url as string;
+    },
+    [spaceSlug, category]
+  );
 
   // Fetch tags and pass to TagSuggestion extension
   useEffect(() => {
@@ -558,19 +1209,133 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
       .catch(() => {});
   }, [editor, spaceSlug]);
 
+  // ── Attach hover-preview listeners to editor wrapper ────────────────────────
+  useEffect(() => {
+    const wrap = editorWrapRef.current;
+    if (!wrap) return;
+
+    const showPreview = (anchor: HTMLAnchorElement) => {
+      const href = anchor.href;
+      if (!href || (!href.startsWith("http://") && !href.startsWith("https://"))) return;
+      const rect = anchor.getBoundingClientRect();
+      const cached = ogCacheRef.current.get(href);
+      setLinkHoverFavErr(false);
+      setLinkHoverImgErr(false);
+      setLinkHover({ href, rect, data: cached ?? null, loading: !cached });
+      if (!cached) {
+        fetch(`/api/link-preview?url=${encodeURIComponent(href)}`)
+          .then((r) => r.json())
+          .then((data) => {
+            ogCacheRef.current.set(href, data);
+            setLinkHover((prev) =>
+              prev?.href === href ? { ...prev, data, loading: false } : prev
+            );
+          })
+          .catch(() =>
+            setLinkHover((prev) =>
+              prev?.href === href ? { ...prev, loading: false } : prev
+            )
+          );
+      }
+    };
+
+    const onMouseOver = (e: MouseEvent) => {
+      const anchor = (e.target as HTMLElement).closest("a[href]") as HTMLAnchorElement | null;
+      if (!anchor) return;
+      if (hoverHideTimerRef.current) clearTimeout(hoverHideTimerRef.current);
+      showPreview(anchor);
+    };
+
+    const onMouseOut = (e: MouseEvent) => {
+      const anchor = (e.target as HTMLElement).closest("a[href]");
+      if (!anchor) return;
+      const related = e.relatedTarget as HTMLElement | null;
+      if (related?.closest("[data-link-preview-card]")) return;
+      hoverHideTimerRef.current = setTimeout(() => setLinkHover(null), 250);
+    };
+
+    wrap.addEventListener("mouseover", onMouseOver);
+    wrap.addEventListener("mouseout", onMouseOut);
+    return () => {
+      wrap.removeEventListener("mouseover", onMouseOver);
+      wrap.removeEventListener("mouseout", onMouseOut);
+      if (hoverHideTimerRef.current) clearTimeout(hoverHideTimerRef.current);
+    };
+  }, [editor]); // re-run when editor becomes available so editorWrapRef is populated
+
+  // ── Table toolbar position tracking ──────────────────────────────────
+  useEffect(() => {
+    if (!editor) return;
+    const update = () => {
+      if (!editor.isActive("tableCell") && !editor.isActive("tableHeader")) {
+        setTableToolbar(null);
+        return;
+      }
+      try {
+        const { from } = editor.state.selection;
+        const domInfo = editor.view.domAtPos(from);
+        let node = domInfo.node as HTMLElement;
+        if (node.nodeType === Node.TEXT_NODE) node = node.parentElement as HTMLElement;
+        while (node && node.tagName !== "TABLE") node = node.parentElement as HTMLElement;
+        if (!node || node.tagName !== "TABLE") { setTableToolbar(null); return; }
+        const rect = node.getBoundingClientRect();
+        const $from = editor.state.doc.resolve(from);
+        let striped = false;
+        for (let d = $from.depth; d >= 0; d--) {
+          const n = $from.node(d);
+          if (n.type.name === "table") { striped = !!n.attrs.striped; break; }
+        }
+        setTableToolbar({ rect, striped });
+      } catch {
+        setTableToolbar(null);
+      }
+    };
+    editor.on("selectionUpdate", update);
+    editor.on("transaction", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      editor.off("selectionUpdate", update);
+      editor.off("transaction", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [editor]);
+
   const setLink = useCallback(() => {
     if (!editor) return;
-    const previous = editor.getAttributes("link").href;
-    const url = window.prompt("URL:", previous || "https://");
-    if (url === null) return;
-    if (url === "") { editor.chain().focus().extendMarkRange("link").unsetLink().run(); return; }
-    editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
+    const attrs = editor.getAttributes("link");
+    const previous = attrs.href || "";
+    const previousNewTab = attrs.target === "_blank";
+    setUrlModal({ open: true, mode: "link", context: "bubble", initialValue: previous, initialOpenInNewTab: previousNewTab, targetEditor: editor });
+  }, [editor, setUrlModal]);
+
+  const toggleTableStriped = useCallback(() => {
+    if (!editor) return;
+    const { from } = editor.state.selection;
+    const $from = editor.state.doc.resolve(from);
+    for (let d = $from.depth; d >= 0; d--) {
+      const node = $from.node(d);
+      if (node.type.name === "table") {
+        const pos = $from.start(d) - 1;
+        editor.chain().command(({ tr }) => {
+          tr.setNodeMarkup(pos, undefined, { ...node.attrs, striped: !node.attrs.striped });
+          return true;
+        }).run();
+        break;
+      }
+    }
   }, [editor]);
 
   if (!editor) return null;
 
   return (
-    <div className={`flex-1 overflow-auto bg-surface${!editable ? " read-mode" : ""}`}>
+    <div ref={editorWrapRef} className={`group flex-1 overflow-auto bg-surface${!editable ? " read-mode" : ""}${lineSpacing === "spaced" ? " editor-spaced" : ""}`}>
+      {/* Template editing banner */}
+      {isTemplate && (
+        <div className="template-editor-banner">
+          <span className="template-editor-badge">TEMPLATE</span>
+          <span>You are editing a template — use <kbd>/</kbd> to insert Template Fields</span>
+        </div>
+      )}
       {editable && <BubbleMenu
         editor={editor}
         options={{ placement: "top", offset: 8 }}
@@ -692,13 +1457,351 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
             className="bubble-btn"
             title="Clear formatting"
           >
-            <Eraser className="w-4 h-4" />
+          <Eraser className="w-4 h-4" />
           </button>
         </div>
       </BubbleMenu>}
-      <div className="max-w-4xl mx-auto py-8 px-4">
+
+      {/* Cell background color picker (appears when cursor is inside a table cell) */}
+      {editable && <BubbleMenu
+        editor={editor}
+        options={{ placement: "bottom-start", offset: 6 }}
+        shouldShow={({ editor, state }) => {
+          const { from, to } = state.selection;
+          if (from !== to) return false;
+          return editor.isActive("tableCell") || editor.isActive("tableHeader");
+        }}
+      >
+        <div className="table-cell-menu" onMouseDown={(e) => e.preventDefault()}>
+          {TABLE_CELL_COLORS.map((color, i) => (
+            <button
+              key={i}
+              className={`table-color-swatch${color === null ? " clear" : ""}`}
+              title={color || "Clear background"}
+              style={color ? { background: color } : {}}
+              onClick={() => {
+                const type = editor.isActive("tableHeader") ? "tableHeader" : "tableCell";
+                editor.chain().focus().updateAttributes(type, { backgroundColor: color }).run();
+              }}
+            />
+          ))}
+        </div>
+      </BubbleMenu>}
+
+      <div style={PAGE_WIDTH_MAX[pageWidth] ? { maxWidth: PAGE_WIDTH_MAX[pageWidth], marginLeft: "auto", marginRight: "auto" } : {}}>
         <EditorContent editor={editor} className="tiptap-editor" />
       </div>
+
+      {/* Hidden file inputs for slash commands */}
+      <input
+        ref={attachmentInputRef}
+        type="file"
+        className="hidden"
+        accept="*/*"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleFileUpload(file, false);
+          e.target.value = "";
+        }}
+      />
+      <input
+        ref={pdfInputRef}
+        type="file"
+        className="hidden"
+        accept=".pdf,application/pdf"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleFileUpload(file, true);
+          e.target.value = "";
+        }}
+      />
+
+      {/* Doc picker dialog (linked document slash command) */}
+      {showDocPicker && spaceSlug && (
+        <DocPickerDialog
+          spaceSlug={spaceSlug}
+          editor={pendingSlashEditor || editor}
+          onClose={() => {
+            setShowDocPicker(false);
+            setPendingSlashEditor(null);
+          }}
+        />
+      )}
+
+      {/* Link hover preview card (fixed-position, follows mouse) */}
+      {linkHover && (() => {
+        const { href, rect, data, loading } = linkHover;
+        const cardHeight = 220;
+        const spaceBelow = typeof window !== "undefined" ? window.innerHeight - rect.bottom - 8 : 999;
+        const left = typeof window !== "undefined"
+          ? Math.min(rect.left, window.innerWidth - 328)
+          : rect.left;
+        const top = spaceBelow < cardHeight
+          ? Math.max(4, rect.top - cardHeight - 8)
+          : rect.bottom + 8;
+        return (
+          <div
+            data-link-preview-card=""
+            className="link-hover-preview"
+            style={{ position: "fixed", left, top, zIndex: 9999 }}
+            onMouseEnter={() => {
+              if (hoverHideTimerRef.current) clearTimeout(hoverHideTimerRef.current);
+            }}
+            onMouseLeave={() => setLinkHover(null)}
+          >
+            {loading ? (
+              <div className="link-hover-loading">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Loading preview…</span>
+              </div>
+            ) : (
+              <>
+                <div className="link-hover-title">
+                  {!linkHoverFavErr && data?.favicon ? (
+                    <img
+                      src={data.favicon}
+                      alt=""
+                      className="w-4 h-4 rounded flex-shrink-0"
+                      onError={() => setLinkHoverFavErr(true)}
+                    />
+                  ) : (
+                    <Globe className="w-4 h-4 text-text-muted flex-shrink-0" />
+                  )}
+                  <span>{data?.title || (() => { try { return new URL(href).hostname; } catch { return href; } })()}</span>
+                </div>
+                {data?.description && (
+                  <p className="link-hover-desc">{data.description}</p>
+                )}
+                {!linkHoverImgErr && data?.image && (
+                  <img
+                    src={data.image}
+                    alt=""
+                    className="link-hover-img"
+                    onError={() => setLinkHoverImgErr(true)}
+                  />
+                )}
+                <span className="link-hover-url">
+                  <ExternalLink className="w-3 h-3 inline mr-1" />
+                  {href.length > 55 ? href.slice(0, 52) + "…" : href}
+                </span>
+              </>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Template field modal (slash:template-field) */}
+      <TemplateFieldModal
+        isOpen={tplFieldModalOpen}
+        initial={tplEditInitial}
+        onClose={() => {
+          setTplFieldModalOpen(false);
+          setPendingTplEditor(null);
+          setTplEditPos(null);
+          setTplEditInitial(undefined);
+        }}
+        onConfirm={(field) => {
+          const target = pendingTplEditor || editor;
+          if (tplEditPos !== null) {
+            // Update the existing node in-place
+            (target as any)?.chain().command(({ tr }: { tr: any }) => {
+              tr.setNodeMarkup(tplEditPos, undefined, { fieldB64: toSafeB64(field) });
+              return true;
+            }).run();
+          } else {
+            (target?.commands as any)?.insertTemplatePlaceholder(field);
+          }
+          setPendingTplEditor(null);
+          setTplEditPos(null);
+          setTplEditInitial(undefined);
+        }}
+      />
+
+      {/* Emoji picker (slash:emoji command) */}
+      {showEmojiPicker && emojiPickerPos && (
+        <div
+          style={{ position: "fixed", left: emojiPickerPos.x, top: emojiPickerPos.y, zIndex: 9999 }}
+        >
+          <Picker
+            data={emojiPickerData}
+            autoFocus
+            theme={
+              typeof document !== "undefined" &&
+              (document.documentElement.dataset.theme === "dark" ||
+               document.documentElement.dataset.theme === "dracula")
+                ? "dark" : "light"
+            }
+            onEmojiSelect={(emoji: { native: string }) => {
+              const target = pendingEmojiEditor || editor;
+              target?.chain().focus().insertContent(emoji.native).run();
+              setShowEmojiPicker(false);
+              setPendingEmojiEditor(null);
+              setEmojiPickerPos(null);
+            }}
+            onClickOutside={() => {
+              setShowEmojiPicker(false);
+              setPendingEmojiEditor(null);
+              setEmojiPickerPos(null);
+            }}
+          />
+        </div>
+      )}
+
+      {/* Math editor modal */}
+      <MathEditorModal
+        isOpen={mathEditorOpen}
+        initialLatex={mathEditorInitial}
+        onClose={() => {
+          setMathEditorOpen(false);
+          setPendingMathEditor(null);
+          setMathEditorPos(null);
+          setMathEditorInitial("");
+        }}
+        onConfirm={(latex) => {
+          const target = pendingMathEditor || editor;
+          if (mathEditorPos !== null) {
+            // Update existing equation
+            target?.chain().command(({ tr }: { tr: any }) => {
+              tr.setNodeMarkup(mathEditorPos, undefined, { latex });
+              return true;
+            }).run();
+          } else {
+            // Insert new equation
+            target?.chain().focus().insertContent({
+              type: "inlineMath",
+              attrs: { latex },
+            }).run();
+          }
+          setPendingMathEditor(null);
+          setMathEditorPos(null);
+          setMathEditorInitial("");
+        }}
+      />
+
+      {/* Database create modal (slash:database command) */}
+      <DatabaseCreateModal
+        isOpen={showDatabaseCreateModal}
+        onClose={() => {
+          setShowDatabaseCreateModal(false);
+          setPendingDatabaseEditor(null);
+        }}
+        onCreate={async (title, templateId) => {
+          if (!spaceSlug) return;
+          try {
+            const res = await fetch(
+              `/api/spaces/${encodeURIComponent(spaceSlug)}/databases`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ title, templateId: templateId || undefined }),
+              }
+            );
+            if (!res.ok) return;
+            const db = await res.json();
+            const target = pendingDatabaseEditor || editor;
+            target?.commands.insertDatabaseBlock({
+              dbId: db.id,
+              viewId: db.views?.[0]?.id || "",
+              spaceSlug,
+            });
+            // Notify page to refresh the sidebar databases list
+            document.dispatchEvent(new CustomEvent("database:created", { bubbles: true }));
+          } catch (err) {
+            console.error("Failed to create database:", err);
+          }
+          setPendingDatabaseEditor(null);
+        }}
+      />
+
+      {/* Insert existing database picker */}
+      {showDbPicker && spaceSlug && (
+        <DatabasePicker
+          spaceSlug={spaceSlug}
+          onSelect={(db) => {
+            const target = pendingDbPickerEditor || editor;
+            target?.commands.insertDatabaseBlock({
+              dbId: db.id,
+              viewId: db.viewId,
+              spaceSlug: spaceSlug,
+            });
+            setShowDbPicker(false);
+            setPendingDbPickerEditor(null);
+          }}
+          onClose={() => { setShowDbPicker(false); setPendingDbPickerEditor(null); }}
+        />
+      )}
+
+      {/* URL input modal (link and image slash commands + bubble menu link) */}
+      <UrlInputModal
+        isOpen={urlModal.open}
+        title={urlModal.mode === "image" ? "Insert Image" : "Insert Link"}
+        placeholder="https://"
+        initialValue={urlModal.initialValue}
+        initialOpenInNewTab={urlModal.initialOpenInNewTab}
+        confirmLabel={urlModal.mode === "image" ? "Insert Image" : urlModal.initialValue ? "Update Link" : "Insert Link"}
+        icon={urlModal.mode === "image" ? "image" : "link"}
+        showNewTabOption={urlModal.mode === "link"}
+        showFileUpload={urlModal.mode === "image"}
+        onFileUpload={handleImageUpload}
+        onClose={() => setUrlModal((m) => ({ ...m, open: false }))}
+        onConfirm={(url, openInNewTab) => {
+          const target = urlModal.targetEditor || editor;
+          const linkTarget = openInNewTab ? "_blank" : null;
+          const linkRel = openInNewTab ? "noopener noreferrer" : null;
+          if (urlModal.mode === "image") {
+            // Both slash and bubble: insert image at cursor
+            target?.chain().focus().setImage({ src: url }).run();
+          } else if (urlModal.context === "bubble") {
+            // Bubble menu: apply/remove link mark on selected text
+            if (url === "") {
+              target?.chain().focus().extendMarkRange("link").unsetLink().run();
+            } else {
+              target?.chain().focus().extendMarkRange("link").setLink({ href: url, target: linkTarget, rel: linkRel }).run();
+            }
+          } else {
+            // Slash command: no text selected — insert the URL itself as linked text
+            target?.chain().focus().insertContent({
+              type: "text",
+              text: url,
+              marks: [{ type: "link", attrs: { href: url, target: linkTarget, rel: linkRel, class: "text-accent underline" } }],
+            }).run();
+          }
+        }}
+      />
+
+      {/* Table toolbar — fixed above focused table, portal to body */}
+      {editable && tableToolbar && typeof window !== "undefined" && createPortal(
+        <div
+          className="table-toolbar"
+          style={{
+            top: Math.max(4, tableToolbar.rect.top - 42),
+            left: tableToolbar.rect.left,
+            maxWidth: `calc(100vw - ${Math.max(4, tableToolbar.rect.left)}px - 16px)`,
+          }}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <button className="table-toolbar-btn" title="Insert column before" onClick={() => editor.chain().focus().addColumnBefore().run()}>← Col</button>
+          <button className="table-toolbar-btn" title="Insert column after" onClick={() => editor.chain().focus().addColumnAfter().run()}>Col →</button>
+          <button className="table-toolbar-btn danger" title="Delete column" onClick={() => editor.chain().focus().deleteColumn().run()}>− Col</button>
+          <div className="table-toolbar-sep" />
+          <button className="table-toolbar-btn" title="Insert row above" onClick={() => editor.chain().focus().addRowBefore().run()}>↑ Row</button>
+          <button className="table-toolbar-btn" title="Insert row below" onClick={() => editor.chain().focus().addRowAfter().run()}>Row ↓</button>
+          <button className="table-toolbar-btn danger" title="Delete row" onClick={() => editor.chain().focus().deleteRow().run()}>− Row</button>
+          <div className="table-toolbar-sep" />
+          <button className="table-toolbar-btn" title="Merge selected cells" onClick={() => editor.chain().focus().mergeCells().run()}>Merge</button>
+          <button className="table-toolbar-btn" title="Split cell" onClick={() => editor.chain().focus().splitCell().run()}>Split</button>
+          <div className="table-toolbar-sep" />
+          <button className="table-toolbar-btn" title="Toggle header row" onClick={() => editor.chain().focus().toggleHeaderRow().run()}>Header</button>
+          <button
+            className={`table-toolbar-btn${tableToolbar.striped ? " active" : ""}`}
+            title="Toggle striped rows"
+            onClick={toggleTableStriped}
+          >Striped</button>
+          <div className="table-toolbar-sep" />
+          <button className="table-toolbar-btn danger" title="Delete table" onClick={() => editor.chain().focus().deleteTable().run()}>Del Table</button>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

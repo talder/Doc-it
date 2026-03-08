@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import { requireSpaceRole } from "@/lib/permissions";
 import { getCategoryDir, getArchiveCategoryDir, ensureDir } from "@/lib/config";
+import { auditLog } from "@/lib/audit";
 
 type Params = { params: Promise<{ slug: string; name: string }> };
 
@@ -11,8 +12,9 @@ export async function POST(request: NextRequest, { params }: Params) {
   const { slug, name } = await params;
   const { category } = await request.json();
 
+  let archiver;
   try {
-    await requireSpaceRole(slug, "writer");
+    ({ user: archiver } = await requireSpaceRole(slug, "writer"));
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 403 });
   }
@@ -35,5 +37,6 @@ export async function POST(request: NextRequest, { params }: Params) {
   await ensureDir(destDir);
   await fs.rename(srcPath, destPath);
 
+  auditLog(request, { event: "document.archive", outcome: "success", actor: archiver.username, spaceSlug: slug, resource: `${category}/${name}`, resourceType: "document" });
   return NextResponse.json({ success: true });
 }

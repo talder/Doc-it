@@ -2,32 +2,40 @@
 
 import { useState, useRef, useEffect } from "react";
 import {
-  Pencil, Check, MoreHorizontal, Copy, Printer, History,
-  FolderInput, Archive, Trash2,
+  Pencil, Check, PenLine, MoreHorizontal, Copy, Printer, History,
+  FolderInput, Archive, Trash2, X, Star,
 } from "lucide-react";
 
 interface DocActionsMenuProps {
   canWrite: boolean;
   isEditing: boolean;
   onToggleEdit: () => void;
+  onDiscard: () => void;
+  onDistractionFree?: () => void;
   onCopyMarkdown: () => void;
   onPrint: () => void;
   onHistory: () => void;
   onMove: () => void;
   onArchive: () => void;
   onDelete: () => void;
+  isFavorite?: boolean;
+  onToggleFavorite?: () => void;
 }
 
 export default function DocActionsMenu({
   canWrite,
   isEditing,
   onToggleEdit,
+  onDiscard,
+  onDistractionFree,
   onCopyMarkdown,
   onPrint,
   onHistory,
   onMove,
   onArchive,
   onDelete,
+  isFavorite,
+  onToggleFavorite,
 }: DocActionsMenuProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -42,15 +50,47 @@ export default function DocActionsMenu({
 
   return (
     <div className="flex items-center gap-1">
-      {/* Edit / Done toggle button */}
+      {/* Edit / Done / Discard buttons */}
       {canWrite && (
-        <button
-          onClick={onToggleEdit}
-          className={`doc-action-icon-btn${isEditing ? " active" : ""}`}
-          title={isEditing ? "Done editing" : "Edit"}
-        >
-          {isEditing ? <Check className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}
-        </button>
+        <>
+          {isEditing ? (
+            <>
+              <button
+                onClick={onDiscard}
+                className="doc-action-icon-btn discard"
+                title="Discard changes"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <button
+                onClick={onToggleEdit}
+                className="doc-action-icon-btn active"
+                title="Done editing"
+              >
+                <Check className="w-4 h-4" />
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={onToggleEdit}
+                className="doc-action-icon-btn"
+                title="Edit"
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+              {onDistractionFree && (
+                <button
+                  onClick={onDistractionFree}
+                  className="doc-action-icon-btn"
+                  title="Distraction-free edit"
+                >
+                  <PenLine className="w-4 h-4" />
+                </button>
+              )}
+            </>
+          )}
+        </>
       )}
 
       {/* More actions */}
@@ -65,6 +105,18 @@ export default function DocActionsMenu({
 
         {open && (
           <div className="doc-actions-dropdown">
+            {onToggleFavorite && (
+              <>
+                <button
+                  onClick={() => { onToggleFavorite(); setOpen(false); }}
+                  className="doc-actions-item"
+                >
+                  <Star className={`w-4 h-4 ${isFavorite ? "fill-amber-400 text-amber-400" : ""}`} />
+                  {isFavorite ? "Remove from favorites" : "Add to favorites"}
+                </button>
+                <hr className="doc-actions-separator" />
+              </>
+            )}
             <button
               onClick={() => { onCopyMarkdown(); setOpen(false); }}
               className="doc-actions-item"

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserByUsername, hashPassword, createSession, getSessionCookieName } from "@/lib/auth";
+import { auditLog } from "@/lib/audit";
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,11 +12,13 @@ export async function POST(request: NextRequest) {
 
     const user = await getUserByUsername(username);
     if (!user) {
+      auditLog(request, { event: "auth.login.failed", outcome: "failure", actor: username, sessionType: "anonymous", details: { reason: "user not found" } });
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
 
     const hash = hashPassword(password);
     if (hash !== user.passwordHash) {
+      auditLog(request, { event: "auth.login.failed", outcome: "failure", actor: username, sessionType: "anonymous", details: { reason: "wrong password" } });
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
 
@@ -30,6 +33,7 @@ export async function POST(request: NextRequest) {
       maxAge: 60 * 60 * 24 * 30, // 30 days
     });
 
+    auditLog(request, { event: "auth.login", outcome: "success", actor: username, sessionType: "session" });
     return response;
   } catch (error) {
     console.error("Login error:", error);

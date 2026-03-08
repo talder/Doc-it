@@ -2,8 +2,8 @@
 
 import { Node, mergeAttributes } from "@tiptap/core";
 import { ReactNodeViewRenderer, NodeViewWrapper } from "@tiptap/react";
-import { useEffect, useRef, useState, FC } from "react";
-import { Pencil, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState, useCallback, FC } from "react";
+import { Pencil, Trash2, Maximize2, Download, X, ImageDown } from "lucide-react";
 
 const DRAWIO_URL = "https://embed.diagrams.net/?embed=1&ui=kennedy&spin=1&proto=json&saveAndExit=1&noSaveBtn=0";
 
@@ -11,7 +11,43 @@ const EMPTY_XML = '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"
 
 const DrawioNodeView: FC<any> = ({ node, updateAttributes, deleteNode }) => {
   const [isEditing, setIsEditing] = useState(false);
+  const [isViewing, setIsViewing] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+
+  const downloadSvg = useCallback(() => {
+    const svg = node.attrs.svgData;
+    if (!svg) return;
+    const blob = new Blob([svg], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "diagram.svg";
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [node.attrs.svgData]);
+
+  const downloadPng = useCallback(() => {
+    const svg = node.attrs.svgData;
+    if (!svg) return;
+    const blob = new Blob([svg], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      const scale = 2; // retina
+      canvas.width = img.naturalWidth * scale || 1600;
+      canvas.height = img.naturalHeight * scale || 900;
+      const ctx = canvas.getContext("2d")!;
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      const a = document.createElement("a");
+      a.href = canvas.toDataURL("image/png");
+      a.download = "diagram.png";
+      a.click();
+    };
+    img.src = url;
+  }, [node.attrs.svgData]);
 
   useEffect(() => {
     if (!isEditing) return;
@@ -83,11 +119,51 @@ const DrawioNodeView: FC<any> = ({ node, updateAttributes, deleteNode }) => {
         </div>
       )}
 
+      {/* Lightbox viewer */}
+      {isViewing && node.attrs.svgData && (
+        <div
+          className="excalidraw-modal-backdrop"
+          onClick={() => setIsViewing(false)}
+        >
+          <div
+            className="drawio-lightbox"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="excalidraw-modal-header">
+              <span className="flex items-center gap-2 text-sm font-semibold">
+                <Maximize2 className="h-4 w-4" />
+                Diagram
+              </span>
+              <div className="flex items-center gap-2">
+                <button onClick={downloadSvg} className="excalidraw-action-btn" title="Download SVG">
+                  <Download className="h-3.5 w-3.5" /> SVG
+                </button>
+                <button onClick={downloadPng} className="excalidraw-action-btn" title="Download PNG">
+                  <ImageDown className="h-3.5 w-3.5" /> PNG
+                </button>
+                <button onClick={() => setIsViewing(false)} className="excalidraw-cancel-btn">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            <div className="drawio-lightbox-body">
+              <div
+                className="drawio-lightbox-svg"
+                dangerouslySetInnerHTML={{ __html: node.attrs.svgData }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Inline preview */}
       <div className="excalidraw-preview group">
         {node.attrs.svgData ? (
           <>
             <div className="excalidraw-hover-actions">
+              <button onClick={() => setIsViewing(true)} className="excalidraw-action-btn">
+                <Maximize2 className="h-3.5 w-3.5" /> View
+              </button>
               <button onClick={() => setIsEditing(true)} className="excalidraw-action-btn">
                 <Pencil className="h-3.5 w-3.5" /> Edit
               </button>
@@ -96,7 +172,8 @@ const DrawioNodeView: FC<any> = ({ node, updateAttributes, deleteNode }) => {
               </button>
             </div>
             <div
-              className="excalidraw-svg-preview"
+              className="excalidraw-svg-preview cursor-zoom-in"
+              onMouseDown={(e) => { e.preventDefault(); setIsViewing(true); }}
               dangerouslySetInnerHTML={{ __html: node.attrs.svgData }}
             />
           </>

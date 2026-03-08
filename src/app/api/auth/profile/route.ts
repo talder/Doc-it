@@ -31,6 +31,7 @@ export async function PUT(request: NextRequest) {
     // Update allowed fields
     if (body.fullName !== undefined) users[idx].fullName = body.fullName;
     if (body.email !== undefined) users[idx].email = body.email;
+    if (body.preferences !== undefined) users[idx].preferences = { ...users[idx].preferences, ...body.preferences };
 
     // Password change (requires current password)
     if (body.newPassword) {

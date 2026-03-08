@@ -1,22 +1,32 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { ChevronRight, ChevronDown } from "lucide-react";
+import { ChevronRight, ChevronDown, LayoutTemplate, Database as DbIcon } from "lucide-react";
 import SidebarNavigation, { type SidebarMode } from "./SidebarNavigation";
 import CategoryRenderer from "./CategoryRenderer";
 import TagsList from "./TagsList";
+import DatabasesList from "./DatabasesList";
+import FavoritesList from "./FavoritesList";
 import SidebarActions from "./SidebarActions";
-import type { Category, DocFile, TagsIndex } from "@/lib/types";
+import type { Category, DocFile, TagsIndex, SpaceCustomization, DocStatusMap, FavoriteItem } from "@/lib/types";
 
 const MIN_WIDTH = 200;
 const MAX_WIDTH = 600;
 const DEFAULT_WIDTH = 280;
 const STORAGE_KEY = "docit-sidebar-width";
 
+interface DbSummary {
+  id: string;
+  title: string;
+  rowCount: number;
+  createdAt: string;
+}
+
 interface SidebarProps {
   categories: Category[];
   docs: DocFile[];
   tagsIndex: TagsIndex;
+  databases: DbSummary[];
   activeDoc: { name: string; category: string } | null;
   onSelectDoc: (doc: DocFile) => void;
   onNewDoc: (category?: string) => void;
@@ -31,12 +41,32 @@ interface SidebarProps {
   canWrite: boolean;
   onReindexTags?: () => void;
   isReindexing?: boolean;
+  onNewTemplate?: (category?: string) => void;
+  onExportTemplate?: (doc: DocFile) => void;
+  onImportTemplate?: (file: File) => void;
+  onNewDatabase?: () => void;
+  onSelectDatabase?: (dbId: string) => void;
+  onEditDatabase?: (db: DbSummary) => void;
+  onDeleteDatabase?: (db: DbSummary) => void;
+  customization?: SpaceCustomization;
+  onSetDocIcon?: (docKey: string, emoji: string) => void;
+  onSetDocColor?: (docKey: string, color: string) => void;
+  onSetCategoryIcon?: (catPath: string, emoji: string) => void;
+  onSetCategoryColor?: (catPath: string, color: string) => void;
+  docStatusMap?: DocStatusMap;
+  // Favorites
+  favorites?: FavoriteItem[];
+  currentSpaceSlug?: string;
+  currentSpaceName?: string;
+  onToggleFavorite?: (item: FavoriteItem) => void;
+  onSelectFavorite?: (item: FavoriteItem) => void;
 }
 
 export default function Sidebar({
   categories,
   docs,
   tagsIndex,
+  databases,
   activeDoc,
   onSelectDoc,
   onNewDoc,
@@ -51,16 +81,53 @@ export default function Sidebar({
   canWrite,
   onReindexTags,
   isReindexing,
+  onNewTemplate,
+  onExportTemplate,
+  onImportTemplate,
+  onNewDatabase,
+  onSelectDatabase,
+  onEditDatabase,
+  onDeleteDatabase,
+  customization,
+  docStatusMap,
+  onSetDocIcon,
+  onSetDocColor,
+  onSetCategoryIcon,
+  onSetCategoryColor,
+  favorites = [],
+  currentSpaceSlug,
+  currentSpaceName,
+  onToggleFavorite,
+  onSelectFavorite,
 }: SidebarProps) {
+  const importInputRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<SidebarMode>("documents");
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
-  const [categoriesCollapsed, setCategoriesCollapsed] = useState(false);
+  const [categoriesCollapsed, setCategoriesCollapsed] = useState(true);
+  const [tagsCollapsed, setTagsCollapsed] = useState(true);
+  const [databasesCollapsed, setDatabasesCollapsed] = useState(true);
+  const [templatesCollapsed, setTemplatesCollapsed] = useState(true);
+  const initializedCategories = useRef(false);
 
   // Resizable sidebar
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [dragging, setDragging] = useState(false);
   const startX = useRef(0);
   const startWidth = useRef(DEFAULT_WIDTH);
+
+  // Auto-collapse all categories on first load
+  useEffect(() => {
+    if (!initializedCategories.current && categories.length > 0) {
+      initializedCategories.current = true;
+      setCollapsedCategories(new Set(categories.map((c) => c.path)));
+    }
+  }, [categories]);
+
+  const handleImportFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && onImportTemplate) onImportTemplate(file);
+    e.target.value = "";
+  };
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -98,6 +165,8 @@ export default function Sidebar({
   }, [dragging, width]);
 
   const tagCount = Object.keys(tagsIndex).length;
+  const templateCount = docs.filter((d) => d.isTemplate).length;
+  const databaseCount = databases.length;
 
   const toggleCategory = (path: string) => {
     setCollapsedCategories((prev) => {
@@ -108,26 +177,61 @@ export default function Sidebar({
     });
   };
 
-  const rootCategories = categories.filter((c) => !c.parent);
+  // Split root categories: template vs regular
+  const tplRootCategories = categories.filter(
+    (c) => !c.parent && (c.path === "Templates" || c.path.startsWith("Templates/"))
+  );
+  const docRootCategories = categories.filter(
+    (c) => !c.parent && c.path !== "Templates" && !c.path.startsWith("Templates/")
+  );
 
   // Uncategorized docs (in space root, not in any category)
   const uncategorizedDocs = docs.filter((d) => !d.category || d.category === "");
 
-  const allCollapsed = rootCategories.every((c) => collapsedCategories.has(c.path));
+  const allCollapsed = docRootCategories.every((c) => collapsedCategories.has(c.path));
   const handleToggleAll = () => {
     if (allCollapsed) {
-      setCollapsedCategories(new Set());
+      setCollapsedCategories((prev) => {
+        const next = new Set(prev);
+        docRootCategories.forEach((c) => next.delete(c.path));
+        return next;
+      });
     } else {
-      setCollapsedCategories(new Set(categories.map((c) => c.path)));
+      setCollapsedCategories((prev) => {
+        const next = new Set(prev);
+        categories
+          .filter((c) => c.path !== "Templates" && !c.path.startsWith("Templates/"))
+          .forEach((c) => next.add(c.path));
+        return next;
+      });
     }
   };
 
   return (
     <aside className="sidebar" style={{ width, minWidth: width }}>
-      <SidebarNavigation mode={mode} onModeChange={setMode} tagCount={tagCount} />
+      <SidebarNavigation mode={mode} onModeChange={setMode} tagCount={tagCount} templateCount={templateCount} databaseCount={databaseCount} favoritesCount={favorites.length} />
 
       <div className="flex-1 overflow-y-auto px-2 py-2 space-y-3">
-        {mode === "tags" ? (
+        {mode === "favorites" ? (
+          <FavoritesList
+            favorites={favorites}
+            onSelect={(item) => onSelectFavorite?.(item)}
+            onRemove={(item) => onToggleFavorite?.(item)}
+            currentSpaceSlug={currentSpaceSlug}
+          />
+        ) : mode === "databases" ? (
+          <DatabasesList
+            databases={databases}
+            onSelectDatabase={(dbId) => onSelectDatabase?.(dbId)}
+            canWrite={canWrite}
+            onEditDatabase={onEditDatabase}
+            onDeleteDatabase={onDeleteDatabase}
+            favorites={favorites}
+            spaceSlug={currentSpaceSlug}
+            spaceName={currentSpaceName}
+            onToggleFavorite={onToggleFavorite}
+          />
+        ) : mode === "tags" ? (
           <TagsList
             tagsIndex={tagsIndex}
             docs={docs}
@@ -138,20 +242,165 @@ export default function Sidebar({
             onReindex={onReindexTags}
             isReindexing={isReindexing}
           />
+        ) : mode === "templates" ? (
+          <div className="px-1">
+            {tplRootCategories.length > 0 ? (
+              tplRootCategories.map((cat) => (
+                <CategoryRenderer
+                  key={cat.path}
+                  category={cat}
+                  allCategories={categories}
+                  docs={docs}
+                  collapsedCategories={collapsedCategories}
+                  onToggleCategory={toggleCategory}
+                  activeDoc={activeDoc}
+                  onSelectDoc={onSelectDoc}
+                  onNewDoc={onNewDoc}
+                  onNewSubcategory={onNewCategory}
+                  onRenameCategory={onRenameCategory}
+                  onDeleteCategory={onDeleteCategory}
+                  onEditDoc={onEditDoc}
+                  onDeleteDoc={onDeleteDoc}
+                  onMoveDoc={onMoveDoc}
+                  onExportTemplate={onExportTemplate}
+                  onImportTemplate={() => importInputRef.current?.click()}
+                  onNewTemplate={(cat) => onNewTemplate?.(cat)}
+                  canWrite={canWrite}
+                  customization={customization}
+                  onSetDocIcon={onSetDocIcon}
+                  onSetDocColor={onSetDocColor}
+                  onSetCategoryIcon={onSetCategoryIcon}
+                  onSetCategoryColor={onSetCategoryColor}
+                />
+              ))
+            ) : (
+              <p className="px-3 py-4 text-sm text-text-muted text-center">No templates yet</p>
+            )}
+          </div>
         ) : (
           <>
-            {/* Tags section (always visible in documents mode if tags exist) */}
+            {/* Tags section (collapsible) */}
             {tagCount > 0 && (
-              <TagsList
-                tagsIndex={tagsIndex}
-                docs={docs}
-                activeDoc={activeDoc}
-                onTagSelect={onTagSelect}
-                onSelectDoc={onSelectDoc}
-                selectedTag={selectedTag}
-                onReindex={onReindexTags}
-                isReindexing={isReindexing}
-              />
+              <div className="space-y-1">
+                <div className="flex items-center justify-between px-3 py-1">
+                  <button
+                    onClick={() => setTagsCollapsed(!tagsCollapsed)}
+                    className="flex items-center gap-1 text-xs font-bold uppercase text-text-muted tracking-wider hover:text-text-secondary"
+                  >
+                    {tagsCollapsed ? (
+                      <ChevronRight className="w-3 h-3" />
+                    ) : (
+                      <ChevronDown className="w-3 h-3" />
+                    )}
+                    Tags
+                  </button>
+                </div>
+                {!tagsCollapsed && (
+                  <TagsList
+                    tagsIndex={tagsIndex}
+                    docs={docs}
+                    activeDoc={activeDoc}
+                    onTagSelect={onTagSelect}
+                    onSelectDoc={onSelectDoc}
+                    selectedTag={selectedTag}
+                    onReindex={onReindexTags}
+                    isReindexing={isReindexing}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Databases section */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between px-3 py-1">
+                <button
+                  onClick={() => setDatabasesCollapsed(!databasesCollapsed)}
+                  className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider db-section-header"
+                >
+                  {databasesCollapsed ? (
+                    <ChevronRight className="w-3 h-3" />
+                  ) : (
+                    <ChevronDown className="w-3 h-3" />
+                  )}
+                  <DbIcon className="w-3 h-3" />
+                  Databases
+                </button>
+                {canWrite && !databasesCollapsed && (
+                  <button
+                    onClick={() => onNewDatabase?.()}
+                    className="text-xs text-accent hover:underline"
+                    title="New database"
+                  >
+                    + New
+                  </button>
+                )}
+              </div>
+            {!databasesCollapsed && (
+                <DatabasesList
+                  databases={databases}
+                  onSelectDatabase={(dbId) => onSelectDatabase?.(dbId)}
+                  canWrite={canWrite}
+                  onEditDatabase={onEditDatabase}
+                  onDeleteDatabase={onDeleteDatabase}
+                  favorites={favorites}
+                  spaceSlug={currentSpaceSlug}
+                  spaceName={currentSpaceName}
+                  onToggleFavorite={onToggleFavorite}
+                />
+              )}
+            </div>
+
+            {/* Templates section */}
+            {tplRootCategories.length > 0 && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between px-3 py-1">
+                  <button
+                    onClick={() => setTemplatesCollapsed(!templatesCollapsed)}
+                    className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider tpl-section-header"
+                  >
+                    {templatesCollapsed ? (
+                      <ChevronRight className="w-3 h-3" />
+                    ) : (
+                      <ChevronDown className="w-3 h-3" />
+                    )}
+                    <LayoutTemplate className="w-3 h-3" />
+                    Templates
+                  </button>
+                </div>
+                {!templatesCollapsed && (
+                  <div className="px-1">
+                    {tplRootCategories.map((cat) => (
+                      <CategoryRenderer
+                        key={cat.path}
+                        category={cat}
+                        allCategories={categories}
+                        docs={docs}
+                        collapsedCategories={collapsedCategories}
+                        onToggleCategory={toggleCategory}
+                        activeDoc={activeDoc}
+                        onSelectDoc={onSelectDoc}
+                        onNewDoc={onNewDoc}
+                        onNewSubcategory={onNewCategory}
+                        onRenameCategory={onRenameCategory}
+                        onDeleteCategory={onDeleteCategory}
+                        onEditDoc={onEditDoc}
+                        onDeleteDoc={onDeleteDoc}
+                        onMoveDoc={onMoveDoc}
+                        onExportTemplate={onExportTemplate}
+                        onImportTemplate={() => importInputRef.current?.click()}
+                        onNewTemplate={(cat) => onNewTemplate?.(cat)}
+                        canWrite={canWrite}
+                        customization={customization}
+                        docStatusMap={docStatusMap}
+                        onSetDocIcon={onSetDocIcon}
+                        onSetDocColor={onSetDocColor}
+                        onSetCategoryIcon={onSetCategoryIcon}
+                        onSetCategoryColor={onSetCategoryColor}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
 
             {/* Categories section */}
@@ -178,7 +427,7 @@ export default function Sidebar({
 
               {!categoriesCollapsed && (
                 <div className="px-1">
-                  {rootCategories.map((cat) => (
+                  {docRootCategories.map((cat) => (
                     <CategoryRenderer
                       key={cat.path}
                       category={cat}
@@ -195,7 +444,20 @@ export default function Sidebar({
                       onEditDoc={onEditDoc}
                       onDeleteDoc={onDeleteDoc}
                       onMoveDoc={onMoveDoc}
+                      onExportTemplate={onExportTemplate}
+                      onImportTemplate={() => importInputRef.current?.click()}
+                      onNewTemplate={(cat) => onNewTemplate?.(cat)}
                       canWrite={canWrite}
+                      customization={customization}
+                      docStatusMap={docStatusMap}
+                      onSetDocIcon={onSetDocIcon}
+                      onSetDocColor={onSetDocColor}
+                      onSetCategoryIcon={onSetCategoryIcon}
+                      onSetCategoryColor={onSetCategoryColor}
+                      favorites={favorites}
+                      spaceSlug={currentSpaceSlug}
+                      spaceName={currentSpaceName}
+                      onToggleFavorite={onToggleFavorite}
                     />
                   ))}
 
@@ -225,9 +487,19 @@ export default function Sidebar({
         )}
       </div>
 
+      {/* Hidden file input for template import */}
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".mdt"
+        style={{ display: "none" }}
+        onChange={handleImportFileChange}
+      />
+
       <SidebarActions
         onNewDoc={() => onNewDoc()}
         onNewCategory={() => onNewCategory()}
+        onNewTemplate={() => onNewTemplate?.()}
         canWrite={canWrite}
       />
 

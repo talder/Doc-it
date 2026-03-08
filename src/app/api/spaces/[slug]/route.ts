@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getSpaces, getUserSpaceRole, isSpaceAdmin } from "@/lib/permissions";
 import { writeJsonConfig } from "@/lib/config";
+import { auditLog } from "@/lib/audit";
 import type { SpaceRole } from "@/lib/types";
 
 type Params = { params: Promise<{ slug: string }> };
@@ -49,6 +50,10 @@ export async function PUT(request: NextRequest, { params }: Params) {
   }
 
   await writeJsonConfig("spaces.json", spaces);
+  const details: Record<string, unknown> = {};
+  if (name) details.name = name;
+  if (permissions) details.permissionsUpdated = true;
+  auditLog(request, { event: "space.update", outcome: "success", actor: user.username, spaceSlug: slug, resource: slug, resourceType: "space", details });
   return NextResponse.json(spaces[spaceIndex]);
 }
 
@@ -67,6 +72,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
 
   await writeJsonConfig("spaces.json", filtered);
 
+  auditLog(_req, { event: "space.delete", outcome: "success", actor: user.username, spaceSlug: slug, resource: slug, resourceType: "space" });
   // Optionally delete space directory (keeping files for safety)
   return NextResponse.json({ success: true });
 }

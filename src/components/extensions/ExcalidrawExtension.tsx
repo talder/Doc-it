@@ -2,8 +2,8 @@
 
 import { Node, mergeAttributes } from "@tiptap/core";
 import { ReactNodeViewRenderer, NodeViewWrapper } from "@tiptap/react";
-import { useState, useEffect, useRef, FC } from "react";
-import { Pencil, Trash2 } from "lucide-react";
+import { useState, useEffect, useRef, useCallback, FC } from "react";
+import { Pencil, Trash2, Maximize2, Download, X, ImageDown } from "lucide-react";
 import dynamic from "next/dynamic";
 
 const Excalidraw = dynamic(
@@ -43,17 +43,66 @@ async function deleteDrawing(drawingId: string) {
   });
 }
 
+// ── Library cache (loaded once, shared across all instances) ──
+let _libraryItemsCache: any[] | null = null;
+async function getLibraryItems(): Promise<any[]> {
+  if (_libraryItemsCache) return _libraryItemsCache;
+  try {
+    const res = await fetch("/libraries/all-libraries.json");
+    if (!res.ok) { console.error("[Library] fetch failed:", res.status, res.url); return []; }
+    _libraryItemsCache = await res.json();
+    console.log("[Library] fetched", _libraryItemsCache!.length, "items");
+  } catch (e) { console.error("[Library] load error:", e); }
+  return _libraryItemsCache || [];
+}
+
 // ── NodeView ──
 
 const ExcalidrawNodeView: FC<any> = ({ node, updateAttributes, deleteNode, editor }) => {
   const [isEditing, setIsEditing] = useState(false);
+  const [isViewing, setIsViewing] = useState(false);
   const [svgPreview, setSvgPreview] = useState<string | null>(null);
   const [initialData, setInitialData] = useState<any>(null);
   const excalidrawAPIRef = useRef<any>(null);
+  // Stored as state so useEffect fires after the API is available
+  const [excalidrawAPI, setExcalidrawAPI] = useState<any>(null);
 
   const drawingId: string | null = node.attrs.drawingId || null;
 
-  // Derive the doc name from the editor's filename (passed via editor storage or DOM)
+  const downloadSvg = useCallback(() => {
+    if (!svgPreview) return;
+    const blob = new Blob([svgPreview], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "drawing.svg";
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [svgPreview]);
+
+  const downloadPng = useCallback(() => {
+    if (!svgPreview) return;
+    const blob = new Blob([svgPreview], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      const scale = 2;
+      canvas.width = img.naturalWidth * scale || 1600;
+      canvas.height = img.naturalHeight * scale || 900;
+      const ctx = canvas.getContext("2d")!;
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      const a = document.createElement("a");
+      a.href = canvas.toDataURL("image/png");
+      a.download = "drawing.png";
+      a.click();
+    };
+    img.src = url;
+  }, [svgPreview]);
+
+  // Derive the doc name
   const getDocName = (): string => {
     // Try to get from the closest page context
     const header = document.querySelector("header span");
@@ -71,6 +120,20 @@ const ExcalidrawNodeView: FC<any> = ({ node, updateAttributes, deleteNode, edito
       if (data) setSvgPreview(data.svgData);
     });
   }, [drawingId]);
+
+  // Load library once the Excalidraw API is ready (after component mounts)
+  useEffect(() => {
+    if (!excalidrawAPI) return;
+    getLibraryItems().then((items) => {
+      if (items.length > 0) {
+        excalidrawAPI.updateLibrary({
+          libraryItems: items,
+          merge: false,
+          defaultStatus: "published",
+        });
+      }
+    });
+  }, [excalidrawAPI]);
 
   // Lazy-load Excalidraw CSS when editing
   useEffect(() => {
@@ -155,7 +218,44 @@ const ExcalidrawNodeView: FC<any> = ({ node, updateAttributes, deleteNode, edito
 
   return (
     <NodeViewWrapper className="excalidraw-block">
-      {/* Full-screen modal */}
+      {/* Lightbox viewer */}
+      {isViewing && svgPreview && (
+        <div
+          className="excalidraw-modal-backdrop"
+          onClick={() => setIsViewing(false)}
+        >
+          <div
+            className="drawio-lightbox"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="excalidraw-modal-header">
+              <span className="flex items-center gap-2 text-sm font-semibold">
+                <Maximize2 className="h-4 w-4" />
+                Drawing
+              </span>
+              <div className="flex items-center gap-2">
+                <button onClick={downloadSvg} className="excalidraw-action-btn" title="Download SVG">
+                  <Download className="h-3.5 w-3.5" /> SVG
+                </button>
+                <button onClick={downloadPng} className="excalidraw-action-btn" title="Download PNG">
+                  <ImageDown className="h-3.5 w-3.5" /> PNG
+                </button>
+                <button onClick={() => setIsViewing(false)} className="excalidraw-cancel-btn">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            <div className="drawio-lightbox-body">
+              <div
+                className="drawio-lightbox-svg"
+                dangerouslySetInnerHTML={{ __html: svgPreview }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Full-screen editor modal */}
       {isEditing && initialData && (
         <div className="excalidraw-modal-backdrop">
           <div className="excalidraw-modal">
@@ -180,6 +280,7 @@ const ExcalidrawNodeView: FC<any> = ({ node, updateAttributes, deleteNode, edito
               <Excalidraw
                 excalidrawAPI={(api: any) => {
                   excalidrawAPIRef.current = api;
+                  setExcalidrawAPI(api);
                 }}
                 initialData={initialData}
               />
@@ -193,6 +294,9 @@ const ExcalidrawNodeView: FC<any> = ({ node, updateAttributes, deleteNode, edito
         {drawingId && svgPreview ? (
           <>
             <div className="excalidraw-hover-actions">
+              <button onClick={() => setIsViewing(true)} className="excalidraw-action-btn">
+                <Maximize2 className="h-3.5 w-3.5" /> View
+              </button>
               <button onClick={openEditor} className="excalidraw-action-btn">
                 <Pencil className="h-3.5 w-3.5" /> Edit
               </button>
@@ -204,7 +308,8 @@ const ExcalidrawNodeView: FC<any> = ({ node, updateAttributes, deleteNode, edito
               </button>
             </div>
             <div
-              className="excalidraw-svg-preview"
+              className="excalidraw-svg-preview cursor-zoom-in"
+              onMouseDown={(e) => { e.preventDefault(); setIsViewing(true); }}
               dangerouslySetInnerHTML={{ __html: svgPreview }}
             />
           </>

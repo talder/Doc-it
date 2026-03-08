@@ -4,6 +4,7 @@ import path from "path";
 import { requireSpaceRole } from "@/lib/permissions";
 import { getSpaceDir } from "@/lib/config";
 import { extractHashtags, buildTagsIndex } from "@/lib/tags";
+import { parseFrontmatter } from "@/lib/frontmatter";
 
 const EXCLUDED = ["attachments", ".git", ".DS_Store"];
 
@@ -24,11 +25,14 @@ async function scanDocsForTags(
 
   for (const entry of entries) {
     if (entry.isFile() && entry.name.endsWith(".md")) {
-      const content = await fs.readFile(path.join(dir, entry.name), "utf-8");
+      const raw = await fs.readFile(path.join(dir, entry.name), "utf-8");
+      const { body, metadata } = parseFrontmatter(raw);
       const docName = `${categoryPath ? categoryPath + "/" : ""}${entry.name.replace(/\.md$/, "")}`;
-      const tags = extractHashtags(content);
-      if (tags.length > 0) {
-        results.push({ name: docName, tags });
+      const inlineTags = extractHashtags(body);
+      const fmTags = (metadata.tags || []).map((t) => t.toLowerCase());
+      const allTags = [...new Set([...inlineTags, ...fmTags])];
+      if (allTags.length > 0) {
+        results.push({ name: docName, tags: allTags });
       }
     } else if (entry.isDirectory() && !EXCLUDED.includes(entry.name)) {
       const subPath = categoryPath ? `${categoryPath}/${entry.name}` : entry.name;

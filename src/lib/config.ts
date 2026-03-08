@@ -42,6 +42,56 @@ export function getHistoryDir(spaceSlug: string, categoryPath: string, docName: 
   return path.join(HISTORY_DIR, spaceSlug, categoryPath, docName);
 }
 
+export function getDocStatusFilePath(spaceSlug: string) {
+  return path.join(DOCS_DIR, spaceSlug, ".doc-status.json");
+}
+
+export async function readDocStatusMap(spaceSlug: string): Promise<import("./types").DocStatusMap> {
+  const file = getDocStatusFilePath(spaceSlug);
+  try {
+    const data = await fs.readFile(file, "utf-8");
+    return JSON.parse(data);
+  } catch {
+    return {};
+  }
+}
+
+export async function writeDocStatusMap(
+  spaceSlug: string,
+  map: import("./types").DocStatusMap,
+): Promise<void> {
+  const file = getDocStatusFilePath(spaceSlug);
+  await fs.writeFile(file, JSON.stringify(map, null, 2), "utf-8");
+}
+
+export function getCustomizationPath(spaceSlug: string) {
+  return path.join(DOCS_DIR, spaceSlug, ".customization.json");
+}
+
+export async function readCustomization(spaceSlug: string): Promise<import("./types").SpaceCustomization> {
+  const file = getCustomizationPath(spaceSlug);
+  try {
+    const data = await fs.readFile(file, "utf-8");
+    const parsed = JSON.parse(data);
+    return {
+      docIcons: parsed.docIcons || {},
+      docColors: parsed.docColors || {},
+      categoryIcons: parsed.categoryIcons || {},
+      categoryColors: parsed.categoryColors || {},
+    };
+  } catch {
+    return { docIcons: {}, docColors: {}, categoryIcons: {}, categoryColors: {} };
+  }
+}
+
+export async function writeCustomization(
+  spaceSlug: string,
+  data: import("./types").SpaceCustomization,
+): Promise<void> {
+  const file = getCustomizationPath(spaceSlug);
+  await fs.writeFile(file, JSON.stringify(data, null, 2), "utf-8");
+}
+
 export async function ensureDir(dir: string) {
   try {
     await fs.access(dir);

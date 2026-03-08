@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { hasUsers, getUsers, writeUsers, hashPassword, createSession, getSessionCookieName } from "@/lib/auth";
 import { writeJsonConfig, ensureDir, getSpaceDir } from "@/lib/config";
+import { auditLog } from "@/lib/audit";
 import type { Space, User } from "@/lib/types";
 
 export async function POST(request: NextRequest) {
@@ -61,6 +62,8 @@ export async function POST(request: NextRequest) {
 
   // Create session and set cookie
   const sessionId = await createSession(newUser.username);
+
+  auditLog(request, { event: "auth.setup", outcome: "success", actor: newUser.username, sessionType: "session", details: { spaceName: spaceName.trim() } });
 
   const response = NextResponse.json({ success: true });
   response.cookies.set(getSessionCookieName(), sessionId, {

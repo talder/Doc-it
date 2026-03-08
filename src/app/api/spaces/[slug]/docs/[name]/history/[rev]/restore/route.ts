@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import { requireSpaceRole } from "@/lib/permissions";
 import { getCategoryDir, getHistoryDir, ensureDir } from "@/lib/config";
+import { auditLog } from "@/lib/audit";
 
 type Params = { params: Promise<{ slug: string; name: string; rev: string }> };
 
@@ -18,8 +19,9 @@ export async function POST(request: NextRequest, { params }: Params) {
   const { slug, name, rev } = await params;
   const { category, username } = await request.json();
 
+  let restorer;
   try {
-    await requireSpaceRole(slug, "writer");
+    ({ user: restorer } = await requireSpaceRole(slug, "writer"));
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 403 });
   }
@@ -68,5 +70,6 @@ export async function POST(request: NextRequest, { params }: Params) {
   meta = meta.filter((m) => m.rev <= revNum);
   await fs.writeFile(metaPath, JSON.stringify(meta, null, 2), "utf-8");
 
+  auditLog(request, { event: "document.history.restore", outcome: "success", actor: restorer.username, spaceSlug: slug, resource: `${category}/${name}`, resourceType: "document", details: { rev: revNum } });
   return NextResponse.json({ rev: revNum, restored: true });
 }

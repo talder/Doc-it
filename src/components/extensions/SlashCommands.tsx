@@ -5,8 +5,10 @@ import { ReactRenderer } from "@tiptap/react";
 import Suggestion from "@tiptap/suggestion";
 import tippy from "tippy.js";
 import {
-  Heading1, Heading2, List, ListChecks, Code2, Quote,
+  Heading1, Heading2, Heading3, Heading4, List, ListOrdered, ListChecks, Code2, Quote,
   Table, ImageIcon, ChevronDown, Lightbulb, Pencil, GitBranch,
+  Minus, AlignLeft, AlignCenter, AlignRight, Link, Paperclip,
+  FileText, CalendarDays, Clock, Sigma, FileImage, LayoutTemplate, Database,
 } from "lucide-react";
 import { SlashCommandsList } from "./SlashCommandsList";
 import { PluginKey } from "@tiptap/pm/state";
@@ -19,6 +21,7 @@ export interface SlashCommandItem {
 }
 
 const getSlashCommands = (): SlashCommandItem[] => [
+  // ── Headings ────────────────────────────────────────────────────────────────
   {
     title: "Heading 1",
     description: "Big section heading",
@@ -36,11 +39,36 @@ const getSlashCommands = (): SlashCommandItem[] => [
     },
   },
   {
+    title: "Heading 3",
+    description: "Small section heading",
+    icon: <Heading3 className="h-4 w-4" />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setHeading({ level: 3 }).run();
+    },
+  },
+  {
+    title: "Heading 4",
+    description: "Smallest section heading",
+    icon: <Heading4 className="h-4 w-4" />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setHeading({ level: 4 }).run();
+    },
+  },
+  // ── Lists ────────────────────────────────────────────────────────────────────
+  {
     title: "Bullet List",
     description: "Create a bulleted list",
     icon: <List className="h-4 w-4" />,
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).toggleBulletList().run();
+    },
+  },
+  {
+    title: "Numbered List",
+    description: "Create a numbered list",
+    icon: <ListOrdered className="h-4 w-4" />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).toggleOrderedList().run();
     },
   },
   {
@@ -51,12 +79,62 @@ const getSlashCommands = (): SlashCommandItem[] => [
       editor.chain().focus().deleteRange(range).toggleTaskList().run();
     },
   },
+  // ── Alignment ────────────────────────────────────────────────────────────────
+  {
+    title: "Align Left",
+    description: "Align text to the left",
+    icon: <AlignLeft className="h-4 w-4" />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setTextAlign("left").run();
+    },
+  },
+  {
+    title: "Align Center",
+    description: "Center align text",
+    icon: <AlignCenter className="h-4 w-4" />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setTextAlign("center").run();
+    },
+  },
+  {
+    title: "Align Right",
+    description: "Align text to the right",
+    icon: <AlignRight className="h-4 w-4" />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setTextAlign("right").run();
+    },
+  },
+  // ── Content blocks ───────────────────────────────────────────────────────────
+  {
+    title: "Callout",
+    description: "Create a callout block",
+    icon: <Lightbulb className="h-4 w-4" />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setCallout("info").run();
+    },
+  },
   {
     title: "Code Block",
     description: "Create a code block",
     icon: <Code2 className="h-4 w-4" />,
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).toggleCodeBlock().run();
+    },
+  },
+  {
+    title: "Collapsible",
+    description: "Create a collapsible section",
+    icon: <ChevronDown className="h-4 w-4" />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run();
+    },
+  },
+  {
+    title: "Divider",
+    description: "Insert a horizontal rule",
+    icon: <Minus className="h-4 w-4" />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setHorizontalRule().run();
     },
   },
   {
@@ -76,32 +154,17 @@ const getSlashCommands = (): SlashCommandItem[] => [
         .insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
     },
   },
+  // ── Insert / Media ───────────────────────────────────────────────────────────
   {
-    title: "Image",
-    description: "Insert an image",
-    icon: <ImageIcon className="h-4 w-4" />,
+    title: "Attachment",
+    description: "Upload a file attachment",
+    icon: <Paperclip className="h-4 w-4" />,
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).run();
-      const url = window.prompt("Image URL");
-      if (url) {
-        editor.chain().focus().setImage({ src: url }).run();
-      }
-    },
-  },
-  {
-    title: "Collapsible",
-    description: "Create a collapsible section",
-    icon: <ChevronDown className="h-4 w-4" />,
-    command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).run();
-    },
-  },
-  {
-    title: "Callout",
-    description: "Create a callout block",
-    icon: <Lightbulb className="h-4 w-4" />,
-    command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).setCallout("info").run();
+      document.dispatchEvent(new CustomEvent("slash:attachment", {
+        detail: { editor },
+        bubbles: true,
+      }));
     },
   },
   {
@@ -118,6 +181,142 @@ const getSlashCommands = (): SlashCommandItem[] => [
     icon: <GitBranch className="h-4 w-4" />,
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).insertDrawio().run();
+    },
+  },
+  {
+    title: "Image",
+    description: "Insert an image",
+    icon: <ImageIcon className="h-4 w-4" />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run();
+      document.dispatchEvent(new CustomEvent("slash:image", {
+        detail: { editor },
+        bubbles: true,
+      }));
+    },
+  },
+  {
+    title: "Inline Equation",
+    description: "Insert a math equation (KaTeX)",
+    icon: <Sigma className="h-4 w-4" />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run();
+      document.dispatchEvent(new CustomEvent("slash:math", {
+        detail: { editor },
+        bubbles: true,
+      }));
+    },
+  },
+  {
+    title: "Link",
+    description: "Insert a hyperlink",
+    icon: <Link className="h-4 w-4" />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run();
+      document.dispatchEvent(new CustomEvent("slash:link", {
+        detail: { editor },
+        bubbles: true,
+      }));
+    },
+  },
+  {
+    title: "PDF",
+    description: "Upload and embed a PDF",
+    icon: <FileText className="h-4 w-4" />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run();
+      document.dispatchEvent(new CustomEvent("slash:pdf", {
+        detail: { editor },
+        bubbles: true,
+      }));
+    },
+  },
+  // ── Data / Docs ──────────────────────────────────────────────────────────────
+  {
+    title: "Insert Database",
+    description: "Insert an existing database from this space",
+    icon: <Database className="h-4 w-4" style={{ color: "#14b8a6" }} />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run();
+      document.dispatchEvent(new CustomEvent("slash:database-existing", {
+        detail: { editor },
+        bubbles: true,
+      }));
+    },
+  },
+  {
+    title: "Linked Document",
+    description: "Link to another doc in this space",
+    icon: <FileImage className="h-4 w-4" />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run();
+      document.dispatchEvent(new CustomEvent("slash:linked-doc", {
+        detail: { editor },
+        bubbles: true,
+      }));
+    },
+  },
+  {
+    title: "New Database",
+    description: "Create and insert a new database",
+    icon: <Database className="h-4 w-4" />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run();
+      document.dispatchEvent(new CustomEvent("slash:database", {
+        detail: { editor },
+        bubbles: true,
+      }));
+    },
+  },
+  {
+    title: "Template Field",
+    description: "Insert a template placeholder field",
+    icon: <LayoutTemplate className="h-4 w-4" />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run();
+      document.dispatchEvent(new CustomEvent("slash:template-field", {
+        detail: { editor },
+        bubbles: true,
+      }));
+    },
+  },
+  // ── Date / Time ──────────────────────────────────────────────────────────────
+  {
+    title: "Date Now",
+    description: "Insert current date & time",
+    icon: <Clock className="h-4 w-4" />,
+    command: ({ editor, range }) => {
+      const now = new Date().toLocaleString(undefined, {
+        year: "numeric", month: "long", day: "numeric",
+        hour: "2-digit", minute: "2-digit",
+      });
+      editor.chain().focus().deleteRange(range).insertContent(now).run();
+    },
+  },
+  {
+    title: "Date Today",
+    description: "Insert today's date",
+    icon: <CalendarDays className="h-4 w-4" />,
+    command: ({ editor, range }) => {
+      const date = new Date().toLocaleDateString(undefined, {
+        year: "numeric", month: "long", day: "numeric",
+      });
+      editor.chain().focus().deleteRange(range).insertContent(date).run();
+    },
+  },
+  {
+    title: "Emoji",
+    description: "Insert an emoji from the picker",
+    icon: <span style={{ fontSize: "14px", lineHeight: 1 }}>😊</span>,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run();
+      const view = editor.view;
+      const from = editor.state.selection.from;
+      const coords = view.coordsAtPos(from);
+      document.dispatchEvent(new CustomEvent("slash:emoji", {
+        detail: { editor, coords },
+        bubbles: true,
+      }));
     },
   },
 ];

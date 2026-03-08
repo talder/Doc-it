@@ -69,14 +69,21 @@ export async function getSessionUser(sessionId: string): Promise<User | null> {
   return getUserByUsername(session.username);
 }
 
-// --- Current user (from cookie) ---
+// --- Current user (cookie or bearer user-key) ---
 
 export async function getCurrentUser(): Promise<User | null> {
   try {
+    // 1. Cookie-based session
     const cookieStore = await cookies();
     const sessionCookie = cookieStore.get(COOKIE_NAME);
-    if (!sessionCookie?.value) return null;
-    return getSessionUser(sessionCookie.value);
+    if (sessionCookie?.value) return getSessionUser(sessionCookie.value);
+
+    // 2. Bearer token — user API key (dk_u_...)
+    const { getBearerToken, resolveUserApiKey } = await import("./api-keys");
+    const token = await getBearerToken();
+    if (token?.startsWith("dk_u_")) return resolveUserApiKey(token);
+
+    return null;
   } catch {
     return null;
   }
