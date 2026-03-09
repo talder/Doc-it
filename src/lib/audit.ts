@@ -12,7 +12,13 @@
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
-import { randomUUID } from "crypto";
+import {
+  randomUUID,
+  randomBytes,
+  createCipheriv,
+  createDecipheriv,
+  pbkdf2Sync,
+} from "crypto";
 import { readJsonConfig, writeJsonConfig } from "./config";
 import type {
   AuditConfig,
@@ -26,7 +32,65 @@ import type { NextRequest } from "next/server";
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const AUDIT_CONFIG_FILE = "audit.json";
+const AUDIT_KEY_FILE = "audit-key.json";
 const LOGS_DIR = path.join(process.cwd(), "logs");
+
+// ── Encryption helpers ─────────────────────────────────────────────────────────
+
+/** Module-level key cache — loaded once per process. */
+let _auditKeyCache: Buffer | null = null;
+
+async function getAuditKey(): Promise<Buffer> {
+  if (_auditKeyCache) return _auditKeyCache;
+
+  const envSecret = process.env.AUDIT_LOG_SECRET;
+  if (envSecret) {
+    // Derive a 32-byte key via PBKDF2 when the env var is set
+    _auditKeyCache = pbkdf2Sync(envSecret, "doc-it-audit-v1", 100_000, 32, "sha256");
+    return _auditKeyCache;
+  }
+
+  // Otherwise use (or generate) a random per-install key stored in config
+  const stored = await readJsonConfig<{ key?: string }>(AUDIT_KEY_FILE, {});
+  if (stored.key) {
+    _auditKeyCache = Buffer.from(stored.key, "base64");
+    return _auditKeyCache;
+  }
+
+  const newKey = randomBytes(32);
+  await writeJsonConfig(AUDIT_KEY_FILE, { key: newKey.toString("base64") });
+  _auditKeyCache = newKey;
+  return _auditKeyCache;
+}
+
+/** Encrypt a plaintext audit line. Returns `ENC:<iv>:<authTag>:<ciphertext>` (all base64). */
+async function encryptLine(plain: string): Promise<string> {
+  const key = await getAuditKey();
+  const iv = randomBytes(16);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const encrypted = Buffer.concat([cipher.update(plain, "utf-8"), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return `ENC:${iv.toString("base64")}:${authTag.toString("base64")}:${encrypted.toString("base64")}`;
+}
+
+/**
+ * Decrypt an audit line. Transparent: if the line does not start with `ENC:`
+ * it is returned as-is for backward compatibility with unencrypted logs.
+ */
+async function decryptLine(line: string): Promise<string> {
+  if (!line.startsWith("ENC:")) return line;
+  const rest = line.slice(4);
+  const firstColon = rest.indexOf(":");
+  const secondColon = rest.indexOf(":", firstColon + 1);
+  if (firstColon === -1 || secondColon === -1) return line;
+  const iv = Buffer.from(rest.slice(0, firstColon), "base64");
+  const authTag = Buffer.from(rest.slice(firstColon + 1, secondColon), "base64");
+  const ciphertext = Buffer.from(rest.slice(secondColon + 1), "base64");
+  const key = await getAuditKey();
+  const decipher = createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAuthTag(authTag);
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf-8");
+}
 
 const DEFAULT_CONFIG: AuditConfig = {
   enabled: true,
@@ -190,8 +254,10 @@ async function writeToLocalFile(entry: AuditEntry, retentionDays: number): Promi
   const dateStr = entry.timestamp.slice(0, 10); // YYYY-MM-DD
   const logFile = path.join(LOGS_DIR, `audit-${dateStr}.jsonl`);
 
-  // Append JSONL line (atomic enough for Node single-process; file is created if missing)
-  await fs.appendFile(logFile, JSON.stringify(entry) + "\n", "utf-8");
+  // Encrypt then append JSONL line
+  const plain = JSON.stringify(entry);
+  const line = await encryptLine(plain);
+  await fs.appendFile(logFile, line + "\n", "utf-8");
 
   // Run cleanup once per calendar day
   const today = new Date().toISOString().slice(0, 10);
@@ -344,7 +410,8 @@ export async function queryAuditLogs(params: AuditQueryParams): Promise<AuditQue
     const lines = content.split("\n").filter(Boolean);
     for (const line of lines) {
       try {
-        const entry = JSON.parse(line) as AuditEntry;
+        const plain = await decryptLine(line);
+        const entry = JSON.parse(plain) as AuditEntry;
 
         if (params.event && entry.event !== params.event) continue;
         if (params.actor && !entry.actor.toLowerCase().includes(params.actor.toLowerCase())) continue;
@@ -397,6 +464,7 @@ export async function getCalendarCounts(
   for (const file of files) {
     const d = file.slice(6, 16); // YYYY-MM-DD
     const content = await fs.readFile(path.join(LOGS_DIR, file), "utf-8").catch(() => "");
+    // Count non-empty lines (each line is one audit entry, encrypted or plain)
     const lineCount = content.split("\n").filter(Boolean).length;
     if (lineCount > 0) counts[d] = lineCount;
   }

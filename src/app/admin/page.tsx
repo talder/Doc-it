@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Plus, Trash2, Shield, ShieldCheck, Users, Layout, Settings, Key, Copy, Check, ClipboardList, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Shield, ShieldCheck, Users, Layout, Settings, Key, Copy, Check, ClipboardList, ChevronLeft, ChevronRight, Download, Lock, LockOpen, ChevronDown, ChevronUp } from "lucide-react";
 import PasswordStrengthMeter from "@/components/PasswordStrengthMeter";
 import { isPasswordValid } from "@/lib/password-policy";
 import type { SanitizedUser, Space, SpaceRole, AuditConfig, AuditEntry } from "@/lib/types";
@@ -25,6 +25,9 @@ interface AdminUser {
   isAdmin: boolean;
   isSuperAdmin?: boolean;
   createdAt?: string;
+  isLocked?: boolean;
+  failedLoginAttempts?: number;
+  lockedAt?: string;
 }
 
 export default function AdminPage() {
@@ -63,6 +66,17 @@ function AdminContent() {
   const [revealedSvcSecret, setRevealedSvcSecret] = useState<{ id: string; secret: string } | null>(null);
   const [copiedSvcId, setCopiedSvcId] = useState<string | null>(null);
   const [creatingSvc, setCreatingSvc] = useState(false);
+
+  // Per-user expanded space panel
+  const [expandedUserSpaces, setExpandedUserSpaces] = useState<string | null>(null);
+  const [userSpacePermUser, setUserSpacePermUser] = useState("");
+  const [userSpacePermRole, setUserSpacePermRole] = useState<SpaceRole>("reader");
+
+  // Audit auth gate
+  const [auditConfirmed, setAuditConfirmed] = useState(false);
+  const [auditPassword, setAuditPassword] = useState("");
+  const [auditPasswordError, setAuditPasswordError] = useState("");
+  const [auditPasswordLoading, setAuditPasswordLoading] = useState(false);
 
   // SMTP state
   const [smtp, setSmtp] = useState({ host: "", port: 587, secure: false, user: "", pass: "", from: "", adminEmail: "" });
@@ -211,6 +225,11 @@ function AdminContent() {
     if (currentUser) {
       fetchUsers();
       fetchSpaces();
+      // Check if audit tab is already confirmed (e.g. from a previous visit)
+      fetch("/api/auth/confirm-password")
+        .then((r) => r.json())
+        .then((d) => { if (d.confirmed) setAuditConfirmed(true); })
+        .catch(() => {});
     }
   }, [currentUser, fetchUsers, fetchSpaces]);
 
@@ -268,6 +287,42 @@ function AdminContent() {
     } else {
       const data = await res.json();
       flash(data.error || "Failed to delete user", "error");
+    }
+  };
+
+  const handleUnlockUser = async (username: string) => {
+    const res = await fetch(`/api/users/${encodeURIComponent(username)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ unlock: true }),
+    });
+    if (res.ok) {
+      flash(`${username} has been unlocked`, "success");
+      await fetchUsers();
+    } else {
+      const data = await res.json();
+      flash(data.error || "Failed to unlock user", "error");
+    }
+  };
+
+  const handleConfirmAuditPassword = async () => {
+    setAuditPasswordLoading(true);
+    setAuditPasswordError("");
+    const res = await fetch("/api/auth/confirm-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: auditPassword }),
+    });
+    setAuditPasswordLoading(false);
+    if (res.ok) {
+      setAuditConfirmed(true);
+      setAuditPassword("");
+      fetchAuditConfig();
+      fetchCalendar(calYear, calMonth);
+      fetchAuditLogs(explorerFilters, 1);
+    } else {
+      const d = await res.json();
+      setAuditPasswordError(d.error || "Incorrect password");
     }
   };
 
@@ -421,9 +476,11 @@ function AdminContent() {
           <button
             onClick={() => {
               setTab("audit");
-              if (!auditConfigLoaded) fetchAuditConfig();
-              fetchCalendar(calYear, calMonth);
-              fetchAuditLogs(explorerFilters, 1);
+              if (auditConfirmed) {
+                if (!auditConfigLoaded) fetchAuditConfig();
+                fetchCalendar(calYear, calMonth);
+                fetchAuditLogs(explorerFilters, 1);
+              }
             }}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
               tab === "audit" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
@@ -513,42 +570,152 @@ function AdminContent() {
 
             <div className="divide-y divide-gray-100">
               {users.map((u) => (
-                <div key={u.username} className="flex items-center justify-between px-6 py-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-accent-light text-accent flex items-center justify-center text-sm font-medium">
-                      {u.username[0]?.toUpperCase()}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-text-primary">{u.username}</span>
-                        {u.isSuperAdmin && (
-                          <span className="px-1.5 py-0.5 text-[10px] font-medium bg-purple-100 text-purple-700 rounded">Owner</span>
+                <div key={u.username}>
+                  <div className="flex items-center justify-between px-6 py-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-accent-light text-accent flex items-center justify-center text-sm font-medium">
+                        {u.username[0]?.toUpperCase()}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-text-primary">{u.username}</span>
+                          {u.isSuperAdmin && (
+                            <span className="px-1.5 py-0.5 text-[10px] font-medium bg-purple-100 text-purple-700 rounded">Owner</span>
+                          )}
+                          {u.isAdmin && !u.isSuperAdmin && (
+                            <span className="px-1.5 py-0.5 text-[10px] font-medium bg-accent-light text-accent-text rounded">Admin</span>
+                          )}
+                          {u.isLocked && (
+                            <span className="px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-700 rounded flex items-center gap-0.5">
+                              <Lock className="w-2.5 h-2.5" /> Locked
+                            </span>
+                          )}
+                        </div>
+                        {u.createdAt && (
+                          <span className="text-xs text-text-muted">Created {new Date(u.createdAt).toLocaleDateString()}</span>
                         )}
-                        {u.isAdmin && !u.isSuperAdmin && (
-                          <span className="px-1.5 py-0.5 text-[10px] font-medium bg-accent-light text-accent-text rounded">Admin</span>
+                        {u.isLocked && u.lockedAt && (
+                          <span className="text-xs text-red-500 block">Locked {new Date(u.lockedAt).toLocaleString()}</span>
                         )}
                       </div>
-                      {u.createdAt && (
-                        <span className="text-xs text-text-muted">Created {new Date(u.createdAt).toLocaleDateString()}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {/* Space access toggle */}
+                      <button
+                        onClick={() => setExpandedUserSpaces(expandedUserSpaces === u.username ? null : u.username)}
+                        className="p-1.5 rounded-lg hover:bg-muted text-gray-400 hover:text-gray-600 transition-colors"
+                        title="Manage space access"
+                      >
+                        {expandedUserSpaces === u.username ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      </button>
+                      {u.isLocked && (
+                        <button
+                          onClick={() => handleUnlockUser(u.username)}
+                          className="p-1.5 rounded-lg hover:bg-green-50 text-red-400 hover:text-green-600 transition-colors"
+                          title="Unlock account"
+                        >
+                          <LockOpen className="w-4 h-4" />
+                        </button>
+                      )}
+                      {!u.isSuperAdmin && (
+                        <>
+                          <button
+                            onClick={() => handleToggleAdmin(u.username, u.isAdmin)}
+                            className="p-1.5 rounded-lg hover:bg-muted text-gray-400 hover:text-gray-600 transition-colors"
+                            title={u.isAdmin ? "Remove admin" : "Make admin"}
+                          >
+                            {u.isAdmin ? <ShieldCheck className="w-4 h-4 text-blue-500" /> : <Shield className="w-4 h-4" />}
+                          </button>
+                          <button
+                            onClick={() => handleDeleteUser(u.username)}
+                            className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                            title="Delete user"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
-                  {!u.isSuperAdmin && (
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleToggleAdmin(u.username, u.isAdmin)}
-                        className="p-1.5 rounded-lg hover:bg-muted text-gray-400 hover:text-gray-600 transition-colors"
-                        title={u.isAdmin ? "Remove admin" : "Make admin"}
-                      >
-                        {u.isAdmin ? <ShieldCheck className="w-4 h-4 text-blue-500" /> : <Shield className="w-4 h-4" />}
-                      </button>
-                      <button
-                        onClick={() => handleDeleteUser(u.username)}
-                        className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
-                        title="Delete user"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+
+                  {/* Per-user space access panel */}
+                  {expandedUserSpaces === u.username && (
+                    <div className="mx-6 mb-3 border border-border rounded-lg bg-gray-50 overflow-hidden">
+                      <div className="px-4 py-2 border-b border-border bg-gray-100">
+                        <span className="text-xs font-medium text-gray-600">Space access for {u.username}</span>
+                      </div>
+                      {/* Existing memberships */}
+                      {spaces.filter((s) => s.permissions[u.username]).length === 0 ? (
+                        <p className="px-4 py-2 text-xs text-text-muted">Not a member of any space.</p>
+                      ) : (
+                        <div className="divide-y divide-gray-100">
+                          {spaces.filter((s) => s.permissions[u.username]).map((s) => (
+                            <div key={s.slug} className="flex items-center justify-between px-4 py-2">
+                              <span className="text-xs text-text-primary">{s.name}</span>
+                              <div className="flex items-center gap-1.5">
+                                <select
+                                  value={s.permissions[u.username]}
+                                  onChange={(e) => handleChangeRole(s.slug, u.username, e.target.value as SpaceRole)}
+                                  className="text-xs border border-border rounded px-2 py-0.5"
+                                >
+                                  <option value="reader">Reader</option>
+                                  <option value="writer">Writer</option>
+                                  <option value="admin">Admin</option>
+                                </select>
+                                <button
+                                  onClick={() => handleRemovePermission(s.slug, u.username)}
+                                  className="p-0.5 text-gray-400 hover:text-red-500"
+                                  title="Remove"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {/* Add to a space */}
+                      {spaces.filter((s) => !s.permissions[u.username]).length > 0 && (
+                        <div className="px-4 py-2 border-t border-border flex items-center gap-2">
+                          <select
+                            value={userSpacePermUser === u.username ? "" : ""}
+                            onChange={(e) => setUserSpacePermUser(e.target.value)}
+                            className="flex-1 text-xs border border-border rounded px-2 py-1"
+                          >
+                            <option value="">Add to space…</option>
+                            {spaces.filter((s) => !s.permissions[u.username]).map((s) => (
+                              <option key={s.slug} value={s.slug}>{s.name}</option>
+                            ))}
+                          </select>
+                          <select
+                            value={userSpacePermRole}
+                            onChange={(e) => setUserSpacePermRole(e.target.value as SpaceRole)}
+                            className="text-xs border border-border rounded px-2 py-1"
+                          >
+                            <option value="reader">Reader</option>
+                            <option value="writer">Writer</option>
+                            <option value="admin">Admin</option>
+                          </select>
+                          <button
+                            onClick={async () => {
+                              if (!userSpacePermUser) return;
+                              const space = spaces.find((s) => s.slug === userSpacePermUser);
+                              if (!space) return;
+                              const newPerms = { ...space.permissions, [u.username]: userSpacePermRole };
+                              const res = await fetch(`/api/spaces/${userSpacePermUser}`, {
+                                method: "PUT",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ permissions: newPerms }),
+                              });
+                              if (res.ok) { flash(`Added ${u.username} to ${space.name}`, "success"); setUserSpacePermUser(""); await fetchSpaces(); }
+                              else { const d = await res.json(); flash(d.error || "Failed", "error"); }
+                            }}
+                            className="px-2 py-1 text-xs font-medium bg-accent text-white rounded hover:bg-accent-hover"
+                          >
+                            Add
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -862,6 +1029,40 @@ function AdminContent() {
         {/* Audit Tab */}
         {tab === "audit" && (
           <div className="space-y-6">
+            {/* Password re-confirmation gate */}
+            {!auditConfirmed && (
+              <div className="bg-surface rounded-xl shadow-sm border border-border">
+                <div className="px-6 py-4 border-b border-border flex items-center gap-2">
+                  <Lock className="w-4 h-4 text-text-muted" />
+                  <h2 className="text-lg font-semibold text-text-primary">Confirm Your Identity</h2>
+                </div>
+                <div className="px-6 py-6 space-y-4 max-w-sm">
+                  <p className="text-sm text-text-muted">
+                    Audit logs are sensitive. Please re-enter your password to view them. Access expires after 15 minutes.
+                  </p>
+                  <input
+                    type="password"
+                    value={auditPassword}
+                    onChange={(e) => setAuditPassword(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleConfirmAuditPassword()}
+                    className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent bg-[var(--color-input-bg)] text-text-primary"
+                    placeholder="Your password"
+                    autoFocus
+                  />
+                  {auditPasswordError && (
+                    <p className="text-sm text-red-600">{auditPasswordError}</p>
+                  )}
+                  <button
+                    onClick={handleConfirmAuditPassword}
+                    disabled={auditPasswordLoading || !auditPassword}
+                    className="px-4 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50 transition-colors"
+                  >
+                    {auditPasswordLoading ? "Verifying…" : "Confirm"}
+                  </button>
+                </div>
+              </div>
+            )}
+            {auditConfirmed && (<>
 
             {/* Sub-section toggle */}
             <div className="flex gap-2">
@@ -1082,6 +1283,7 @@ function AdminContent() {
                 </div>
               </>
             )}
+            </>)}
           </div>
         )}
 

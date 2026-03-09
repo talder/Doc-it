@@ -35,6 +35,18 @@ export interface User {
   passwordHistory?: string[];
   /** Set by admin on user creation/reset — forces password change on first login */
   mustChangePassword?: boolean;
+  /** Consecutive failed login attempts since last success */
+  failedLoginAttempts?: number;
+  /** ISO timestamp when account was locked */
+  lockedAt?: string;
+  /** True when account is locked — only admin can unlock */
+  isLocked?: boolean;
+  /** Base32-encoded TOTP secret (encrypted at rest via audit key) */
+  totpSecret?: string;
+  /** Whether TOTP MFA is active for this account */
+  totpEnabled?: boolean;
+  /** SHA-256 hashes of single-use TOTP backup codes */
+  totpBackupCodes?: string[];
 }
 
 export type SanitizedUser = Omit<User, "passwordHash">;
@@ -306,7 +318,12 @@ export type AuditEventType =
   | "service_key.revoke"
   | "settings.update"
   | "access.denied"
-  | "offline.bundle.download";
+  | "offline.bundle.download"
+  | "auth.account.locked"
+  | "auth.account.unlocked"
+  | "auth.mfa.enabled"
+  | "auth.mfa.disabled"
+  | "auth.mfa.backup_used";
 
 export interface AuditEntry {
   eventId: string;

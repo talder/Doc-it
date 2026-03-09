@@ -11,12 +11,15 @@ export async function GET() {
 
   const users = await getUsers();
   // Return sanitized user list
-  const sanitized = users.map(({ username, isAdmin, isSuperAdmin, createdAt, lastLogin }) => ({
+  const sanitized = users.map(({ username, isAdmin, isSuperAdmin, createdAt, lastLogin, isLocked, failedLoginAttempts, lockedAt }) => ({
     username,
     isAdmin,
     isSuperAdmin,
     createdAt,
     lastLogin,
+    isLocked: isLocked ?? false,
+    failedLoginAttempts: failedLoginAttempts ?? 0,
+    lockedAt,
   }));
 
   return NextResponse.json(sanitized);

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Camera, Key, Plus, Trash2, Copy, Check } from "lucide-react";
+import { ArrowLeft, Camera, Key, Plus, Trash2, Copy, Check, ShieldCheck, ShieldOff, RefreshCw } from "lucide-react";
 import PasswordStrengthMeter from "@/components/PasswordStrengthMeter";
 import { isPasswordValid } from "@/lib/password-policy";
 import { useTheme } from "@/components/ThemeProvider";
@@ -44,11 +44,32 @@ export default function ProfilePage() {
   const [revealedSecret, setRevealedSecret] = useState<{ id: string; secret: string } | null>(null);
   const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
 
+  // TOTP / MFA state
+  const [totpEnabled, setTotpEnabled] = useState(false);
+  const [totpBackupRemaining, setTotpBackupRemaining] = useState(0);
+  const [totpSetupStep, setTotpSetupStep] = useState<"idle" | "scan" | "verify" | "backup">("idle");
+  const [totpQr, setTotpQr] = useState("");
+  const [totpSecret, setTotpSecret] = useState("");
+  const [totpCode, setTotpCode] = useState("");
+  const [totpNewBackupCodes, setTotpNewBackupCodes] = useState<string[]>([]);
+  const [totpDisablePassword, setTotpDisablePassword] = useState("");
+  const [totpShowDisable, setTotpShowDisable] = useState(false);
+  const [totpLoading, setTotpLoading] = useState(false);
+
   const fetchApiKeys = async () => {
     const res = await fetch("/api/auth/api-keys");
     if (res.ok) {
       const data = await res.json();
       setApiKeys(data.keys ?? []);
+    }
+  };
+
+  const fetchTotpStatus = async () => {
+    const res = await fetch("/api/auth/totp");
+    if (res.ok) {
+      const d = await res.json();
+      setTotpEnabled(d.totpEnabled ?? false);
+      setTotpBackupRemaining(d.backupCodesRemaining ?? 0);
     }
   };
 
@@ -67,9 +88,10 @@ export default function ProfilePage() {
         setAccentColorPref(data.preferences?.accentColor ?? "default");
         setLoading(false);
         fetchApiKeys();
+        fetchTotpStatus();
       })
       .catch(() => router.replace("/login"));
-  }, [router]);
+  }, [router]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCreateApiKey = async () => {
     const name = newKeyName.trim();
@@ -527,6 +549,213 @@ export default function ProfilePage() {
                 {creatingKey ? "Creating…" : "Create key"}
               </button>
             </div>
+          </div>
+        </div>
+
+        {/* Two-Factor Authentication */}
+        <div className="bg-surface rounded-xl shadow-sm border border-border mb-6">
+          <div className="px-6 py-4 border-b border-border flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-text-muted" />
+            <h2 className="text-lg font-semibold text-text-primary">Two-Factor Authentication</h2>
+            {totpEnabled && (
+              <span className="ml-auto px-2 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded-full">Enabled</span>
+            )}
+          </div>
+          <div className="px-6 py-4 space-y-4">
+            {!totpEnabled && totpSetupStep === "idle" && (
+              <>
+                <p className="text-sm text-text-muted">
+                  Protect your account with a time-based one-time password (TOTP). Works with Apple Passwords, Google Authenticator, Microsoft Authenticator, and Authy.
+                </p>
+                <button
+                  onClick={async () => {
+                    setTotpLoading(true);
+                    const res = await fetch("/api/auth/totp/setup", { method: "POST" });
+                    if (res.ok) {
+                      const d = await res.json();
+                      setTotpQr(d.qr);
+                      setTotpSecret(d.secret);
+                      setTotpSetupStep("scan");
+                    } else flash("Failed to start MFA setup", "error");
+                    setTotpLoading(false);
+                  }}
+                  disabled={totpLoading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50 transition-colors"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  Set up MFA
+                </button>
+              </>
+            )}
+
+            {totpSetupStep === "scan" && (
+              <div className="space-y-4">
+                <p className="text-sm font-medium text-text-primary">Step 1 — Scan this QR code with your authenticator app</p>
+                <div className="flex justify-center">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={totpQr} alt="TOTP QR code" className="w-48 h-48 rounded-lg border border-border" />
+                </div>
+                <details className="text-xs text-text-muted">
+                  <summary className="cursor-pointer select-none">Can&apos;t scan? Enter key manually</summary>
+                  <code className="block mt-1 font-mono bg-muted px-2 py-1 rounded break-all">{totpSecret}</code>
+                </details>
+                <button
+                  onClick={() => setTotpSetupStep("verify")}
+                  className="px-4 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors"
+                >
+                  Next →
+                </button>
+                <button onClick={() => setTotpSetupStep("idle")} className="ml-3 text-sm text-text-muted hover:text-text-secondary">
+                  Cancel
+                </button>
+              </div>
+            )}
+
+            {totpSetupStep === "verify" && (
+              <div className="space-y-4">
+                <p className="text-sm font-medium text-text-primary">Step 2 — Enter the 6-digit code shown in your app to confirm</p>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value)}
+                  className="w-40 px-3 py-2 text-center text-xl font-mono tracking-widest border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent bg-[var(--color-input-bg)] text-text-primary"
+                  placeholder="000000"
+                  maxLength={6}
+                  autoFocus
+                />
+                <div className="flex items-center gap-3">
+                  <button
+                    disabled={totpLoading || totpCode.length < 6}
+                    onClick={async () => {
+                      setTotpLoading(true);
+                      const res = await fetch("/api/auth/totp/enable", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ secret: totpSecret, code: totpCode }),
+                      });
+                      const d = await res.json();
+                      setTotpLoading(false);
+                      if (res.ok) {
+                        setTotpNewBackupCodes(d.backupCodes);
+                        setTotpSetupStep("backup");
+                        setTotpEnabled(true);
+                        setTotpBackupRemaining(d.backupCodes.length);
+                      } else {
+                        flash(d.error || "Invalid code", "error");
+                        setTotpCode("");
+                      }
+                    }}
+                    className="px-4 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50 transition-colors"
+                  >
+                    {totpLoading ? "Verifying…" : "Confirm"}
+                  </button>
+                  <button onClick={() => setTotpSetupStep("scan")} className="text-sm text-text-muted hover:text-text-secondary">
+                    ← Back
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {totpSetupStep === "backup" && (
+              <div className="space-y-4">
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                  <p className="text-sm font-semibold text-amber-800 mb-1">⚠️ Save these backup codes now</p>
+                  <p className="text-xs text-amber-700 mb-3">Each code can be used once if you lose access to your authenticator. They will not be shown again.</p>
+                  <div className="grid grid-cols-2 gap-1">
+                    {totpNewBackupCodes.map((c) => (
+                      <code key={c} className="font-mono text-sm bg-white border border-amber-200 rounded px-2 py-1 text-center">{c}</code>
+                    ))}
+                  </div>
+                </div>
+                <button
+                  onClick={() => { setTotpSetupStep("idle"); setTotpNewBackupCodes([]); setTotpCode(""); }}
+                  className="px-4 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors"
+                >
+                  Done — I&apos;ve saved my backup codes
+                </button>
+              </div>
+            )}
+
+            {totpEnabled && totpSetupStep === "idle" && (
+              <div className="space-y-3">
+                <p className="text-sm text-text-muted">
+                  MFA is active. You have <strong>{totpBackupRemaining}</strong> backup code{totpBackupRemaining !== 1 ? "s" : ""} remaining.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={async () => {
+                      if (!confirm("Regenerate backup codes? Your existing codes will stop working immediately.")) return;
+                      const res = await fetch("/api/auth/totp/backup-codes", { method: "POST" });
+                      if (res.ok) {
+                        const d = await res.json();
+                        setTotpNewBackupCodes(d.backupCodes);
+                        setTotpBackupRemaining(d.backupCodes.length);
+                        setTotpSetupStep("backup");
+                      } else flash("Failed to regenerate backup codes", "error");
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-muted transition-colors"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Regenerate backup codes
+                  </button>
+                  <button
+                    onClick={() => setTotpShowDisable(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+                  >
+                    <ShieldOff className="w-3.5 h-3.5" />
+                    Disable MFA
+                  </button>
+                </div>
+
+                {totpShowDisable && (
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg space-y-3">
+                    <p className="text-sm font-medium text-red-800">Confirm your password to disable MFA</p>
+                    <input
+                      type="password"
+                      value={totpDisablePassword}
+                      onChange={(e) => setTotpDisablePassword(e.target.value)}
+                      className="w-full px-3 py-1.5 text-sm border border-red-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-400 bg-white"
+                      placeholder="Current password"
+                      autoFocus
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        disabled={totpLoading || !totpDisablePassword}
+                        onClick={async () => {
+                          setTotpLoading(true);
+                          const res = await fetch("/api/auth/totp", {
+                            method: "DELETE",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ password: totpDisablePassword }),
+                          });
+                          setTotpLoading(false);
+                          if (res.ok) {
+                            setTotpEnabled(false);
+                            setTotpShowDisable(false);
+                            setTotpDisablePassword("");
+                            setTotpBackupRemaining(0);
+                            flash("MFA disabled", "success");
+                          } else {
+                            const d = await res.json();
+                            flash(d.error || "Failed to disable MFA", "error");
+                          }
+                        }}
+                        className="px-4 py-1.5 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                      >
+                        {totpLoading ? "Disabling…" : "Disable MFA"}
+                      </button>
+                      <button
+                        onClick={() => { setTotpShowDisable(false); setTotpDisablePassword(""); }}
+                        className="px-3 py-1.5 text-sm text-text-muted hover:text-text-secondary"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

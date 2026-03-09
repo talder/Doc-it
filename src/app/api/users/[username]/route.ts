@@ -23,7 +23,19 @@ export async function PUT(request: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Cannot modify the system owner" }, { status: 403 });
   }
 
-  const { newUsername, password, isAdmin } = await request.json();
+  const body = await request.json();
+  const { newUsername, password, isAdmin, unlock } = body;
+
+  // Unlock account
+  if (unlock === true) {
+    users[idx].isLocked = false;
+    users[idx].failedLoginAttempts = 0;
+    delete users[idx].lockedAt;
+    await writeUsers(users);
+    auditLog(request, { event: "auth.account.unlocked", outcome: "success", actor: admin.username, resource: targetUsername, resourceType: "user" });
+    const { passwordHash, ...safe } = users[idx];
+    return NextResponse.json(safe);
+  }
 
   if (newUsername && newUsername !== targetUsername) {
     if (newUsername.length < 2) {
