@@ -6,6 +6,7 @@ import { ArrowLeft, Plus, Pin, PinOff, Trash2, List, BookMarked, Lock, Globe } f
 import JournalCalendar from "@/components/JournalCalendar";
 import JournalQuickEntry from "@/components/JournalQuickEntry";
 import JournalListModal from "@/components/JournalListModal";
+import JournalEditor from "@/components/JournalEditor";
 import type { JournalEntry, JournalTemplate } from "@/lib/journal";
 
 type Scope = "user" | "space";
@@ -189,11 +190,11 @@ export default function JournalPage() {
         </div>
         <div className="flex items-center gap-2">
           {/* Scope toggle */}
-          <div className="jp-scope-toggle">
-            <button className={`jp-scope-btn${scope === "user" ? " jp-scope-btn--active" : ""}`} onClick={() => { setScope("user"); setSelectedEntry(null); }}>
-              <Lock className="w-3.5 h-3.5" /> My Journal
-            </button>
-            <div className="relative">
+          <div className="relative">
+            <div className="jp-scope-toggle">
+              <button className={`jp-scope-btn${scope === "user" ? " jp-scope-btn--active" : ""}`} onClick={() => { setScope("user"); setSelectedEntry(null); }}>
+                <Lock className="w-3.5 h-3.5" /> My Journal
+              </button>
               <button
                 className={`jp-scope-btn${scope === "space" ? " jp-scope-btn--active" : ""}`}
                 onClick={() => {
@@ -212,25 +213,25 @@ export default function JournalPage() {
                   ? (availableSpaces.find((s) => s.slug === spaceSlug)?.name ?? "Space Journal")
                   : "Space Journal"}
               </button>
-              {showSpaceSelect && availableSpaces.length > 0 && (
-                <div className="absolute left-0 top-full mt-1 z-50 bg-surface border border-border rounded-lg shadow-lg py-1 min-w-[160px]">
-                  {availableSpaces.map((s) => (
-                    <button
-                      key={s.slug}
-                      className="w-full text-left px-3 py-1.5 text-sm hover:bg-muted text-text-primary"
-                      onClick={() => {
-                        setSpaceSlug(s.slug);
-                        setScope("space");
-                        setSelectedEntry(null);
-                        setShowSpaceSelect(false);
-                      }}
-                    >
-                      {s.name}
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
+            {showSpaceSelect && availableSpaces.length > 0 && (
+              <div className="absolute right-0 top-full mt-1 z-50 bg-surface border border-border rounded-lg shadow-lg py-1 min-w-[160px]">
+                {availableSpaces.map((s) => (
+                  <button
+                    key={s.slug}
+                    className="w-full text-left px-3 py-1.5 text-sm hover:bg-muted text-text-primary"
+                    onClick={() => {
+                      setSpaceSlug(s.slug);
+                      setScope("space");
+                      setSelectedEntry(null);
+                      setShowSpaceSelect(false);
+                    }}
+                  >
+                    {s.name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <button className="jp-action-btn" onClick={() => setShowListModal(true)}>
             <List className="w-4 h-4" /> All Entries
@@ -342,13 +343,7 @@ export default function JournalPage() {
                     </button>
                   ))}
                 </div>
-                <textarea
-                  className="jp-editor-content"
-                  rows={16}
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  placeholder="Write your journal entry…"
-                />
+                <JournalEditor value={editContent} onChange={setEditContent} minHeight={320} />
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
                   <span className="text-xs text-text-muted">Tags:</span>
                   {editTags.map((t) => (
@@ -415,14 +410,45 @@ export default function JournalPage() {
                 </div>
               )}
             </div>
-          ) : (
-            /* No date selected */
+          ) : entries.length === 0 ? (
+            /* No entries at all */
             <div className="jp-empty">
               <BookMarked className="w-10 h-10 text-text-muted mb-3 opacity-40" />
-              <p className="text-text-muted">Select a date on the calendar or create a new entry</p>
+              <p className="text-text-muted">No journal entries yet</p>
               <button className="jp-action-btn jp-action-btn--primary mt-3" onClick={() => setShowQuickEntry(true)}>
                 <Plus className="w-4 h-4" /> New Entry
               </button>
+            </div>
+          ) : (
+            /* All entries */
+            <div>
+              <h2 className="jp-date-title">All Entries</h2>
+              <div className="jp-entry-list">
+                {[...entries]
+                  .sort((a, b) => {
+                    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+                    return b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt);
+                  })
+                  .map((e) => (
+                    <div key={e.id} className="jp-entry-card" onClick={() => { setSelectedDate(e.date); openEntry(e); }}>
+                      <div className="jp-entry-card-top">
+                        <span className="jp-entry-card-title">{e.title}</span>
+                        <div className="flex items-center gap-1.5">
+                          {e.mood && <span>{e.mood}</span>}
+                          {e.pinned && <Pin className="w-3 h-3 text-accent" />}
+                        </div>
+                      </div>
+                      <span className="text-xs text-text-muted">{e.date}</span>
+                      {e.tags.length > 0 && (
+                        <div className="jp-entry-card-tags">
+                          {e.tags.map((t) => <span key={t}>#{t}</span>)}
+                        </div>
+                      )}
+                      <p className="jp-entry-card-preview">{e.content.slice(0, 200)}{e.content.length > 200 ? "…" : ""}</p>
+                      <span className="jp-entry-card-meta">by {e.author} · {new Date(e.updatedAt).toLocaleString()}</span>
+                    </div>
+                  ))}
+              </div>
             </div>
           )}
         </main>

@@ -1,10 +1,99 @@
 import fs from "fs/promises";
+import fsSync from "fs";
 import path from "path";
+import Database from "better-sqlite3";
+import type BetterSqlite3 from "better-sqlite3";
 
 const CONFIG_DIR = path.join(process.cwd(), "config");
 const DOCS_DIR = path.join(process.cwd(), "docs");
 const ARCHIVE_DIR = path.join(process.cwd(), "archive");
 const HISTORY_DIR = path.join(process.cwd(), "history");
+const DB_PATH = path.join(CONFIG_DIR, "docit.db");
+
+// ── SQLite singleton ──────────────────────────────────────────────────────────
+
+let _db: BetterSqlite3.Database | null = null;
+let _migrated = false;
+
+function getDb(): BetterSqlite3.Database {
+  if (_db) return _db;
+
+  // Ensure config directory exists (sync — runs once)
+  if (!fsSync.existsSync(CONFIG_DIR)) {
+    fsSync.mkdirSync(CONFIG_DIR, { recursive: true });
+  }
+
+  _db = new Database(DB_PATH);
+  _db.pragma("journal_mode = WAL");
+  _db.pragma("busy_timeout = 5000");
+
+  // Create KV table
+  _db.exec(`
+    CREATE TABLE IF NOT EXISTS kv (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    )
+  `);
+
+  return _db;
+}
+
+// ── Auto-migration from JSON files ────────────────────────────────────────────
+
+/**
+ * On first access, scan the config/ directory for existing .json files
+ * and import them into the SQLite KV table. Each file becomes one row
+ * with the relative path as key. Runs once per process.
+ */
+function migrateJsonFiles(): void {
+  if (_migrated) return;
+  _migrated = true;
+
+  const db = getDb();
+
+  // Check if migration already happened (any rows exist)
+  const count = db.prepare("SELECT COUNT(*) as c FROM kv").get() as { c: number };
+  if (count.c > 0) return;
+
+  // Recursively find all .json files under config/
+  const jsonFiles = findJsonFiles(CONFIG_DIR, CONFIG_DIR);
+  if (jsonFiles.length === 0) return;
+
+  const insert = db.prepare("INSERT OR IGNORE INTO kv (key, value) VALUES (?, ?)");
+  const tx = db.transaction(() => {
+    for (const { relPath, content } of jsonFiles) {
+      insert.run(relPath, content);
+    }
+  });
+  tx();
+}
+
+function findJsonFiles(dir: string, root: string): { relPath: string; content: string }[] {
+  const results: { relPath: string; content: string }[] = [];
+  if (!fsSync.existsSync(dir)) return results;
+
+  const entries = fsSync.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      // Skip the db file's directory artifacts
+      results.push(...findJsonFiles(full, root));
+    } else if (entry.name.endsWith(".json")) {
+      try {
+        const content = fsSync.readFileSync(full, "utf-8");
+        // Validate it's actually JSON
+        JSON.parse(content);
+        const relPath = path.relative(root, full);
+        results.push({ relPath, content });
+      } catch {
+        // Skip files that aren't valid JSON
+      }
+    }
+  }
+  return results;
+}
+
+// ── Directory helpers (unchanged) ─────────────────────────────────────────────
 
 export function getConfigDir() {
   return CONFIG_DIR;
@@ -104,20 +193,28 @@ export async function ensureConfigDir() {
   await ensureDir(CONFIG_DIR);
 }
 
+// ── SQLite-backed JSON config read/write ──────────────────────────────────────
+
 export async function readJsonConfig<T>(filename: string, defaultValue: T): Promise<T> {
-  await ensureConfigDir();
-  const filePath = path.join(CONFIG_DIR, filename);
+  migrateJsonFiles();
+  const db = getDb();
+  const row = db.prepare("SELECT value FROM kv WHERE key = ?").get(filename) as
+    | { value: string }
+    | undefined;
+  if (!row) return defaultValue;
   try {
-    const data = await fs.readFile(filePath, "utf-8");
-    return JSON.parse(data) as T;
+    return JSON.parse(row.value) as T;
   } catch {
     return defaultValue;
   }
 }
 
 export async function writeJsonConfig<T>(filename: string, data: T) {
-  await ensureConfigDir();
-  const filePath = path.join(CONFIG_DIR, filename);
-  await ensureDir(path.dirname(filePath));
-  await fs.writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
+  migrateJsonFiles();
+  const db = getDb();
+  const json = JSON.stringify(data, null, 2);
+  db.prepare("INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(
+    filename,
+    json,
+  );
 }

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import type { JournalTemplate } from "@/lib/journal";
+import JournalEditor from "@/components/JournalEditor";
 
 interface JournalQuickEntryProps {
   isOpen: boolean;
@@ -119,13 +120,7 @@ export default function JournalQuickEntry({ isOpen, onClose, onSave, templates, 
           {/* Content */}
           <div>
             <label className="text-xs font-medium text-text-secondary block mb-1">Content</label>
-            <textarea
-              className="jqe-textarea"
-              rows={8}
-              placeholder="Write your journal entry (markdown supported)…"
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-            />
+            <JournalEditor value={content} onChange={setContent} minHeight={180} />
           </div>
 
           {/* Tags */}

@@ -180,6 +180,7 @@ export default function Home() {
 
   // Search modal
   const [showSearchModal, setShowSearchModal] = useState(false);
+  const [searchInitialQuery, setSearchInitialQuery] = useState<string | undefined>();
 
   // Global Cmd+K / Ctrl+K shortcut for search
   useEffect(() => {
@@ -1274,7 +1275,7 @@ export default function Home() {
         onOpenArchive={() => setShowArchiveModal(true)}
         onOpenTrash={() => setShowTrashModal(true)}
         onHome={() => { setActiveDoc(null); setActiveDatabase(null); setActiveDatabaseSearch(""); setIsEditing(false); setShowHome(true); }}
-        onSearch={() => setShowSearchModal(true)}
+        onSearch={(q) => { setSearchInitialQuery(q); setShowSearchModal(true); }}
         reviewItems={reviewItems}
         onNavigateToReview={handleNavigateToReview}
         notifications={notifications}
@@ -2110,7 +2111,8 @@ export default function Home() {
       {/* Search modal */}
       <SearchModal
         isOpen={showSearchModal}
-        onClose={() => setShowSearchModal(false)}
+        onClose={() => { setShowSearchModal(false); setSearchInitialQuery(undefined); }}
+        initialQuery={searchInitialQuery}
         docs={docs}
         tagsIndex={tagsIndex}
         categories={categories}

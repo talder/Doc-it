@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Search, FileText, Hash, Filter, X, Clock, Tag, User, FolderOpen, Shield, Calendar } from "lucide-react";
+import { Search, FileText, Hash, Filter, X, Clock, Tag, User, FolderOpen, Shield, Calendar, ClipboardList, Monitor, Headset } from "lucide-react";
 import type { DocFile, TagsIndex, Category } from "@/lib/types";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -35,6 +35,7 @@ interface SearchModalProps {
   spaceSlug: string | null;
   spaceMembers: { username: string; fullName?: string }[];
   onOpenDoc: (name: string, category: string) => void;
+  initialQuery?: string;
 }
 
 const RECENT_KEY = "doc-it-recent-searches";
@@ -70,7 +71,7 @@ const EMPTY_FILTERS: SearchFilters = { category: "", tag: "", author: "", classi
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function SearchModal({
-  isOpen, onClose, docs, tagsIndex, categories, spaceSlug, spaceMembers, onOpenDoc,
+  isOpen, onClose, docs, tagsIndex, categories, spaceSlug, spaceMembers, onOpenDoc, initialQuery,
 }: SearchModalProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -84,6 +85,12 @@ export default function SearchModal({
   const [instantResults, setInstantResults] = useState<{ name: string; category: string; matchType: "name" | "tag" }[]>([]);
   // Server-side content results
   const [contentResults, setContentResults] = useState<ContentResult[]>([]);
+  // Changelog results
+  const [changeResults, setChangeResults] = useState<{ id: string; date: string; system: string; category: string; description: string; risk: string }[]>([]);
+  // Asset results
+  const [assetResults, setAssetResults] = useState<{ id: string; name: string; type: string; status: string; location: string }[]>([]);
+  // Ticket results
+  const [ticketResults, setTicketResults] = useState<{ id: string; subject: string; status: string; priority: string; requester: string }[]>([]);
   const [searching, setSearching] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -92,15 +99,18 @@ export default function SearchModal({
   useEffect(() => {
     if (isOpen) {
       setRecentSearches(loadRecent());
-      setQuery("");
+      setQuery(initialQuery || "");
       setInstantResults([]);
       setContentResults([]);
+      setChangeResults([]);
+      setAssetResults([]);
+      setTicketResults([]);
       setSelectedIdx(0);
       setShowFilters(false);
       setFilters(EMPTY_FILTERS);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
-  }, [isOpen]);
+  }, [isOpen, initialQuery]);
 
   // Client-side instant search (name + tag)
   useEffect(() => {
@@ -173,18 +183,53 @@ export default function SearchModal({
       });
   }, [spaceSlug, instantResults]);
 
+  // Fetch changelog results
+  const fetchChangeResults = useCallback((q: string) => {
+    if (q.length < 2) { setChangeResults([]); return; }
+    fetch(`/api/changelog?q=${encodeURIComponent(q)}`)
+      .then((r) => r.ok ? r.json() : { entries: [] })
+      .then((data) => setChangeResults((data.entries || []).slice(0, 5)))
+      .catch(() => setChangeResults([]));
+  }, []);
+
+  // Fetch asset results
+  const fetchAssetResults = useCallback((q: string) => {
+    if (q.length < 2) { setAssetResults([]); return; }
+    fetch(`/api/assets?q=${encodeURIComponent(q)}`)
+      .then((r) => r.ok ? r.json() : { assets: [] })
+      .then((data) => setAssetResults((data.assets || []).slice(0, 5)))
+      .catch(() => setAssetResults([]));
+  }, []);
+
+  // Fetch ticket results
+  const fetchTicketResults = useCallback((q: string) => {
+    if (q.length < 2) { setTicketResults([]); return; }
+    fetch(`/api/helpdesk?q=${encodeURIComponent(q)}`)
+      .then((r) => r.ok ? r.json() : { tickets: [] })
+      .then((data) => setTicketResults((data.tickets || []).slice(0, 5).map((t: { id: string; subject: string; status: string; priority: string; requester: string }) => ({ id: t.id, subject: t.subject, status: t.status, priority: t.priority, requester: t.requester }))))
+      .catch(() => setTicketResults([]));
+  }, []);
+
   // Debounce server search
   useEffect(() => {
     clearTimeout(debounceRef.current);
     if (!query || query.length < 2) {
       setContentResults([]);
+      setChangeResults([]);
+      setAssetResults([]);
+      setTicketResults([]);
       setSearching(false);
       return;
     }
     setSearching(true);
-    debounceRef.current = setTimeout(() => fetchContentResults(query, filters), 300);
+    debounceRef.current = setTimeout(() => {
+      fetchContentResults(query, filters);
+      fetchChangeResults(query);
+      fetchAssetResults(query);
+      fetchTicketResults(query);
+    }, 300);
     return () => clearTimeout(debounceRef.current);
-  }, [query, filters, fetchContentResults]);
+  }, [query, filters, fetchContentResults, fetchChangeResults, fetchAssetResults, fetchTicketResults]);
 
   // Combined results for keyboard nav
   const allResults = [
@@ -423,8 +468,102 @@ export default function SearchModal({
             </div>
           )}
 
+          {/* Changelog results */}
+          {changeResults.length > 0 && (
+            <div className="search-section">
+              <div className="search-section-header">
+                <ClipboardList className="w-3.5 h-3.5" />
+                Changes
+              </div>
+              {changeResults.map((c) => (
+                <a
+                  key={c.id}
+                  href={`/changelog`}
+                  className="search-result-item"
+                  onClick={() => onClose()}
+                >
+                  <ClipboardList className="w-4 h-4 text-text-muted flex-shrink-0" />
+                  <div className="search-result-body">
+                    <div className="flex items-center gap-2">
+                      <span className="search-result-name">{c.id}</span>
+                      <span className="search-result-path">{c.system}</span>
+                    </div>
+                    <p className="search-result-snippet">{c.description.slice(0, 100)}</p>
+                    <div className="search-result-meta">
+                      <span>{c.date}</span>
+                      <span>{c.category}</span>
+                      <span className={`cl-badge cl-risk--${c.risk.toLowerCase()}`}>{c.risk}</span>
+                    </div>
+                  </div>
+                </a>
+              ))}
+            </div>
+          )}
+
+          {/* Asset results */}
+          {assetResults.length > 0 && (
+            <div className="search-section">
+              <div className="search-section-header">
+                <Monitor className="w-3.5 h-3.5" />
+                Assets
+              </div>
+              {assetResults.map((a) => (
+                <a
+                  key={a.id}
+                  href="/assets"
+                  className="search-result-item"
+                  onClick={() => onClose()}
+                >
+                  <Monitor className="w-4 h-4 text-text-muted flex-shrink-0" />
+                  <div className="search-result-body">
+                    <div className="flex items-center gap-2">
+                      <span className="search-result-name">{a.name}</span>
+                      <span className="search-result-path">{a.id}</span>
+                    </div>
+                    <div className="search-result-meta">
+                      <span>{a.type}</span>
+                      <span className={`cl-badge am-status--${a.status.toLowerCase()}`}>{a.status}</span>
+                      {a.location && <span>{a.location}</span>}
+                    </div>
+                  </div>
+                </a>
+              ))}
+            </div>
+          )}
+
+          {/* Ticket results */}
+          {ticketResults.length > 0 && (
+            <div className="search-section">
+              <div className="search-section-header">
+                <Headset className="w-3.5 h-3.5" />
+                Tickets
+              </div>
+              {ticketResults.map((t) => (
+                <a
+                  key={t.id}
+                  href="/helpdesk"
+                  className="search-result-item"
+                  onClick={() => onClose()}
+                >
+                  <Headset className="w-4 h-4 text-text-muted flex-shrink-0" />
+                  <div className="search-result-body">
+                    <div className="flex items-center gap-2">
+                      <span className="search-result-name">{t.id}</span>
+                      <span className={`cl-badge hd-status--${t.status.toLowerCase().replace(/\s+/g, "-")}`}>{t.status}</span>
+                      <span className={`cl-badge hd-priority--${t.priority.toLowerCase()}`}>{t.priority}</span>
+                    </div>
+                    <p className="search-result-snippet">{t.subject}</p>
+                    <div className="search-result-meta">
+                      <span>by {t.requester}</span>
+                    </div>
+                  </div>
+                </a>
+              ))}
+            </div>
+          )}
+
           {/* No results */}
-          {query.length >= 2 && !searching && instantResults.length === 0 && contentResults.length === 0 && (
+          {query.length >= 2 && !searching && instantResults.length === 0 && contentResults.length === 0 && changeResults.length === 0 && assetResults.length === 0 && ticketResults.length === 0 && (
             <div className="search-empty">
               <p className="text-sm text-text-muted">No results for &ldquo;{query}&rdquo;</p>
               {hasActiveFilters && <p className="text-xs text-text-muted mt-1">Try clearing some filters</p>}

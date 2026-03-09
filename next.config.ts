@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: false,
-  serverExternalPackages: ["canvas"],
+  serverExternalPackages: ["canvas", "better-sqlite3"],
   turbopack: {
     root: __dirname,
     resolveAlias: {

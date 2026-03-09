@@ -30,6 +30,7 @@ Three applications have been the primary functional inspiration behind Doc-it �
 - **Spaces** — isolated documentation workspaces with role-based access (admin / writer / reader)
 - **Categories** — nested folder structure within each space
 - **Tags** — hierarchical `#tag` system with `#parent/child` support, inline tag linking, and tag-based filtering
+- **Global Search** — `Cmd+K` / `Ctrl+K` search across documents, content, tags, changelog entries, assets, and helpdesk tickets with filters (category, tag, author, classification, date range), recent search history, and result snippets
 
 ### Editor
 - **Rich text editing** powered by TipTap (ProseMirror) with bubble menu toolbar
@@ -49,6 +50,7 @@ Three applications have been the primary functional inspiration behind Doc-it �
 - **Autosave** — saves automatically while editing
 - **Revision history** — file-based snapshots with diff/compare view and revert
 - **Review workflow** — submit a document for review; reviewers are notified and can approve or request changes
+- **Document classification** — label documents as Public, Internal, Confidential, or Restricted
 - **Archive** — archive and restore documents
 - **Move** — relocate documents between categories
 - **Templates** — create reusable document templates with fillable fields; apply templates when creating new documents
@@ -61,20 +63,80 @@ Three applications have been the primary functional inspiration behind Doc-it �
 - **Filtering & sorting** — filter rows and sort by any column
 - **Per-space storage** — each database is stored as JSON within its space, versioned with the space
 
+### Journal
+- **Personal journals** — per-user private journals with entries encrypted at rest (AES-256-GCM)
+- **Space journals** — shared team journals within a space
+- **Calendar view** — day-by-day calendar with entry previews and quick navigation
+- **Templates** — reusable journal templates with default tags
+- **Tagging & mood** — tag entries and attach emoji mood indicators
+- **Pinning & filtering** — pin important entries; filter by date range, tag, search text
+- **Export** — export journal entries as JSON
+
+### Change Log
+- **Operational change tracking** — log infrastructure and system changes with structured fields (system, category, risk, impact, status)
+- **Auto-incrementing IDs** — CHG-0001, CHG-0002, etc.
+- **Categories** — Disk, Network, Security, Software, Hardware, Configuration, Other
+- **Risk levels** — Low, Medium, High, Critical
+- **Linked documentation** — optionally link a changelog entry to a document in any space
+- **Syslog forwarding** — change events forwarded to syslog (if enabled) with `[CHANGE]` marker
+- **Filtering** — search and filter by date range, category, system name, and free text
+
+### Asset Management
+- **IT asset registry** — track hardware, software, and infrastructure assets
+- **Auto-incrementing IDs** — AST-0001, AST-0002, etc.
+- **Container tree** — organize assets in nested groups (racks, locations, departments)
+- **Asset statuses** — Active, Maintenance, Decommissioned, Ordered
+- **Custom field definitions** — define additional fields per install (text, number, date, boolean, select, URL)
+- **CSV import** — bulk-import assets from CSV files
+- **Sortable table** — sort by name, type, status, location, owner; full-text search across all fields
+
+### Helpdesk & Ticketing
+- **Full ticketing system** — create, assign, and track support tickets with statuses (Open, In Progress, Waiting, Resolved, Closed) and priorities (Low, Medium, High, Critical)
+- **Support groups** — organize agents into teams with email routing
+- **Categories** — classify tickets by type with icons and ordering
+- **Custom fields** — define additional ticket fields (text, number, date, boolean, select, multiselect, textarea, URL, email)
+- **Form designer** — build custom ticket submission forms with drag-and-drop field ordering, per-category filtering, and half/full width layout
+- **Rule engine** — automated ticket routing rules with conditions (match all/any) and actions (assign group, set priority, send notification, add tag, etc.) with stop-on-match support
+- **SLA policies** — define response and resolution time targets per priority with business hours configuration
+- **Ticket comments** — agent and portal user comments with internal notes and file attachments
+- **Email notifications** — automatic notifications on ticket creation and status changes
+
+### Portal & Public Pages
+- **Self-service portal** — external users register and log in to submit and track their tickets at `/portal`
+- **Portal Page Designer** — drag-and-drop page builder with 9 widget types: Hero, Ticket Form, My Tickets, Announcements, FAQ, Categories, Search, Custom HTML, Quick Links
+- **Per-widget configuration** — each widget has a config modal for titles, content, colours, and layout (full / half / third width)
+- **Publish / Unpublish** — control which portal pages are public with a toggle; unpublished pages are only visible to admins
+- **Public portal listing** — browse published portal pages at `/portals` with links to `/portals/[slug]`
+- **Portal user authentication** — separate auth system for portal users with session management
+
 ### Users & Auth
-- **Session-based authentication** with cookie sessions
+- **Session-based authentication** with cookie sessions and idle timeout (NIS2)
+- **TOTP multi-factor authentication** — time-based one-time passwords with QR code setup, backup codes, and admin-forced enrollment
+- **bcrypt password hashing** — automatic migration from legacy SHA-256 hashes; configurable bcrypt rounds
+- **Password policy** — password history enforcement to prevent reuse
+- **Account lockout** — brute-force protection with configurable lockout thresholds
 - **User self-registration** — new users register and see a pending access screen until an admin assigns them to a space
 - **User profiles** — change full name, email, password, avatar, editor preferences (line spacing, font size, TOC, accent colour)
 - **API Keys** — personal user keys (`dk_u_`) and admin-managed service keys (`dk_s_`) with per-space permissions, expiry dates, and a one-time secret reveal
-- **Admin panel** — manage users, spaces, permissions, SMTP settings, service API keys, and audit logs
+- **Admin panel** — manage users, spaces, permissions, SMTP settings, service API keys, backups, and audit logs
 - **SMTP email** — configurable email notifications (e.g. admin notified on new registration)
 
 ### NIS2 Audit Logging
 - **34 event types** covering authentication, document changes, user management, space operations, API key lifecycle, and settings changes
+- **Encrypted audit logs** — AES-256-GCM encryption of log entries at rest
+- **Tamper-proof chain** — HMAC integrity chain for log verification
 - **JSONL audit log files** — one file per day under `logs/audit-YYYY-MM-DD.jsonl`, retained for a configurable number of days
 - **Syslog forwarding** — optional UDP or TCP syslog (RFC 5424) to a remote SIEM or log collector
 - **Admin Audit tab** — calendar heatmap showing event volume, event explorer with filtering, and one-click CSV/JSON export
 - **Audit settings API** — configure retention period and syslog target without restarting the service
+
+### Backup & Recovery
+- **Encrypted backups** — AES-256-GCM encrypted `.tar.gz.enc` archives of all data directories (config, docs, logs, archive, history)
+- **Backup targets** — local path (covers pre-mounted NFS shares) and CIFS/SMB remote shares via `smbclient`
+- **Scheduling** — manual or automated backups with configurable time and day-of-week
+- **Retention policy** — configurable retention count; old backups pruned automatically
+- **Restore** — decrypt and restore from any backup archive via the admin panel
+- **Encryption key rotation** — rotate the field-encryption key with automatic re-encryption of all TOTP secrets, CIFS passwords, and backup archives
 
 ### Theming & Personalisation
 - **17 themes** — Light, Solarized Light, Dracula Light, Catppuccin Latte, Paper, High Contrast, Dark, Dracula, Nord, Solarized Dark, GitHub Dark, Catppuccin Mocha, Twilight, Midnight Rose, and High Contrast Dark
@@ -95,7 +157,10 @@ Three applications have been the primary functional inspiration behind Doc-it �
 - **Markdown**: marked (parse) + turndown (serialize)
 - **Drawing**: Excalidraw + Draw.io
 - **Email**: Nodemailer
-- **Storage**: File-based (JSON config + Markdown documents on disk)
+- **Database**: SQLite via better-sqlite3 (WAL mode) — config data stored in a key-value table
+- **Storage**: Markdown documents on disk; configuration data in SQLite (`config/docit.db`)
+- **Encryption**: AES-256-GCM for audit logs, journal entries, backup archives, and TOTP secrets
+- **Auth**: bcrypt password hashing, TOTP MFA via otpauth
 
 ## Installation
 
@@ -179,14 +244,25 @@ Requires Node.js 24+ and npm 10+.
 ## Project Structure
 
 ```
-config/              # JSON config files (users, sessions, spaces, smtp, avatars)
+config/              # SQLite database (docit.db) + avatars
+  docit.db           # SQLite KV store for all config data (WAL mode)
+  avatars/           # User avatar images
 docs/                # Document storage (docs/{space}/{category}/{doc}.md)
 archive/             # Archived documents
 history/             # Revision snapshots
+backups/             # Encrypted backup archives (.tar.gz.enc)
+logs/                # Audit log files (audit-YYYY-MM-DD.jsonl)
 src/
   app/
-    api/             # API routes (auth, spaces, docs, settings, assets)
+    api/             # API routes (auth, spaces, docs, settings, assets,
+                     #   helpdesk, portal, journal, changelog, audit, backup)
     admin/           # Admin panel
+    assets/          # Asset management page
+    changelog/       # Change log page
+    helpdesk/        # Helpdesk agent UI + admin config
+    journal/         # Personal & space journal
+    portal/          # Self-service portal (login, register, tickets)
+    portals/         # Public portal listing & pages
     login/           # Login page
     register/        # Registration page
     profile/         # User profile page
@@ -195,25 +271,45 @@ src/
   components/
     extensions/      # TipTap extensions (slash commands, callouts, excalidraw,
                      #   draw.io, collapsible lists, drag handle, tags, etc.)
+    helpdesk/        # Helpdesk components (WidgetRenderer, PortalPageDesigner)
     modals/          # Modal dialogs
     sidebar/         # Sidebar with categories, docs, tags
     Editor.tsx       # Main editor component
     Topbar.tsx       # Top navigation bar
+    SearchModal.tsx  # Global search (Cmd+K)
   lib/
-    auth.ts          # Authentication utilities
-    config.ts        # File-based config read/write
+    auth.ts          # Authentication (bcrypt, sessions, TOTP)
+    config.ts        # SQLite-backed config read/write
+    helpdesk.ts      # Helpdesk module (tickets, groups, SLA, rules, forms, portal pages)
+    helpdesk-portal.ts # Portal user auth (separate from main auth)
+    assets.ts        # Asset management module
+    changelog.ts     # Change log module
+    journal.ts       # Journal module (encrypted user journals)
+    audit.ts         # NIS2 audit logging (encrypted, syslog)
+    backup.ts        # Backup & restore (AES-256-GCM encrypted archives)
+    crypto.ts        # Field encryption & key management
+    key-rotation.ts  # Encryption key rotation
+    permissions.ts   # Space role-based access control
     email.ts         # Nodemailer SMTP utilities
     types.ts         # TypeScript type definitions
 ```
 
 ## Configuration
 
-All configuration is stored as JSON files in the `config/` directory:
+All configuration is stored in a SQLite database at `config/docit.db` using a key-value table. On first startup, any existing JSON files in the `config/` directory are automatically migrated into the database.
 
-- `users.json` — user accounts
+Key configuration entries (stored as JSON values):
+
+- `users.json` — user accounts (bcrypt hashes, TOTP secrets)
 - `sessions.json` — active sessions
 - `spaces.json` — spaces and permissions
 - `smtp.json` — SMTP email settings (configurable in Admin → Settings)
+- `helpdesk.json` — helpdesk configuration (groups, categories, fields, forms, rules, SLA, portal pages)
+- `helpdesk-tickets.json` — ticket storage
+- `assets.json` — asset registry
+- `changelog.json` — change log entries
+- `audit.json` — audit configuration
+- `backup.json` — backup configuration and targets
 
 Avatars are stored in `config/avatars/`.
 

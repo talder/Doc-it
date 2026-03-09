@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Search, LogOut, Settings, Sun, Moon, Archive, User, Bell, X, FileText, BookOpen, Check, HardDriveDownload, Home, Trophy, Share2, Trash2, Lock, Clock, BookMarked } from "lucide-react";
+import { ChevronDown, Search, LogOut, Settings, Sun, Moon, Archive, User, Bell, X, FileText, BookOpen, Check, HardDriveDownload, Home, Trophy, Share2, Trash2, Lock, Clock, BookMarked, ClipboardList, Monitor, Headset } from "lucide-react";
 import OfflineBundleModal from "@/components/OfflineBundleModal";
 import { useTheme, isLightTheme, type Theme } from "@/components/ThemeProvider";
 import type { Space, SanitizedUser, ReviewItem } from "@/lib/types";
@@ -74,7 +74,7 @@ interface TopbarProps {
   onOpenArchive?: () => void;
   onOpenTrash?: () => void;
   onHome?: () => void;
-  onSearch?: () => void;
+  onSearch?: (initialQuery?: string) => void;
   reviewItems?: ReviewItem[];
   onNavigateToReview?: (item: ReviewItem) => void;
   notifications?: AppNotification[];
@@ -128,10 +128,10 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
 
   return (<>
     <header className="topbar">
-      {/* Left: Home + Space name + switcher */}
-      <div className="flex items-center gap-2" ref={spaceRef}>
+      {/* Left: Home + Space name + switcher + Search */}
+      <div className="flex items-center gap-2 flex-1 min-w-0" ref={spaceRef}>
         {onHome && (
-          <button onClick={onHome} className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors" title="Home">
+          <button onClick={onHome} className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors" data-tip="Home">
             <Home className="w-4 h-4" />
           </button>
         )}
@@ -183,32 +183,54 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
             </div>
           )}
         </div>
-      </div>
 
-      {/* Center: Doc-it branding */}
-      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none select-none">
-        <span className="text-sm font-semibold text-text-muted tracking-wide">Doc-it</span>
-      </div>
-
-      {/* Right: Search + Theme + User */}
-      <div className="flex items-center gap-2">
         <button
-          onClick={onSearch}
-          className="topbar-search-btn"
+          onClick={() => onSearch?.()}
+          className="topbar-search-btn topbar-search-btn--wide"
           title="Search (⌘K)"
         >
           <Search className="w-4 h-4" />
-          <span className="topbar-search-label">Search</span>
+          <span className="topbar-search-label">Search docs…</span>
           <kbd className="topbar-search-kbd">⌘K</kbd>
         </button>
+      </div>
 
+      {/* Right: Theme + User */}
+      <div className="flex items-center gap-2">
         {/* Journal */}
         <button
           onClick={() => router.push("/journal")}
           className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
-          title="Journal"
+          data-tip="Journal"
         >
           <BookMarked className="w-4 h-4" />
+        </button>
+
+        {/* Change Log */}
+        <button
+          onClick={() => router.push("/changelog")}
+          className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
+          data-tip="Change Log"
+        >
+          <ClipboardList className="w-4 h-4" />
+        </button>
+
+        {/* Assets */}
+        <button
+          onClick={() => router.push("/assets")}
+          className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
+          data-tip="Assets"
+        >
+          <Monitor className="w-4 h-4" />
+        </button>
+
+        {/* Helpdesk */}
+        <button
+          onClick={() => router.push("/helpdesk")}
+          className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
+          data-tip="Helpdesk"
+        >
+          <Headset className="w-4 h-4" />
         </button>
 
         {/* Shared pages overview */}
@@ -229,7 +251,7 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
               }
             }}
             className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
-            title="Shared Pages"
+            data-tip="Shared Pages"
           >
             <Share2 className="w-4 h-4" />
           </button>
@@ -292,7 +314,7 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
         <button
           onClick={() => router.push("/api-docs")}
           className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
-          title="API Documentation"
+          data-tip="API Documentation"
         >
           <BookOpen className="w-4 h-4" />
         </button>
@@ -302,7 +324,7 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
           <button
             onClick={onOpenArchive}
             className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
-            title="Archive"
+            data-tip="Archive"
           >
             <Archive className="w-4 h-4" />
           </button>
@@ -313,7 +335,7 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
           <button
             onClick={onOpenTrash}
             className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
-            title="Recycle Bin"
+            data-tip="Recycle Bin"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
           </button>
@@ -337,7 +359,7 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
               }
             }}
             className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
-            title="Top Contributors"
+            data-tip="Top Contributors"
           >
             <Trophy className="w-4 h-4" />
           </button>
@@ -365,7 +387,7 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
         <button
           onClick={() => setOfflineBundleOpen(true)}
           className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
-          title="Download Offline Bundle"
+          data-tip="Offline Bundle"
         >
           <HardDriveDownload className="w-4 h-4" />
         </button>
@@ -411,7 +433,7 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
           <button
             onClick={() => setNotifsOpen(!notifsOpen)}
             className="notif-bell-btn"
-            title="Notifications"
+            data-tip="Notifications"
           >
             <Bell className="w-4 h-4" />
             {notifications.length > 0 && (
@@ -459,7 +481,7 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
           <button
             onClick={() => setThemeMenuOpen(!themeMenuOpen)}
             className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
-            title={`Theme: ${currentThemeLabel}`}
+            data-tip={`Theme: ${currentThemeLabel}`}
           >
             {themeIcon}
           </button>

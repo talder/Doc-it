@@ -20,28 +20,33 @@ import { readJsonConfig, writeJsonConfig } from "./config";
 
 const SECRET_KEY_FILE = "secret-key.json";
 
-let _keyCache: Buffer | null = null;
+let _keyPromise: Promise<Buffer> | null = null;
 
 async function getSecretKey(): Promise<Buffer> {
-  if (_keyCache) return _keyCache;
+  if (!_keyPromise) {
+    _keyPromise = _loadOrGenerateKey().catch((err) => {
+      _keyPromise = null;
+      throw err;
+    });
+  }
+  return _keyPromise;
+}
 
+async function _loadOrGenerateKey(): Promise<Buffer> {
   // Allow injecting key via environment for HSM / vault integration
   const envKey = process.env.SECRET_FIELD_KEY;
   if (envKey) {
-    _keyCache = pbkdf2Sync(envKey, "doc-it-secret-v1", 100_000, 32, "sha256");
-    return _keyCache;
+    return pbkdf2Sync(envKey, "doc-it-secret-v1", 100_000, 32, "sha256");
   }
 
   const stored = await readJsonConfig<{ key?: string }>(SECRET_KEY_FILE, {});
   if (stored.key) {
-    _keyCache = Buffer.from(stored.key, "base64");
-    return _keyCache;
+    return Buffer.from(stored.key, "base64");
   }
 
   const newKey = randomBytes(32);
   await writeJsonConfig(SECRET_KEY_FILE, { key: newKey.toString("base64") });
-  _keyCache = newKey;
-  return _keyCache;
+  return newKey;
 }
 
 /** Expose the secret key for backup encryption (returns base64-encoded 32-byte key). */
@@ -68,7 +73,7 @@ export async function rotateSecretKey(): Promise<{ oldKey: Buffer; newKey: Buffe
   const oldKey = await getSecretKey();
   const newKey = randomBytes(32);
   await writeJsonConfig(SECRET_KEY_FILE, { key: newKey.toString("base64") });
-  _keyCache = newKey;
+  _keyPromise = Promise.resolve(newKey);
   return { oldKey, newKey };
 }
 
@@ -120,7 +125,12 @@ export async function decryptField(value: string): Promise<string> {
   const authTag = Buffer.from(rest.slice(first + 1, second), "base64");
   const ciphertext = Buffer.from(rest.slice(second + 1), "base64");
   const key = await getSecretKey();
-  const decipher = createDecipheriv("aes-256-gcm", key, iv);
-  decipher.setAuthTag(authTag);
-  return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf-8");
+  try {
+    const decipher = createDecipheriv("aes-256-gcm", key, iv);
+    decipher.setAuthTag(authTag);
+    return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf-8");
+  } catch {
+    console.warn("decryptField: decryption failed — key mismatch or corrupted data");
+    return "";
+  }
 }

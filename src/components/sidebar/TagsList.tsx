@@ -124,7 +124,7 @@ function TagRenderer({
 
 export default function TagsList({ tagsIndex, docs, activeDoc, onTagSelect, onSelectDoc, selectedTag, onReindex, isReindexing }: TagsListProps) {
   const [collapsedTags, setCollapsedTags] = useState<Set<string>>(new Set());
-  const [sectionCollapsed, setSectionCollapsed] = useState(false);
+  const [sectionCollapsed, setSectionCollapsed] = useState(true);
 
   const rootTags = buildTagTree(tagsIndex);
 
