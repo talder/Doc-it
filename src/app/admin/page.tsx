@@ -2,12 +2,16 @@
 
 import { Suspense, useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Plus, Trash2, Shield, ShieldCheck, Users, Layout, Settings, Key, Copy, Check, ClipboardList, ChevronLeft, ChevronRight, Download, Lock, LockOpen, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Shield, ShieldCheck, Users, Layout, Settings, Key, Copy, Check, ClipboardList, ChevronLeft, ChevronRight, Download, Lock, LockOpen, ChevronDown, ChevronUp, ShieldOff, HardDrive, RefreshCw, PlayCircle, XCircle, RotateCcw, Eye, EyeOff } from "lucide-react";
 import PasswordStrengthMeter from "@/components/PasswordStrengthMeter";
 import { isPasswordValid } from "@/lib/password-policy";
 import type { SanitizedUser, Space, SpaceRole, AuditConfig, AuditEntry } from "@/lib/types";
 
-type Tab = "users" | "spaces" | "service-keys" | "settings" | "audit";
+type Tab = "users" | "spaces" | "service-keys" | "settings" | "audit" | "backup";
+
+interface BackupEntry { filename: string; sizeBytes: number; createdAt: string; }
+interface BackupTargetForm { id: string; type: "local" | "cifs"; label: string; path: string; host: string; share: string; remotePath: string; username: string; password: string; }
+const EMPTY_TARGET = (): BackupTargetForm => ({ id: crypto.randomUUID(), type: "local", label: "", path: "", host: "", share: "", remotePath: "", username: "", password: "" });
 
 interface ServiceKeyRecord {
   id: string;
@@ -81,6 +85,8 @@ function AdminContent() {
   // SMTP state
   const [smtp, setSmtp] = useState({ host: "", port: 587, secure: false, user: "", pass: "", from: "", adminEmail: "" });
   const [smtpLoaded, setSmtpLoaded] = useState(false);
+  const [testEmailTo, setTestEmailTo] = useState("");
+  const [testEmailSending, setTestEmailSending] = useState(false);
 
   // Audit state
   const defaultAuditConfig: AuditConfig = {
@@ -100,6 +106,24 @@ function AdminContent() {
   const [explorerTotal, setExplorerTotal] = useState(0);
   const [explorerLoading, setExplorerLoading] = useState(false);
   const [auditTabSection, setAuditTabSection] = useState<"explorer" | "settings">("explorer");
+  const [chainVerifying, setChainVerifying] = useState(false);
+  const [chainResult, setChainResult] = useState<{ ok: boolean; totalEntries: number; brokenLinks: { file: string; lineNum: number; eventId: string; reason: string }[] } | null>(null);
+
+  // Backup state
+  const [backupConfig, setBackupConfig] = useState({ enabled: false, schedule: "manual" as "manual"|"daily"|"weekly", scheduleTime: "02:00", scheduleDayOfWeek: 1, retentionCount: 14, targets: [] as BackupTargetForm[] });
+  const [backupLoaded, setBackupLoaded] = useState(false);
+  const [backupList, setBackupList] = useState<BackupEntry[]>([]);
+  const [backupRunning, setBackupRunning] = useState(false);
+  const [backupStatus, setBackupStatus] = useState("");
+  const [newTarget, setNewTarget] = useState<BackupTargetForm>(EMPTY_TARGET());
+  const [showNewTarget, setShowNewTarget] = useState(false);
+  const [restoringFile, setRestoringFile] = useState<string | null>(null);
+
+  // Encryption key state
+  const [keyFingerprint, setKeyFingerprint] = useState("");
+  const [keyRevealed, setKeyRevealed] = useState<string | null>(null);
+  const [keyRotating, setKeyRotating] = useState(false);
+  const [keyRotationResult, setKeyRotationResult] = useState<{ newKey: string; summary: string } | null>(null);
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -140,6 +164,24 @@ function AdminContent() {
       const data = await res.json();
       setServiceKeys(data.keys ?? []);
       setSvcKeysLoaded(true);
+    }
+  }, []);
+
+  const fetchBackup = useCallback(async () => {
+    const res = await fetch("/api/admin/backup");
+    if (res.ok) {
+      const data = await res.json();
+      setBackupConfig(data.config);
+      setBackupList(data.backups ?? []);
+      setBackupLoaded(true);
+    }
+  }, []);
+
+  const fetchKeyInfo = useCallback(async () => {
+    const res = await fetch("/api/admin/security");
+    if (res.ok) {
+      const data = await res.json();
+      setKeyFingerprint(data.fingerprint ?? "");
     }
   }, []);
 
@@ -465,7 +507,7 @@ function AdminContent() {
             Service Keys
           </button>
           <button
-            onClick={() => { setTab("settings"); if (!smtpLoaded) fetchSmtp(); }}
+            onClick={() => { setTab("settings"); if (!smtpLoaded) fetchSmtp(); fetchKeyInfo(); }}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
               tab === "settings" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
             }`}
@@ -488,6 +530,15 @@ function AdminContent() {
           >
             <ClipboardList className="w-4 h-4" />
             Audit
+          </button>
+          <button
+            onClick={() => { setTab("backup"); if (!backupLoaded) fetchBackup(); }}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+              tab === "backup" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
+            }`}
+          >
+            <HardDrive className="w-4 h-4" />
+            Backup
           </button>
         </div>
 
@@ -615,6 +666,20 @@ function AdminContent() {
                           title="Unlock account"
                         >
                           <LockOpen className="w-4 h-4" />
+                        </button>
+                      )}
+                      {!u.isSuperAdmin && u.username !== currentUser?.username && (
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`Reset MFA for "${u.username}"? They will be required to set up MFA again on next login.`)) return;
+                            const res = await fetch(`/api/users/${encodeURIComponent(u.username)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ resetMfa: true }) });
+                            if (res.ok) { flash(`MFA reset for ${u.username}`, "success"); await fetchUsers(); }
+                            else { const d = await res.json(); flash(d.error || "Failed to reset MFA", "error"); }
+                          }}
+                          className="p-1.5 rounded-lg hover:bg-amber-50 text-gray-400 hover:text-amber-600 transition-colors"
+                          title="Reset MFA (force re-enrollment)"
+                        >
+                          <ShieldOff className="w-4 h-4" />
                         </button>
                       )}
                       {!u.isSuperAdmin && (
@@ -1121,7 +1186,7 @@ function AdminContent() {
                             <input type="number" value={auditConfig.syslog.port} onChange={(e) => setAuditConfig({ ...auditConfig, syslog: { ...auditConfig.syslog, port: parseInt(e.target.value) || 514 } })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                           </div>
                         </div>
-                        <div className="grid grid-cols-3 gap-4">
+                        <div className="grid grid-cols-2 gap-4">
                           <div>
                             <label className="block text-xs font-medium text-gray-600 mb-1">Protocol</label>
                             <select value={auditConfig.syslog.protocol} onChange={(e) => setAuditConfig({ ...auditConfig, syslog: { ...auditConfig.syslog, protocol: e.target.value as "udp" | "tcp" } })} className="w-full text-sm border border-border rounded-lg px-3 py-1.5">
@@ -1135,30 +1200,56 @@ function AdminContent() {
                               {["kern","user","mail","daemon","auth","syslog","local0","local1","local2","local3","local4","local5","local6","local7"].map(f => <option key={f} value={f}>{f}</option>)}
                             </select>
                           </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
                           <div>
                             <label className="block text-xs font-medium text-gray-600 mb-1">App Name</label>
                             <input type="text" value={auditConfig.syslog.appName} onChange={(e) => setAuditConfig({ ...auditConfig, syslog: { ...auditConfig.syslog, appName: e.target.value } })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="doc-it" />
                           </div>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Hostname override (optional)</label>
-                          <input type="text" value={auditConfig.syslog.hostname} onChange={(e) => setAuditConfig({ ...auditConfig, syslog: { ...auditConfig.syslog, hostname: e.target.value } })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="auto-detected from OS" />
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Hostname override (optional)</label>
+                            <input type="text" value={auditConfig.syslog.hostname} onChange={(e) => setAuditConfig({ ...auditConfig, syslog: { ...auditConfig.syslog, hostname: e.target.value } })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="auto-detected from OS" />
+                          </div>
                         </div>
                         <p className="text-xs text-text-muted">Compatible with VictoriaLogs, Graylog, Splunk, rsyslog, syslog-ng, Elastic, Datadog, Papertrail and any RFC 5424 receiver.</p>
                       </div>
                     )}
                   </div>
 
-                  <button
-                    onClick={async () => {
-                      const res = await fetch("/api/settings/audit", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(auditConfig) });
-                      if (res.ok) flash("Audit settings saved", "success");
-                      else { const d = await res.json(); flash(d.error || "Failed to save audit settings", "error"); }
-                    }}
-                    className="px-4 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors"
-                  >
-                    Save Audit Settings
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={async () => {
+                        const res = await fetch("/api/settings/audit", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(auditConfig) });
+                        if (res.ok) flash("Audit settings saved", "success");
+                        else { const d = await res.json(); flash(d.error || "Failed to save audit settings", "error"); }
+                      }}
+                      className="px-4 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors"
+                    >
+                      Save Audit Settings
+                    </button>
+                    {auditConfig.syslog.enabled && auditConfig.syslog.host && (
+                      <button
+                        onClick={async () => {
+                          flash("Sending test message…", "success");
+                          try {
+                            const res = await fetch("/api/settings/audit/test-syslog", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify(auditConfig.syslog),
+                            });
+                            const data = await res.json();
+                            if (data.ok) flash(data.message || "Test message sent successfully", "success");
+                            else flash(`Syslog test failed: ${data.error}`, "error");
+                          } catch (err) {
+                            flash("Failed to send test message", "error");
+                          }
+                        }}
+                        className="px-4 py-2 text-sm font-medium border border-border text-text-secondary rounded-lg hover:bg-muted transition-colors"
+                      >
+                        Test Syslog
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -1194,6 +1285,23 @@ function AdminContent() {
                   <div className="flex items-center justify-between px-6 py-4 border-b border-border">
                     <h2 className="text-base font-semibold text-text-primary">Event Explorer</h2>
                     <div className="flex items-center gap-2">
+                      <button
+                        disabled={chainVerifying}
+                        onClick={async () => {
+                          setChainVerifying(true);
+                          setChainResult(null);
+                          try {
+                            const res = await fetch("/api/audit/verify-integrity", { method: "POST" });
+                            if (res.ok) setChainResult(await res.json());
+                            else flash("Failed to verify integrity", "error");
+                          } catch { flash("Failed to verify integrity", "error"); }
+                          setChainVerifying(false);
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-lg hover:bg-muted transition-colors disabled:opacity-50"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        {chainVerifying ? "Verifying…" : "Verify Integrity"}
+                      </button>
                       <a href={`/api/audit?export=csv&${new URLSearchParams(Object.fromEntries(Object.entries(explorerFilters).filter(([,v]) => v)))}`} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-lg hover:bg-muted transition-colors" download>
                         <Download className="w-3.5 h-3.5" /> CSV
                       </a>
@@ -1202,6 +1310,24 @@ function AdminContent() {
                       </a>
                     </div>
                   </div>
+                  {/* Chain verification result banner */}
+                  {chainResult && (
+                    <div className={`px-6 py-3 border-b border-border text-sm ${chainResult.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
+                      {chainResult.ok ? (
+                        <span className="flex items-center gap-2"><ShieldCheck className="w-4 h-4" /> Integrity verified — {chainResult.totalEntries} entries, hash chain intact.</span>
+                      ) : (
+                        <div>
+                          <span className="flex items-center gap-2 font-semibold"><ShieldOff className="w-4 h-4" /> Integrity check failed — {chainResult.brokenLinks.length} broken link(s) in {chainResult.totalEntries} entries.</span>
+                          <ul className="mt-1 ml-6 list-disc text-xs">
+                            {chainResult.brokenLinks.slice(0, 10).map((b, i) => (
+                              <li key={i}>{b.file}:{b.lineNum} ({b.eventId}) — {b.reason}</li>
+                            ))}
+                            {chainResult.brokenLinks.length > 10 && <li>… and {chainResult.brokenLinks.length - 10} more</li>}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {/* Filters */}
                   <div className="px-6 py-3 border-b border-border bg-gray-50">
                     <div className="flex flex-wrap gap-2">
@@ -1287,8 +1413,225 @@ function AdminContent() {
           </div>
         )}
 
+        {/* Backup Tab */}
+        {tab === "backup" && (
+          <div className="space-y-6">
+            {/* Config card */}
+            <div className="bg-surface rounded-xl shadow-sm border border-border">
+              <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-text-primary">Backup Settings</h2>
+                  <p className="text-xs text-text-muted mt-0.5">Backups include config/, docs/, logs/, archive/ and history/.</p>
+                </div>
+                <button
+                  disabled={backupRunning}
+                  onClick={async () => {
+                    setBackupRunning(true); setBackupStatus("Running backup…");
+                    const res = await fetch("/api/admin/backup", { method: "POST" });
+                    const d = await res.json();
+                    setBackupRunning(false);
+                    if (res.ok) { setBackupStatus(`✅ ${d.filename}`); fetchBackup(); }
+                    else setBackupStatus(`❌ ${d.error || "Backup failed"}`);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50 transition-colors"
+                >
+                  <PlayCircle className="w-4 h-4" />
+                  {backupRunning ? "Running…" : "Run Now"}
+                </button>
+              </div>
+              {backupStatus && (
+                <div className={`mx-6 mt-4 px-3 py-2 rounded-lg text-sm ${backupStatus.startsWith("✅") ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-700 border border-red-200"}`}>{backupStatus}</div>
+              )}
+              <div className="px-6 py-4 space-y-4">
+                <div className="flex items-center gap-3">
+                  <input type="checkbox" id="bk-enabled" checked={backupConfig.enabled} onChange={(e) => setBackupConfig({ ...backupConfig, enabled: e.target.checked })} className="rounded" />
+                  <label htmlFor="bk-enabled" className="text-sm font-medium text-text-primary">Enable scheduled backups</label>
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Schedule</label>
+                    <select value={backupConfig.schedule} onChange={(e) => setBackupConfig({ ...backupConfig, schedule: e.target.value as "manual"|"daily"|"weekly" })} className="w-full text-sm border border-border rounded-lg px-3 py-2 h-[34px]">
+                      <option value="manual">Manual only</option>
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                    </select>
+                  </div>
+                  {backupConfig.schedule !== "manual" && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Time (HH:MM)</label>
+                      <input type="time" value={backupConfig.scheduleTime} onChange={(e) => setBackupConfig({ ...backupConfig, scheduleTime: e.target.value })} className="w-full text-sm border border-border rounded-lg px-3 py-1.5" />
+                    </div>
+                  )}
+                  {backupConfig.schedule === "weekly" && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Day of week</label>
+                      <select value={backupConfig.scheduleDayOfWeek} onChange={(e) => setBackupConfig({ ...backupConfig, scheduleDayOfWeek: parseInt(e.target.value) })} className="w-full text-sm border border-border rounded-lg px-3 py-1.5">
+                        {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d, i) => <option key={i} value={i}>{d}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Keep last N backups</label>
+                    <input type="number" min={0} value={backupConfig.retentionCount} onChange={(e) => setBackupConfig({ ...backupConfig, retentionCount: parseInt(e.target.value) || 0 })} className="w-full text-sm border border-border rounded-lg px-3 py-1.5" />
+                    <p className="text-xs text-text-muted mt-0.5">0 = unlimited</p>
+                  </div>
+                </div>
+
+                {/* Targets */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-text-primary">Backup Targets</label>
+                    <button onClick={() => { setNewTarget(EMPTY_TARGET()); setShowNewTarget(true); }} className="text-xs text-accent hover:underline flex items-center gap-1"><Plus className="w-3 h-3" />Add target</button>
+                  </div>
+                  {backupConfig.targets.length === 0 && !showNewTarget && (
+                    <p className="text-sm text-text-muted">No targets configured. Backups are saved to the local <code className="text-xs font-mono">backups/</code> directory only.</p>
+                  )}
+                  <div className="space-y-2">
+                    {backupConfig.targets.map((t) => (
+                      <div key={t.id} className="flex items-center gap-3 px-4 py-2 border border-border rounded-lg bg-gray-50">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-text-primary">{t.label || "(unnamed)"}</p>
+                          <p className="text-xs text-text-muted">{t.type === "local" ? `Local: ${t.path}` : `CIFS: //${t.host}/${t.share}${t.remotePath}`}</p>
+                        </div>
+                        <button onClick={() => setBackupConfig({ ...backupConfig, targets: backupConfig.targets.filter((x) => x.id !== t.id) })} className="p-1 text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {showNewTarget && (
+                    <div className="mt-3 p-4 border border-border rounded-lg bg-gray-50 space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
+<select value={newTarget.type} onChange={(e) => setNewTarget({ ...newTarget, type: e.target.value as "local"|"cifs" })} className="w-full text-sm border border-border rounded-lg px-2 py-1.5 h-[34px]">
+                            <option value="local">Local path (also NFS mount)</option>
+                            <option value="cifs">CIFS / SMB share</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Label</label>
+                          <input type="text" value={newTarget.label} onChange={(e) => setNewTarget({ ...newTarget, label: e.target.value })} placeholder="e.g. NAS backup" className="w-full text-sm border border-border rounded-lg px-2 py-1.5" />
+                        </div>
+                      </div>
+                      {newTarget.type === "local" ? (
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Path</label>
+                          <input type="text" value={newTarget.path} onChange={(e) => setNewTarget({ ...newTarget, path: e.target.value })} placeholder="/mnt/nas/docit-backups" className="w-full text-sm border border-border rounded-lg px-2 py-1.5" />
+                          <p className="text-xs text-text-muted mt-0.5">For NFS: mount the share at the OS level first, then provide the mount path here.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Host</label>
+                              <input type="text" value={newTarget.host} onChange={(e) => setNewTarget({ ...newTarget, host: e.target.value })} placeholder="192.168.1.10" className="w-full text-sm border border-border rounded-lg px-2 py-1.5" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Share</label>
+                              <input type="text" value={newTarget.share} onChange={(e) => setNewTarget({ ...newTarget, share: e.target.value })} placeholder="backups" className="w-full text-sm border border-border rounded-lg px-2 py-1.5" />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Remote path prefix</label>
+                            <input type="text" value={newTarget.remotePath} onChange={(e) => setNewTarget({ ...newTarget, remotePath: e.target.value })} placeholder="docit/" className="w-full text-sm border border-border rounded-lg px-2 py-1.5" />
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Username</label>
+                              <input type="text" value={newTarget.username} onChange={(e) => setNewTarget({ ...newTarget, username: e.target.value })} className="w-full text-sm border border-border rounded-lg px-2 py-1.5" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Password</label>
+                              <input type="password" value={newTarget.password} onChange={(e) => setNewTarget({ ...newTarget, password: e.target.value })} className="w-full text-sm border border-border rounded-lg px-2 py-1.5" autoComplete="new-password" />
+                            </div>
+                          </div>
+                          <p className="text-xs text-text-muted">Requires <code className="font-mono">smbclient</code> to be installed on the server. The password is stored encrypted.</p>
+                        </div>
+                      )}
+                      <div className="flex gap-2 pt-1">
+                        <button
+                          onClick={() => {
+                            if (!newTarget.label) return flash("Label is required", "error");
+                            if (newTarget.type === "local" && !newTarget.path) return flash("Path is required", "error");
+                            if (newTarget.type === "cifs" && (!newTarget.host || !newTarget.share)) return flash("Host and share are required", "error");
+                            setBackupConfig({ ...backupConfig, targets: [...backupConfig.targets, newTarget] });
+                            setShowNewTarget(false);
+                            setNewTarget(EMPTY_TARGET());
+                          }}
+                          className="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover"
+                        >Add</button>
+                        <button onClick={() => setShowNewTarget(false)} className="px-3 py-1.5 text-sm text-gray-500">Cancel</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  onClick={async () => {
+                    const res = await fetch("/api/admin/backup", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(backupConfig) });
+                    if (res.ok) flash("Backup settings saved", "success");
+                    else { const d = await res.json(); flash(d.error || "Failed to save", "error"); }
+                  }}
+                  className="px-4 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors"
+                >Save Settings</button>
+              </div>
+            </div>
+
+            {/* Backup list */}
+            <div className="bg-surface rounded-xl shadow-sm border border-border">
+              <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+                <h2 className="text-base font-semibold text-text-primary">Backup Archives</h2>
+                <button onClick={fetchBackup} className="p-1.5 rounded hover:bg-muted text-text-muted" title="Refresh"><RefreshCw className="w-4 h-4" /></button>
+              </div>
+              {backupList.length === 0 ? (
+                <p className="px-6 py-4 text-sm text-text-muted">No backups yet.</p>
+              ) : (
+                <div className="divide-y divide-border">
+                  {backupList.map((b) => (
+                    <div key={b.filename} className="flex items-center gap-4 px-6 py-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-text-primary font-mono">{b.filename}</p>
+                        <p className="text-xs text-text-muted">{new Date(b.createdAt).toLocaleString()} · {(b.sizeBytes / 1024 / 1024).toFixed(1)} MB</p>
+                      </div>
+                      <button
+                        disabled={restoringFile === b.filename}
+                        onClick={async () => {
+                          if (!confirm(`Restore from ${b.filename}?\n\nThis will OVERWRITE current config, docs, logs, archive, and history directories. This cannot be undone.`)) return;
+                          setRestoringFile(b.filename);
+                          try {
+                            const res = await fetch(`/api/admin/backup/${encodeURIComponent(b.filename)}/restore`, { method: "POST" });
+                            if (res.ok) { flash(`Restored from ${b.filename}`, "success"); }
+                            else { const d = await res.json(); flash(d.error || "Restore failed", "error"); }
+                          } catch { flash("Restore failed", "error"); }
+                          finally { setRestoringFile(null); }
+                        }}
+                        className="p-1.5 rounded hover:bg-blue-50 text-text-muted hover:text-blue-600 disabled:opacity-50"
+                        title="Restore this backup"
+                      >
+                        <RotateCcw className={`w-4 h-4 ${restoringFile === b.filename ? "animate-spin" : ""}`} />
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Delete ${b.filename}?`)) return;
+                          const res = await fetch(`/api/admin/backup/${encodeURIComponent(b.filename)}`, { method: "DELETE" });
+                          if (res.ok) fetchBackup();
+                          else flash("Failed to delete backup", "error");
+                        }}
+                        className="p-1.5 rounded hover:bg-red-50 text-text-muted hover:text-red-600"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Settings Tab */}
-        {tab === "settings" && (
+        {tab === "settings" && (<>
           <div className="bg-surface rounded-xl shadow-sm border border-border">
             <div className="px-6 py-4 border-b border-border">
               <h2 className="text-lg font-semibold text-text-primary">SMTP / Email Settings</h2>
@@ -1368,7 +1711,7 @@ function AdminContent() {
                 />
                 <p className="text-xs text-text-muted mt-1">Receives notifications when new users register</p>
               </div>
-              <div className="pt-2">
+              <div className="pt-2 flex items-center gap-3">
                 <button
                   onClick={async () => {
                     const res = await fetch("/api/settings/smtp", {
@@ -1376,7 +1719,7 @@ function AdminContent() {
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify(smtp),
                     });
-    if (res.ok) flash("SMTP settings saved", "success");
+                    if (res.ok) flash("SMTP settings saved", "success");
                     else flash("Failed to save SMTP settings", "error");
                   }}
                   className="px-4 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors"
@@ -1384,9 +1727,161 @@ function AdminContent() {
                   Save Settings
                 </button>
               </div>
+
+              {/* Send test email */}
+              <div className="border-t border-border pt-4 mt-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Send Test Email</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="email"
+                    value={testEmailTo}
+                    onChange={(e) => setTestEmailTo(e.target.value)}
+                    className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="recipient@example.com"
+                  />
+                  <button
+                    disabled={testEmailSending || !testEmailTo}
+                    onClick={async () => {
+                      setTestEmailSending(true);
+                      try {
+                        const res = await fetch("/api/settings/smtp/test", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ to: testEmailTo }),
+                        });
+                        if (res.ok) flash("Test email sent successfully", "success");
+                        else {
+                          const d = await res.json();
+                          flash(d.error || "Failed to send test email", "error");
+                        }
+                      } catch {
+                        flash("Failed to send test email", "error");
+                      } finally {
+                        setTestEmailSending(false);
+                      }
+                    }}
+                    className="px-4 py-1.5 text-sm font-medium border border-border rounded-lg hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  >
+                    {testEmailSending ? "Sending…" : "Send Test"}
+                  </button>
+                </div>
+                <p className="text-xs text-text-muted mt-1">Save your settings first, then send a test email to verify the configuration</p>
+              </div>
             </div>
           </div>
-        )}
+
+          {/* Encryption Key card */}
+          <div className="bg-surface rounded-xl shadow-sm border border-border mt-6">
+            <div className="px-6 py-4 border-b border-border">
+              <h2 className="text-lg font-semibold text-text-primary">Encryption Key</h2>
+              <p className="text-xs text-text-muted mt-1">Manages the AES-256 key used to encrypt TOTP secrets, CIFS passwords, and backup archives</p>
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              {/* Fingerprint */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Key Fingerprint</label>
+                <p className="text-sm font-mono text-text-primary">{keyFingerprint || "—"}</p>
+                <p className="text-xs text-text-muted mt-0.5">First 16 hex characters of SHA-256 hash of the key</p>
+              </div>
+
+              {/* Export Key */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Export Key</label>
+                {keyRevealed ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={keyRevealed}
+                      className="flex-1 px-3 py-1.5 text-sm font-mono border border-border rounded-lg bg-gray-50 select-all"
+                    />
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(keyRevealed); flash("Key copied to clipboard", "success"); }}
+                      className="p-1.5 rounded hover:bg-muted text-text-muted" title="Copy"
+                    ><Copy className="w-4 h-4" /></button>
+                    <button
+                      onClick={() => setKeyRevealed(null)}
+                      className="p-1.5 rounded hover:bg-muted text-text-muted" title="Hide"
+                    ><EyeOff className="w-4 h-4" /></button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={async () => {
+                      const res = await fetch("/api/admin/security", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ action: "export-key" }),
+                      });
+                      if (res.ok) {
+                        const data = await res.json();
+                        setKeyRevealed(data.keyBase64);
+                      } else flash("Failed to export key", "error");
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border border-border rounded-lg hover:bg-muted transition-colors"
+                  >
+                    <Eye className="w-4 h-4" /> Reveal Key
+                  </button>
+                )}
+                <p className="text-xs text-text-muted mt-1">Store this key in a safe place (e.g. password vault). Without it, encrypted backups are unrecoverable.</p>
+              </div>
+
+              {/* Rotation result */}
+              {keyRotationResult && (
+                <div className="p-4 rounded-lg bg-amber-50 border border-amber-200 space-y-2">
+                  <p className="text-sm font-semibold text-amber-800">Key rotated successfully</p>
+                  <p className="text-xs text-amber-700">{keyRotationResult.summary}</p>
+                  <div>
+                    <label className="block text-xs font-medium text-amber-800 mb-1">New Key (save this immediately!):</label>
+                    <div className="flex items-center gap-2">
+                      <input type="text" readOnly value={keyRotationResult.newKey} className="flex-1 px-3 py-1.5 text-sm font-mono border border-amber-300 rounded-lg bg-white select-all" />
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(keyRotationResult.newKey); flash("New key copied", "success"); }}
+                        className="p-1.5 rounded hover:bg-amber-100 text-amber-700" title="Copy"
+                      ><Copy className="w-4 h-4" /></button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Rotate Key */}
+              <div className="border-t border-border pt-4">
+                <button
+                  disabled={keyRotating}
+                  onClick={async () => {
+                    if (!confirm("⚠️ ROTATE ENCRYPTION KEY?\n\nThis will:\n• Generate a new encryption key\n• Re-encrypt all TOTP secrets\n• Re-encrypt all CIFS passwords\n• Re-encrypt all backup archives\n\nYou MUST save the new key afterwards. Continue?")) return;
+                    if (!confirm("Are you absolutely sure? This is irreversible if you lose the new key.")) return;
+                    setKeyRotating(true);
+                    try {
+                      const res = await fetch("/api/admin/security", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ action: "rotate-key" }),
+                      });
+                      if (res.ok) {
+                        const data = await res.json();
+                        const s = data.summary;
+                        const summaryText = `Re-encrypted: ${s.totpSecretsRotated} TOTP secrets, ${s.cifsPasswordsRotated} CIFS passwords, ${s.backupFilesRotated} backup files.${s.errors.length ? ` Errors: ${s.errors.join("; ")}` : ""}`;
+                        setKeyRotationResult({ newKey: s.newKeyBase64, summary: summaryText });
+                        setKeyRevealed(null);
+                        fetchKeyInfo();
+                        flash("Key rotated — save the new key!", "success");
+                      } else {
+                        const d = await res.json();
+                        flash(d.error || "Key rotation failed", "error");
+                      }
+                    } catch { flash("Key rotation failed", "error"); }
+                    finally { setKeyRotating(false); }
+                  }}
+                  className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                >
+                  <RefreshCw className={`w-4 h-4 ${keyRotating ? "animate-spin" : ""}`} />
+                  {keyRotating ? "Rotating…" : "Rotate Encryption Key"}
+                </button>
+                <p className="text-xs text-text-muted mt-1">Generates a new key and re-encrypts all data. Old key will no longer work.</p>
+              </div>
+            </div>
+          </div>
+        </>)}
       </div>
     </div>
   );

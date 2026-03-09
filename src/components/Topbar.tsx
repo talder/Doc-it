@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Search, LogOut, Settings, Sun, Moon, Archive, User, Bell, X, FileText, BookOpen, Check, HardDriveDownload } from "lucide-react";
+import { ChevronDown, Search, LogOut, Settings, Sun, Moon, Archive, User, Bell, X, FileText, BookOpen, Check, HardDriveDownload, Home, Trophy, Share2, Trash2, Lock, Clock, BookMarked } from "lucide-react";
 import OfflineBundleModal from "@/components/OfflineBundleModal";
 import { useTheme, isLightTheme, type Theme } from "@/components/ThemeProvider";
 import type { Space, SanitizedUser, ReviewItem } from "@/lib/types";
@@ -54,6 +54,17 @@ export interface AppNotification {
   time: string;
 }
 
+interface ShareOverviewItem {
+  token: string;
+  docName: string;
+  category: string;
+  mode: "read" | "readwrite";
+  createdBy: string;
+  createdAt: string;
+  expiresAt?: string;
+  hasPassword: boolean;
+}
+
 interface TopbarProps {
   currentSpace: Space | null;
   spaces: Space[];
@@ -61,6 +72,9 @@ interface TopbarProps {
   onSwitchSpace: (slug: string) => void;
   onLogout: () => void;
   onOpenArchive?: () => void;
+  onOpenTrash?: () => void;
+  onHome?: () => void;
+  onSearch?: () => void;
   reviewItems?: ReviewItem[];
   onNavigateToReview?: (item: ReviewItem) => void;
   notifications?: AppNotification[];
@@ -69,7 +83,15 @@ interface TopbarProps {
   onNotificationAction?: (n: AppNotification) => void;
 }
 
-export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLogout, onOpenArchive, reviewItems = [], onNavigateToReview, notifications = [], onDismissNotification, onClearNotifications, onNotificationAction }: TopbarProps) {
+export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLogout, onOpenArchive, onOpenTrash, onHome, onSearch, reviewItems = [], onNavigateToReview, notifications = [], onDismissNotification, onClearNotifications, onNotificationAction }: TopbarProps) {
+  const [leaderboardOpen, setLeaderboardOpen] = useState(false);
+  const [leaderboard, setLeaderboard] = useState<{ actor: string; count: number }[]>([]);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const leaderboardRef = useRef<HTMLDivElement>(null);
+  const [sharesOpen, setSharesOpen] = useState(false);
+  const [sharesData, setSharesData] = useState<ShareOverviewItem[]>([]);
+  const [sharesLoading, setSharesLoading] = useState(false);
+  const sharesRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const [spaceMenuOpen, setSpaceMenuOpen] = useState(false);
@@ -94,6 +116,8 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
       if (themeRef.current && !themeRef.current.contains(e.target as Node)) setThemeMenuOpen(false);
       if (reviewsRef.current && !reviewsRef.current.contains(e.target as Node)) setReviewsOpen(false);
       if (notifsRef.current && !notifsRef.current.contains(e.target as Node)) setNotifsOpen(false);
+      if (leaderboardRef.current && !leaderboardRef.current.contains(e.target as Node)) setLeaderboardOpen(false);
+      if (sharesRef.current && !sharesRef.current.contains(e.target as Node)) setSharesOpen(false);
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
@@ -104,13 +128,19 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
 
   return (<>
     <header className="topbar">
-      {/* Left: Space name + switcher */}
-      <div className="flex items-center gap-3" ref={spaceRef}>
+      {/* Left: Home + Space name + switcher */}
+      <div className="flex items-center gap-2" ref={spaceRef}>
+        {onHome && (
+          <button onClick={onHome} className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors" title="Home">
+            <Home className="w-4 h-4" />
+          </button>
+        )}
         <div className="relative">
           <button
             onClick={() => setSpaceMenuOpen(!spaceMenuOpen)}
             className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-muted transition-colors"
           >
+            <span className="text-xs font-medium text-text-muted uppercase tracking-wider mr-1">Space:</span>
             <span className="text-lg font-bold text-text-primary truncate max-w-[300px]">
               {currentSpace?.name || "Select Space"}
             </span>
@@ -155,11 +185,108 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
         </div>
       </div>
 
+      {/* Center: Doc-it branding */}
+      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none select-none">
+        <span className="text-sm font-semibold text-text-muted tracking-wide">Doc-it</span>
+      </div>
+
       {/* Right: Search + Theme + User */}
       <div className="flex items-center gap-2">
-        <button className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors">
+        <button
+          onClick={onSearch}
+          className="topbar-search-btn"
+          title="Search (⌘K)"
+        >
           <Search className="w-4 h-4" />
+          <span className="topbar-search-label">Search</span>
+          <kbd className="topbar-search-kbd">⌘K</kbd>
         </button>
+
+        {/* Journal */}
+        <button
+          onClick={() => router.push("/journal")}
+          className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
+          title="Journal"
+        >
+          <BookMarked className="w-4 h-4" />
+        </button>
+
+        {/* Shared pages overview */}
+        <div className="relative" ref={sharesRef}>
+          <button
+            onClick={async () => {
+              setSharesOpen((v) => !v);
+              if (!sharesOpen && currentSpace) {
+                setSharesLoading(true);
+                try {
+                  const res = await fetch(`/api/spaces/${encodeURIComponent(currentSpace.slug)}/shares`);
+                  if (res.ok) {
+                    const data = await res.json();
+                    setSharesData(data.shares ?? []);
+                  }
+                } catch {}
+                setSharesLoading(false);
+              }
+            }}
+            className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
+            title="Shared Pages"
+          >
+            <Share2 className="w-4 h-4" />
+          </button>
+          {sharesOpen && (
+            <div className="absolute right-0 top-full mt-1 z-50 bg-surface border border-border rounded-lg shadow-lg min-w-[340px] max-w-[420px]">
+              <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
+                <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Shared Pages</span>
+                <span className="text-xs text-text-muted">{sharesData.length} active</span>
+              </div>
+              {sharesLoading ? (
+                <div className="px-4 py-6 text-sm text-text-muted text-center">Loading…</div>
+              ) : sharesData.length === 0 ? (
+                <div className="px-4 py-6 text-sm text-text-muted text-center">No shared pages</div>
+              ) : (
+                <div className="max-h-80 overflow-y-auto py-1">
+                  {sharesData.map((s) => (
+                    <div key={s.token} className="flex items-start gap-3 px-4 py-2.5 hover:bg-muted group">
+                      <FileText className="w-4 h-4 text-accent flex-shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-text-primary truncate">{s.docName}</p>
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          <span className="text-[10px] text-text-muted">{s.category}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${s.mode === "read" ? "bg-blue-500/10 text-blue-600" : "bg-green-500/10 text-green-600"}`}>
+                            {s.mode === "read" ? "Read" : "Read & Write"}
+                          </span>
+                          {s.hasPassword && <span title="Password-protected"><Lock className="w-3 h-3 text-amber-500" /></span>}
+                          {s.expiresAt && (
+                            <span className="text-[10px] text-text-muted flex items-center gap-0.5" title={`Expires: ${new Date(s.expiresAt).toLocaleString()}`}>
+                              <Clock className="w-3 h-3" />
+                              {new Date(s.expiresAt).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-text-muted mt-0.5">by {s.createdBy} · {new Date(s.createdAt).toLocaleDateString()}</p>
+                      </div>
+                      <button
+                        className="p-1 rounded hover:bg-red-500/10 text-text-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                        title="Revoke share"
+                        onClick={async () => {
+                          if (!currentSpace) return;
+                          await fetch(`/api/spaces/${encodeURIComponent(currentSpace.slug)}/shares`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ action: "revoke", token: s.token }),
+                          });
+                          setSharesData((prev) => prev.filter((x) => x.token !== s.token));
+                        }}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* API Docs */}
         <button
@@ -180,6 +307,59 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
             <Archive className="w-4 h-4" />
           </button>
         )}
+
+        {/* Trash / Recycle bin */}
+        {onOpenTrash && (
+          <button
+            onClick={onOpenTrash}
+            className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
+            title="Recycle Bin"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+          </button>
+        )}
+
+        {/* Trophy / Leaderboard */}
+        <div className="relative" ref={leaderboardRef}>
+          <button
+            onClick={async () => {
+              setLeaderboardOpen((v) => !v);
+              if (!leaderboardOpen && leaderboard.length === 0) {
+                setLeaderboardLoading(true);
+                try {
+                  const res = await fetch("/api/audit/leaderboard");
+                  if (res.ok) {
+                    const data = await res.json();
+                    setLeaderboard(data.leaders ?? []);
+                  }
+                } catch {}
+                setLeaderboardLoading(false);
+              }
+            }}
+            className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
+            title="Top Contributors"
+          >
+            <Trophy className="w-4 h-4" />
+          </button>
+          {leaderboardOpen && (
+            <div className="absolute right-0 top-full mt-1 z-50 bg-surface border border-border rounded-lg shadow-lg py-1 min-w-[240px]">
+              <div className="px-3 py-2 border-b border-border text-xs font-semibold text-text-muted uppercase tracking-wider">Top 10 Contributors</div>
+              {leaderboardLoading ? (
+                <div className="px-3 py-4 text-sm text-text-muted text-center">Loading…</div>
+              ) : leaderboard.length === 0 ? (
+                <div className="px-3 py-4 text-sm text-text-muted text-center">No activity yet</div>
+              ) : (
+                leaderboard.slice(0, 10).map((entry, i) => (
+                  <div key={entry.actor} className="flex items-center gap-3 px-3 py-2 hover:bg-muted">
+                    <span className={`w-5 text-center font-bold text-sm ${i === 0 ? "text-yellow-500" : i === 1 ? "text-gray-400" : i === 2 ? "text-amber-600" : "text-text-muted"}`}>{i + 1}</span>
+                    <span className="flex-1 text-sm font-medium text-text-primary truncate">{entry.actor}</span>
+                    <span className="text-xs text-text-muted">{entry.count} edits</span>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Offline Bundle */}
         <button

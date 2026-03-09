@@ -8,7 +8,7 @@ import {
   Heading1, Heading2, Heading3, Heading4, List, ListOrdered, ListChecks, Code2, Quote,
   Table, ImageIcon, ChevronDown, Lightbulb, Pencil, GitBranch,
   Minus, AlignLeft, AlignCenter, AlignRight, Link, Paperclip,
-  FileText, CalendarDays, Clock, Sigma, FileImage, LayoutTemplate, Database,
+  FileText, CalendarDays, Clock, Sigma, FileImage, LayoutTemplate, Database, Palette,
 } from "lucide-react";
 import { SlashCommandsList } from "./SlashCommandsList";
 import { PluginKey } from "@tiptap/pm/state";
@@ -302,6 +302,21 @@ const getSlashCommands = (): SlashCommandItem[] => [
         year: "numeric", month: "long", day: "numeric",
       });
       editor.chain().focus().deleteRange(range).insertContent(date).run();
+    },
+  },
+  {
+    title: "Color Swatch",
+    description: "Insert a colored rectangle with hex code",
+    icon: <Palette className="h-4 w-4" />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run();
+      const view = editor.view;
+      const from = editor.state.selection.from;
+      const coords = view.coordsAtPos(from);
+      document.dispatchEvent(new CustomEvent("slash:color", {
+        detail: { editor, coords },
+        bubbles: true,
+      }));
     },
   },
   {

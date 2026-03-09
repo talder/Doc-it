@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser, getUsers, writeUsers, hashPassword, verifyPassword, isPasswordInHistory, sanitizeUser } from "@/lib/auth";
+import { getCurrentUser, getUsers, writeUsers, hashPassword, verifyPassword, isPasswordInHistory, sanitizeUser, createSession, getSessionCookieName, invalidateUserSessions } from "@/lib/auth";
 import { isPasswordValid, validatePassword } from "@/lib/password-policy";
 
 export async function GET() {
@@ -69,6 +69,22 @@ export async function PUT(request: NextRequest) {
     }
 
     await writeUsers(users);
+
+    // If password changed, invalidate all existing sessions and issue a fresh one
+    if (body.newPassword) {
+      const newSessionId = await createSession(users[idx].username);
+      await invalidateUserSessions(users[idx].username, newSessionId);
+      const resp = NextResponse.json(sanitizeUser(users[idx]));
+      resp.cookies.set(getSessionCookieName(), newSessionId, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: 60 * 60 * 8,
+      });
+      return resp;
+    }
+
     return NextResponse.json(sanitizeUser(users[idx]));
   } catch (error) {
     console.error("Profile PUT error:", error);

@@ -118,5 +118,6 @@ export async function readJsonConfig<T>(filename: string, defaultValue: T): Prom
 export async function writeJsonConfig<T>(filename: string, data: T) {
   await ensureConfigDir();
   const filePath = path.join(CONFIG_DIR, filename);
+  await ensureDir(path.dirname(filePath));
   await fs.writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
 }

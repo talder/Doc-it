@@ -1,5 +1,5 @@
 import matter from "gray-matter";
-import type { DocMetadata, CustomPropertyType } from "./types";
+import type { DocMetadata, DocClassification, CustomPropertyType } from "./types";
 
 /**
  * Parse a .md file that may contain YAML frontmatter.
@@ -16,6 +16,9 @@ export function parseFrontmatter(raw: string): { body: string; metadata: DocMeta
     if (data.updatedBy) metadata.updatedBy = String(data.updatedBy);
     if (Array.isArray(data.tags)) {
       metadata.tags = data.tags.map((t: unknown) => String(t));
+    }
+    if (data.classification && ["public", "internal", "confidential", "restricted"].includes(data.classification)) {
+      metadata.classification = data.classification as DocClassification;
     }
     if (data.custom && typeof data.custom === "object") {
       metadata.custom = {};
@@ -50,6 +53,7 @@ export function stringifyFrontmatter(body: string, metadata: DocMetadata): strin
   if (metadata.updatedAt) data.updatedAt = metadata.updatedAt;
   if (metadata.updatedBy) data.updatedBy = metadata.updatedBy;
   if (metadata.tags && metadata.tags.length > 0) data.tags = metadata.tags;
+  if (metadata.classification) data.classification = metadata.classification;
   if (metadata.custom && Object.keys(metadata.custom).length > 0) data.custom = metadata.custom;
 
   if (Object.keys(data).length === 0) {

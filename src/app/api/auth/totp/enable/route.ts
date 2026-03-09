@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser, getUsers, writeUsers } from "@/lib/auth";
+import { getCurrentUser, getUsers, writeUsers, createSession, getSessionCookieName, invalidateUserSessions } from "@/lib/auth";
 import { auditLog } from "@/lib/audit";
+import { encryptField } from "@/lib/crypto";
 import { createHash, randomBytes } from "crypto";
 import * as OTPAuth from "otpauth";
 
@@ -47,10 +48,12 @@ export async function POST(request: NextRequest) {
 
   const { plain, hashed } = generateBackupCodes();
 
+  const encryptedSecret = await encryptField(secretBase32);
+
   const users = await getUsers();
   const idx = users.findIndex((u) => u.username === user.username);
   if (idx !== -1) {
-    users[idx].totpSecret = secretBase32;
+    users[idx].totpSecret = encryptedSecret;
     users[idx].totpEnabled = true;
     users[idx].totpBackupCodes = hashed;
     await writeUsers(users);
@@ -63,6 +66,17 @@ export async function POST(request: NextRequest) {
     sessionType: "session",
   });
 
-  // Return backup codes ONCE — they are shown to the user and never retrievable again
-  return NextResponse.json({ success: true, backupCodes: plain });
+  // Invalidate all existing sessions and issue a fresh one
+  await invalidateUserSessions(user.username);
+  const newSessionId = await createSession(user.username);
+
+  const resp = NextResponse.json({ success: true, backupCodes: plain });
+  resp.cookies.set(getSessionCookieName(), newSessionId, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 8,
+  });
+  return resp;
 }

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import { ChevronsLeftRight, List, BookOpen, X, Minimize2 } from "lucide-react";
+import { ChevronsLeftRight, List, BookOpen, X, Minimize2, Loader2, ThumbsUp, Share2, Copy, Link, Archive, Trash2, Dices } from "lucide-react";
 import Topbar from "@/components/Topbar";
 import TableOfContents from "@/components/TableOfContents";
 import { useTheme } from "@/components/ThemeProvider";
@@ -20,11 +20,14 @@ import TemplateFormModal from "@/components/modals/TemplateFormModal";
 import RenameDocModal from "@/components/modals/RenameDocModal";
 import NewTemplateModal from "@/components/modals/NewTemplateModal";
 import DatabaseCreateModal from "@/components/modals/DatabaseCreateModal";
+import TrashBinModal from "@/components/modals/TrashBinModal";
 import DatabaseView from "@/components/database/DatabaseView";
-import type { Space, SanitizedUser, Category, DocFile, TagsIndex, TemplateInfo, DocStatusEntry, DocStatusMap, ReviewItem, SpaceCustomization, DocMetadata, FavoriteItem } from "@/lib/types";
+import type { Space, SanitizedUser, Category, DocFile, TagsIndex, TemplateInfo, DocStatusEntry, DocStatusMap, ReviewItem, SpaceCustomization, DocMetadata, DocClassification, FavoriteItem } from "@/lib/types";
 import DocStatsFooter from "@/components/DocStatsFooter";
 import DocStatusPopover from "@/components/DocStatusPopover";
 import DocInfoPanel from "@/components/DocInfoPanel";
+import SpaceHome from "@/components/SpaceHome";
+import SearchModal from "@/components/SearchModal";
 import { usePresence } from "@/hooks/usePresence";
 import { useDocWatcher } from "@/hooks/useDocWatcher";
 
@@ -125,6 +128,14 @@ export default function Home() {
   const [showMoveDocModal, setShowMoveDocModal] = useState(false);
   const [moveDocTarget, setMoveDocTarget] = useState<DocFile | null>(null);
   const [showArchiveModal, setShowArchiveModal] = useState(false);
+  const [showTrashModal, setShowTrashModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareLink, setShareLink] = useState<string | null>(null);
+  const [shareMode, setShareMode] = useState<"read" | "readwrite">("read");
+  const [shareCopied, setShareCopied] = useState(false);
+  const [sharePassword, setSharePassword] = useState("");
+  const [shareExpiry, setShareExpiry] = useState<string>("never");
+  const [shareCustomExpiry, setShareCustomExpiry] = useState("");
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [currentRevision, setCurrentRevision] = useState<number | null>(null);
   const [lastSavedMarkdown, setLastSavedMarkdown] = useState<string | null>(null);
@@ -134,6 +145,8 @@ export default function Home() {
   const [docStatusMap, setDocStatusMap] = useState<DocStatusMap>({});
   const [spaceMembers, setSpaceMembers] = useState<{ username: string; fullName?: string }[]>([]);
   const [showStatusPopover, setShowStatusPopover] = useState(false);
+  const [showClassPopover, setShowClassPopover] = useState(false);
+  const classPopoverRef = useRef<HTMLDivElement>(null);
   const [reviewItems, setReviewItems] = useState<ReviewItem[]>([]);
   const [pendingDocLoad, setPendingDocLoad] = useState<{ name: string; category: string } | null>(null);
   const [pendingDatabaseLoad, setPendingDatabaseLoad] = useState<string | null>(null); // db ID
@@ -155,8 +168,40 @@ export default function Home() {
   // Customization (doc icons, category colors)
   const [customization, setCustomization] = useState<SpaceCustomization>({ docIcons: {}, docColors: {}, categoryIcons: {}, categoryColors: {} });
 
+  // Likes / thumbs up
+  const [docLikeCount, setDocLikeCount] = useState(0);
+  const [docLiked, setDocLiked] = useState(false);
+
   // Reading view state
   const [readingView, setReadingView] = useState(false);
+
+  // Track whether user intentionally navigated to home (skip auto-select)
+  const [showHome, setShowHome] = useState(true);
+
+  // Search modal
+  const [showSearchModal, setShowSearchModal] = useState(false);
+
+  // Global Cmd+K / Ctrl+K shortcut for search
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setShowSearchModal(true);
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, []);
+
+  // Close classification popover on outside click
+  useEffect(() => {
+    if (!showClassPopover) return;
+    const handle = (e: MouseEvent) => {
+      if (classPopoverRef.current && !classPopoverRef.current.contains(e.target as Node)) setShowClassPopover(false);
+    };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [showClassPopover]);
 
   // ESC to exit reading view
   useEffect(() => {
@@ -315,9 +360,9 @@ export default function Home() {
     const [cats, allDocs, tags, tpls, members, cust, dbs, statuses] = await Promise.all([
       catsRes.json(), docsRes.json(), tagsRes.json(), tplRes.json(), membersRes.json(), custRes.json(), dbsRes.json(), statusesRes.json(),
     ]);
-    setCategories(cats);
-    setDocs(allDocs);
-    setTagsIndex(tags);
+    setCategories(Array.isArray(cats) ? cats : []);
+    setDocs(Array.isArray(allDocs) ? allDocs : []);
+    setTagsIndex(tags && typeof tags === "object" && !Array.isArray(tags) ? tags : {});
     setTemplates(Array.isArray(tpls) ? tpls : []);
     setSpaceMembers(Array.isArray(members) ? members : []);
     setCustomization(cust && cust.docIcons ? cust : { docIcons: {}, docColors: {}, categoryIcons: {}, categoryColors: {} });
@@ -351,6 +396,7 @@ export default function Home() {
     if (res.ok && docKeyRef.current === key) {
       const data = await res.json();
     setActiveDatabase(null);
+    setShowHome(false);
     setActiveDoc({ name: doc.name, category: doc.category, isTemplate: !!doc.isTemplate });
       setMarkdown(data.content);
       setLastSavedMarkdown(data.content);
@@ -359,29 +405,43 @@ export default function Home() {
       setSaveStatus("saved");
       setIsEditing(false);
       setShowStatusPopover(false);
+      setShowClassPopover(false);
       // Fetch latest revision number
       const histRes = await fetch(
         `/api/spaces/${currentSpace.slug}/docs/${encodeURIComponent(doc.name)}/history?category=${encodeURIComponent(doc.category)}`
       );
-      if (histRes.ok) {
+      if (histRes.ok && docKeyRef.current === key) {
         const revs = await histRes.json();
         setCurrentRevision(revs.length > 0 ? revs[revs.length - 1].rev : null);
       }
       // Fetch doc status (skip for templates)
-      if (!doc.isTemplate) {
+      if (!doc.isTemplate && docKeyRef.current === key) {
         const statusRes = await fetch(
           `/api/spaces/${currentSpace.slug}/docs/${encodeURIComponent(doc.name)}/status?category=${encodeURIComponent(doc.category)}`
         );
-        if (statusRes.ok) setDocStatus(await statusRes.json());
-        else setDocStatus({ status: "draft" });
+        if (statusRes.ok && docKeyRef.current === key) setDocStatus(await statusRes.json());
+        else if (docKeyRef.current === key) setDocStatus({ status: "draft" });
+      }
+      // Fetch likes
+      if (!doc.isTemplate) {
+        const docKey = `${doc.category}/${doc.name}`;
+        fetch(`/api/spaces/${currentSpace.slug}/likes?doc=${encodeURIComponent(docKey)}`)
+          .then((r) => r.ok ? r.json() : null)
+          .then((data) => {
+            if (data && docKeyRef.current === key) {
+              setDocLikeCount(data.count ?? 0);
+              setDocLiked(!!data.likes?.[user?.username ?? ""]);
+            }
+          })
+          .catch(() => {});
       }
     }
-  }, [currentSpace]);
+  }, [currentSpace, user]);
 
-  // Auto-select first doc
+  // Auto-select first doc (skip if user intentionally went home)
   useEffect(() => {
-    if (docs.length > 0 && !activeDoc) loadDoc(docs[0]);
-  }, [docs, activeDoc, loadDoc]);
+    if (docs.length > 0 && !activeDoc && !showHome) loadDoc(docs[0]);
+  }, [docs, activeDoc, loadDoc, showHome]);
 
   // Resolve pending doc load after space switch + data fetch
   useEffect(() => {
@@ -404,6 +464,51 @@ export default function Home() {
       setPendingDatabaseLoad(null);
     }
   }, [databasesList, pendingDatabaseLoad]);
+
+  // Handle @mention events from the editor
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { username } = (e as CustomEvent<{ username: string }>).detail;
+      if (!currentSpace || !activeDoc) return;
+      fetch("/api/notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "mention",
+          targetUsername: username,
+          spaceSlug: currentSpace.slug,
+          docName: activeDoc.name,
+          category: activeDoc.category,
+        }),
+      }).catch(() => {});
+    };
+    document.addEventListener("mention:user", handler);
+    return () => document.removeEventListener("mention:user", handler);
+  }, [currentSpace, activeDoc]);
+
+  // Check for server-side notifications on login
+  const [loginNotifs, setLoginNotifs] = useState<{ id: string; message: string; docName: string; category: string; spaceSlug: string; createdAt: string }[]>([]);
+  const [showLoginNotifsModal, setShowLoginNotifsModal] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    fetch("/api/notifications")
+      .then((r) => r.ok ? r.json() : { notifications: [] })
+      .then((data) => {
+        const unread = (data.notifications || []).filter((n: { read: boolean }) => !n.read);
+        if (unread.length > 0) {
+          setLoginNotifs(unread);
+          setShowLoginNotifsModal(true);
+          // Mark all as read
+          fetch("/api/notifications", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "mark-read" }),
+          }).catch(() => {});
+        }
+      })
+      .catch(() => {});
+  }, [user]);
 
   // Fetch review items across all accessible spaces
   const fetchAllReviews = useCallback(async () => {
@@ -868,12 +973,27 @@ export default function Home() {
 
   const handleCopyMarkdown = () => {
     if (lastSavedMarkdown) {
+      const cls = docMetadata?.classification;
+      if (cls === "confidential" || cls === "restricted") {
+        if (!window.confirm(`This document is classified as "${cls}". Are you sure you want to copy its content to the clipboard?`)) return;
+      }
       navigator.clipboard.writeText(lastSavedMarkdown);
     }
   };
 
+  const [showPrintToast, setShowPrintToast] = useState(false);
   const handlePrint = () => {
-    window.print();
+    const cls = docMetadata?.classification;
+    if (cls === "confidential" || cls === "restricted") {
+      if (!window.confirm(`This document is classified as "${cls}". Are you sure you want to print it?`)) return;
+    }
+    setShowPrintToast(true);
+    // Give the toast a moment to render, then trigger print
+    setTimeout(() => {
+      setShowPrintToast(false);
+      // Small delay so the toast disappears before print dialog
+      requestAnimationFrame(() => window.print());
+    }, 800);
   };
 
   const handleArchiveDoc = async () => {
@@ -970,15 +1090,6 @@ export default function Home() {
 
   // --- Favorites ---
 
-  const saveFavorites = useCallback(async (next: FavoriteItem[]) => {
-    setFavorites(next);
-    await fetch("/api/auth/profile", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ preferences: { favorites: next } }),
-    });
-  }, []);
-
   const handleToggleFavorite = useCallback((item: FavoriteItem) => {
     setFavorites((prev) => {
       const key = item.type === "database"
@@ -1000,7 +1111,7 @@ export default function Home() {
     if (item.type === "doc") {
       if (item.spaceSlug !== currentSpace?.slug) {
         handleSwitchSpace(item.spaceSlug);
-        setPendingDocLoad({ name: item.name, category: item.category! });
+        setPendingDocLoad({ name: item.name, category: item.category ?? "" });
       } else {
         const target = docs.find((d) => d.name === item.name && d.category === item.category);
         if (target) loadDoc(target);
@@ -1008,9 +1119,9 @@ export default function Home() {
     } else if (item.type === "database") {
       if (item.spaceSlug !== currentSpace?.slug) {
         handleSwitchSpace(item.spaceSlug);
-        setPendingDatabaseLoad(item.id!);
+        setPendingDatabaseLoad(item.id ?? "");
       } else {
-        setActiveDatabase(item.id!);
+        setActiveDatabase(item.id ?? "");
         setActiveDatabaseSearch("");
       }
     }
@@ -1161,6 +1272,9 @@ export default function Home() {
         onSwitchSpace={handleSwitchSpace}
         onLogout={handleLogout}
         onOpenArchive={() => setShowArchiveModal(true)}
+        onOpenTrash={() => setShowTrashModal(true)}
+        onHome={() => { setActiveDoc(null); setActiveDatabase(null); setActiveDatabaseSearch(""); setIsEditing(false); setShowHome(true); }}
+        onSearch={() => setShowSearchModal(true)}
         reviewItems={reviewItems}
         onNavigateToReview={handleNavigateToReview}
         notifications={notifications}
@@ -1265,38 +1379,6 @@ export default function Home() {
                   Rev {currentRevision}
                 </button>
               )}
-              {activeDoc && !activeDoc.isTemplate && (() => {
-                const isAssignedReviewer = !canWrite && !!user && docStatus.reviewer === user.username;
-                const canInteractWithStatus = canWrite || isAssignedReviewer;
-                return canInteractWithStatus ? (
-                  <div className="relative">
-                    <button
-                      className={`doc-status-badge doc-status-${docStatus.status}`}
-                      onClick={() => setShowStatusPopover((v) => !v)}
-                      title={`Status: ${docStatus.status}${docStatus.reviewer ? ` · reviewer: ${docStatus.reviewer}` : ""}`}
-                    >
-                      {docStatus.status}
-                    </button>
-                    <DocStatusPopover
-                      isOpen={showStatusPopover}
-                      onClose={() => setShowStatusPopover(false)}
-                      currentStatus={docStatus.status}
-                      currentReviewer={docStatus.reviewer}
-                      members={spaceMembers}
-                      onSave={handleSetStatus}
-                      canAssignReview={canWrite}
-                    />
-                  </div>
-                ) : (
-                  <span
-                    className={`doc-status-badge doc-status-${docStatus.status}`}
-                    style={{ cursor: "default" }}
-                    title={`Status: ${docStatus.status}`}
-                  >
-                    {docStatus.status}
-                  </span>
-                );
-              })()}
               {/* Tag chips */}
               {activeDoc && !activeDoc.isTemplate && docMetadata?.tags && docMetadata.tags.length > 0 && (
                 <div className="doc-tag-chips">
@@ -1360,6 +1442,113 @@ export default function Home() {
                   <BookOpen className="w-4 h-4" />
                 </button>
               )}
+              {/* Thumbs up / like */}
+              {activeDoc && !activeDoc.isTemplate && (
+                <button
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded border transition-colors ${
+                    docLiked
+                      ? "bg-accent text-white border-accent"
+                      : "bg-transparent text-text-muted border-border hover:bg-muted"
+                  }`}
+                  onClick={async () => {
+                    if (!currentSpace || !activeDoc) return;
+                    const docKey = `${activeDoc.category}/${activeDoc.name}`;
+                    const res = await fetch(`/api/spaces/${currentSpace.slug}/likes`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ doc: docKey }),
+                    });
+                    if (res.ok) {
+                      const data = await res.json();
+                      setDocLiked(data.liked);
+                      setDocLikeCount(data.count);
+                    }
+                  }}
+                  title={docLiked ? "Remove your like" : "Like this document"}
+                >
+                  <ThumbsUp className={`w-3 h-3 ${docLiked ? "fill-current" : ""}`} />
+                  {docLikeCount > 0 && <span>{docLikeCount}</span>}
+                </button>
+              )}
+              {/* Classification badge */}
+              {activeDoc && !activeDoc.isTemplate && (() => {
+                const cls = docMetadata?.classification || "internal";
+                const classColors: Record<string, string> = {
+                  public: "bg-green-100 text-green-800 border-green-300",
+                  internal: "bg-blue-100 text-blue-800 border-blue-300",
+                  confidential: "bg-amber-100 text-amber-800 border-amber-300",
+                  restricted: "bg-red-100 text-red-800 border-red-300",
+                };
+                return canWrite ? (
+                  <div className="relative" ref={classPopoverRef}>
+                    <button
+                      className={`inline-flex items-center px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide rounded border ${classColors[cls] || classColors.internal}`}
+                      onClick={() => setShowClassPopover((v) => !v)}
+                      title={`Classification: ${cls}`}
+                    >
+                      {cls}
+                    </button>
+                    {showClassPopover && (
+                      <div className="absolute right-0 top-full mt-1 z-50 bg-surface border border-border rounded-lg shadow-lg py-1 min-w-[140px]" style={{ right: 0, left: "auto" }}>
+                        {(["public", "internal", "confidential", "restricted"] as DocClassification[]).map((opt) => (
+                          <button
+                            key={opt}
+                            className={`block w-full text-left px-3 py-1.5 text-xs hover:bg-muted capitalize ${cls === opt ? "font-bold" : ""}`}
+                            onClick={() => {
+                              const newMeta = { ...(docMetadata || {}), classification: opt };
+                              handleUpdateMetadata(newMeta);
+                              setShowClassPopover(false);
+                            }}
+                          >
+                            <span className={`inline-block w-2 h-2 rounded-full mr-2 ${opt === "public" ? "bg-green-500" : opt === "internal" ? "bg-blue-500" : opt === "confidential" ? "bg-amber-500" : "bg-red-500"}`} />
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <span
+                    className={`inline-flex items-center px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide rounded border ${classColors[cls] || classColors.internal}`}
+                    style={{ cursor: "default" }}
+                    title={`Classification: ${cls}`}
+                  >
+                    {cls}
+                  </span>
+                );
+              })()}
+              {activeDoc && !activeDoc.isTemplate && (() => {
+                const isAssignedReviewer = !canWrite && !!user && docStatus.reviewer === user.username;
+                const canInteractWithStatus = canWrite || isAssignedReviewer;
+                return canInteractWithStatus ? (
+                  <div className="relative">
+                    <button
+                      className={`doc-status-badge doc-status-${docStatus.status}`}
+                      onClick={() => setShowStatusPopover((v) => !v)}
+                      title={`Status: ${docStatus.status}${docStatus.reviewer ? ` · reviewer: ${docStatus.reviewer}` : ""}`}
+                    >
+                      {docStatus.status}
+                    </button>
+                    <DocStatusPopover
+                      isOpen={showStatusPopover}
+                      onClose={() => setShowStatusPopover(false)}
+                      currentStatus={docStatus.status}
+                      currentReviewer={docStatus.reviewer}
+                      members={spaceMembers}
+                      onSave={handleSetStatus}
+                      canAssignReview={canWrite}
+                    />
+                  </div>
+                ) : (
+                  <span
+                    className={`doc-status-badge doc-status-${docStatus.status}`}
+                    style={{ cursor: "default" }}
+                    title={`Status: ${docStatus.status}`}
+                  >
+                    {docStatus.status}
+                  </span>
+                );
+              })()}
               {activeDoc && (
                 <DocActionsMenu
                   canWrite={canWrite}
@@ -1393,6 +1582,15 @@ export default function Home() {
                     spaceSlug: currentSpace.slug,
                     spaceName: currentSpace.name,
                   }) : undefined}
+                  onShare={canWrite && !activeDoc.isTemplate ? () => {
+                    setShareLink(null);
+                    setShareCopied(false);
+                    setShareMode("read");
+                    setSharePassword("");
+                    setShareExpiry("never");
+                    setShareCustomExpiry("");
+                    setShowShareModal(true);
+                  } : undefined}
                 />
               )}
             </div>
@@ -1475,6 +1673,18 @@ export default function Home() {
                   pageWidth={pageWidth}
                   onPageWidthChange={handlePageWidthChange}
                   isTemplate={!!activeDoc.isTemplate}
+                  spellcheckEnabled={user?.preferences?.spellcheckEnabled ?? false}
+                  spellcheckLanguage={user?.preferences?.spellcheckLanguage ?? "en"}
+                  spaceMembers={spaceMembers}
+                />
+              ) : currentSpace ? (
+                <SpaceHome
+                  spaceSlug={currentSpace.slug}
+                  spaceName={currentSpace.name}
+                  onOpenDoc={(name, category) => {
+                    const target = docs.find((d) => d.name === name && d.category === category);
+                    if (target) loadDoc(target);
+                  }}
                 />
               ) : (
                 <div className="flex-1 flex items-center justify-center text-text-muted h-full">
@@ -1578,14 +1788,73 @@ export default function Home() {
         onClose={() => setShowDeleteCategoryModal(false)}
         onConfirm={handleConfirmDeleteCategory}
       />
-      <ConfirmModal
-        isOpen={showDeleteDocModal}
-        title="Delete document"
-        message={`Are you sure you want to delete "${deleteDocTarget?.name}"? This action cannot be undone.`}
-        confirmLabel="Delete"
-        variant="danger"
-        onClose={() => setShowDeleteDocModal(false)}
-        onConfirm={handleConfirmDeleteDoc}
+      {/* Delete doc modal with archive option */}
+      {showDeleteDocModal && deleteDocTarget && (
+        <div className="modal-overlay" onClick={() => setShowDeleteDocModal(false)}>
+          <div className="modal-container" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">Delete document</h2>
+              <button onClick={() => setShowDeleteDocModal(false)} className="modal-close">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="modal-body">
+              <p className="modal-message">
+                What would you like to do with &quot;{deleteDocTarget.name}&quot;?
+              </p>
+              <div className="flex flex-col gap-2 mt-4">
+                <button
+                  className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border hover:bg-muted transition-colors text-left"
+                  onClick={async () => {
+                    setShowDeleteDocModal(false);
+                    if (!currentSpace || !deleteDocTarget) return;
+                    await fetch(
+                      `/api/spaces/${currentSpace.slug}/docs/${encodeURIComponent(deleteDocTarget.name)}/archive`,
+                      {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ category: deleteDocTarget.category }),
+                      }
+                    );
+                    await fetchSpaceData();
+                    if (activeDoc?.name === deleteDocTarget.name && activeDoc?.category === deleteDocTarget.category) {
+                      setActiveDoc(null);
+                      setMarkdown("");
+                    }
+                  }}
+                >
+                  <Archive className="w-5 h-5 text-blue-500" />
+                  <div>
+                    <p className="text-sm font-medium text-text-primary">Archive</p>
+                    <p className="text-xs text-text-muted">Move to archive — can be restored anytime</p>
+                  </div>
+                </button>
+                <button
+                  className="flex items-center gap-3 px-4 py-3 rounded-lg border border-red-200 hover:bg-red-50 transition-colors text-left"
+                  onClick={() => {
+                    handleConfirmDeleteDoc();
+                    setShowDeleteDocModal(false);
+                  }}
+                >
+                  <Trash2 className="w-5 h-5 text-red-500" />
+                  <div>
+                    <p className="text-sm font-medium text-red-600">Delete to Recycle Bin</p>
+                    <p className="text-xs text-text-muted">Auto-deleted after retention period</p>
+                  </div>
+                </button>
+              </div>
+              <div className="mt-3 flex justify-end">
+                <button onClick={() => setShowDeleteDocModal(false)} className="modal-btn-cancel">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      <TrashBinModal
+        isOpen={showTrashModal}
+        spaceSlug={currentSpace?.slug || null}
+        onClose={() => setShowTrashModal(false)}
+        onRestored={fetchSpaceData}
       />
       <MoveDocModal
         isOpen={showMoveDocModal && !!moveDocTarget}
@@ -1653,6 +1922,206 @@ export default function Home() {
         }}
       />
 
+      {/* Share modal */}
+      {showShareModal && activeDoc && currentSpace && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowShareModal(false)}>
+          <div className="bg-surface rounded-xl shadow-xl border border-border w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+              <h2 className="text-base font-semibold text-text-primary">Share Document</h2>
+              <button onClick={() => setShowShareModal(false)} className="p-1.5 rounded-lg hover:bg-muted text-text-muted"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              {/* Access mode */}
+              <div>
+                <label className="text-xs font-medium text-text-secondary block mb-1">Access mode</label>
+                <select
+                  className="w-full h-10 px-3 text-sm bg-surface border border-border rounded-lg outline-none appearance-none"
+                  value={shareMode}
+                  onChange={(e) => setShareMode(e.target.value as "read" | "readwrite")}
+                >
+                  <option value="read">Read only</option>
+                  <option value="readwrite">Read &amp; Write</option>
+                </select>
+              </div>
+              {/* Password (optional) */}
+              <div>
+                <label className="text-xs font-medium text-text-secondary block mb-1">Password protection <span className="text-text-muted font-normal">(optional)</span></label>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    className="flex-1 h-10 px-3 text-sm bg-surface border border-border rounded-lg outline-none font-mono"
+                    placeholder="Leave empty for no password"
+                    value={sharePassword}
+                    onChange={(e) => setSharePassword(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="h-10 px-2.5 rounded-lg border border-border bg-surface hover:bg-muted text-text-muted hover:text-text-secondary transition-colors flex items-center gap-1.5"
+                    title="Generate passphrase"
+                    onClick={() => {
+                      const words = ["apple","river","cloud","tiger","flame","stone","cedar","pearl","storm","eagle","frost","maple","coral","bloom","drift","grove","steel","ocean","spark","lunar","amber","delta","solar","pixel","crisp","flint","noble","vivid","swift","brave","quiet","plume","ridge","vault","terra","nexus"];
+                      const pick = () => words[Math.floor(Math.random() * words.length)];
+                      setSharePassword(`${pick()}-${pick()}-${pick()}-${Math.floor(Math.random() * 90 + 10)}`);
+                    }}
+                  >
+                    <Dices className="w-4 h-4" />
+                    <span className="text-xs font-medium hidden sm:inline">Generate</span>
+                  </button>
+                </div>
+              </div>
+              {/* Expiration */}
+              <div>
+                <label className="text-xs font-medium text-text-secondary block mb-1">Link expiration</label>
+                <select
+                  className="w-full h-10 px-3 text-sm bg-surface border border-border rounded-lg outline-none appearance-none"
+                  value={shareExpiry}
+                  onChange={(e) => setShareExpiry(e.target.value)}
+                >
+                  <option value="never">Never</option>
+                  <option value="1h">1 hour</option>
+                  <option value="24h">24 hours</option>
+                  <option value="7d">7 days</option>
+                  <option value="30d">30 days</option>
+                  <option value="custom">Custom date…</option>
+                </select>
+                {shareExpiry === "custom" && (
+                  <input
+                    type="datetime-local"
+                    className="w-full h-10 px-3 text-sm bg-surface border border-border rounded-lg outline-none mt-1.5"
+                    value={shareCustomExpiry}
+                    onChange={(e) => setShareCustomExpiry(e.target.value)}
+                    min={new Date().toISOString().slice(0, 16)}
+                  />
+                )}
+              </div>
+              {!shareLink ? (
+                <button
+                  className="w-full px-4 py-2.5 text-sm font-medium bg-accent text-white rounded-lg hover:opacity-90"
+                  onClick={async () => {
+                    let expiresAt: string | undefined;
+                    if (shareExpiry === "1h") expiresAt = new Date(Date.now() + 3600_000).toISOString();
+                    else if (shareExpiry === "24h") expiresAt = new Date(Date.now() + 86400_000).toISOString();
+                    else if (shareExpiry === "7d") expiresAt = new Date(Date.now() + 7 * 86400_000).toISOString();
+                    else if (shareExpiry === "30d") expiresAt = new Date(Date.now() + 30 * 86400_000).toISOString();
+                    else if (shareExpiry === "custom" && shareCustomExpiry) expiresAt = new Date(shareCustomExpiry).toISOString();
+                    const res = await fetch(`/api/spaces/${currentSpace.slug}/shares`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        docName: activeDoc.name,
+                        category: activeDoc.category,
+                        mode: shareMode,
+                        ...(sharePassword ? { password: sharePassword } : {}),
+                        ...(expiresAt ? { expiresAt } : {}),
+                      }),
+                    });
+                    if (res.ok) {
+                      const data = await res.json();
+                      setShareLink(`${window.location.origin}${data.url}`);
+                    }
+                  }}
+                >
+                  Generate share link
+                </button>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 bg-muted rounded-lg px-3 py-2">
+                    <Link className="w-4 h-4 text-text-muted flex-shrink-0" />
+                    <input
+                      readOnly
+                      className="flex-1 bg-transparent text-sm text-text-primary outline-none truncate"
+                      value={shareLink}
+                      onFocus={(e) => e.target.select()}
+                    />
+                    <button
+                      className="p-1 rounded hover:bg-surface text-text-muted"
+                      onClick={() => {
+                        navigator.clipboard.writeText(shareLink);
+                        setShareCopied(true);
+                        setTimeout(() => setShareCopied(false), 2000);
+                      }}
+                      title="Copy link"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  {shareCopied && <p className="text-xs text-green-600">Link copied!</p>}
+                  {sharePassword && <p className="text-xs text-amber-600">🔒 Password-protected</p>}
+                  {shareExpiry !== "never" && <p className="text-xs text-text-muted">⏰ Expires: {shareExpiry === "custom" ? new Date(shareCustomExpiry).toLocaleString() : shareExpiry}</p>}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Login notifications modal */}
+      {showLoginNotifsModal && loginNotifs.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowLoginNotifsModal(false)}>
+          <div className="bg-surface rounded-xl shadow-xl border border-border w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+              <h2 className="text-base font-semibold text-text-primary">You have {loginNotifs.length} notification{loginNotifs.length > 1 ? "s" : ""}</h2>
+              <button onClick={() => setShowLoginNotifsModal(false)} className="p-1.5 rounded-lg hover:bg-muted text-text-muted">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="max-h-72 overflow-y-auto p-3 space-y-1">
+              {loginNotifs.map((n) => (
+                <button
+                  key={n.id}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted transition-colors text-left"
+                  onClick={() => {
+                    setShowLoginNotifsModal(false);
+                    if (n.spaceSlug !== currentSpace?.slug) {
+                      handleSwitchSpace(n.spaceSlug);
+                      setPendingDocLoad({ name: n.docName, category: n.category });
+                    } else {
+                      const target = docs.find((d) => d.name === n.docName && d.category === n.category);
+                      if (target) loadDoc(target);
+                    }
+                  }}
+                >
+                  <span className="w-8 h-8 rounded-lg bg-accent/10 text-accent flex items-center justify-center flex-shrink-0 text-sm font-bold">@</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-text-primary truncate">{n.message}</p>
+                    <p className="text-xs text-text-muted">{new Date(n.createdAt).toLocaleString()}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div className="px-5 py-3 border-t border-border flex justify-end">
+              <button onClick={() => setShowLoginNotifsModal(false)} className="px-4 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:opacity-90">OK</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Print toast */}
+      {showPrintToast && (
+        <>
+          <div className="print-toast-overlay" />
+          <div className="print-toast">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            Preparing document for printing…
+          </div>
+        </>
+      )}
+
+      {/* Search modal */}
+      <SearchModal
+        isOpen={showSearchModal}
+        onClose={() => setShowSearchModal(false)}
+        docs={docs}
+        tagsIndex={tagsIndex}
+        categories={categories}
+        spaceSlug={currentSpace?.slug || null}
+        spaceMembers={spaceMembers}
+        onOpenDoc={(name, category) => {
+          const target = docs.find((d) => d.name === name && d.category === category);
+          if (target) loadDoc(target);
+        }}
+      />
+
       {/* Reading view overlay */}
       {readingView && activeDoc && (
         <div className="reading-view-overlay">
@@ -1679,6 +2148,8 @@ export default function Home() {
               editable={false}
               lineSpacing={user?.preferences?.editorLineSpacing ?? "compact"}
               pageWidth="narrow"
+              spellcheckEnabled={user?.preferences?.spellcheckEnabled ?? false}
+              spellcheckLanguage={user?.preferences?.spellcheckLanguage ?? "en"}
             />
           </div>
         </div>

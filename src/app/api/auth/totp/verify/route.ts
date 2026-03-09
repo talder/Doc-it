@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserByUsername, getUsers, writeUsers, createSession, getSessionCookieName } from "@/lib/auth";
 import { auditLog } from "@/lib/audit";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { notifySecurityEvent } from "@/lib/incident";
+import { decryptField } from "@/lib/crypto";
+import { verifyMfaPending } from "@/app/api/auth/login/route";
 import { createHash } from "crypto";
 import * as OTPAuth from "otpauth";
 
 const PENDING_COOKIE = "docit-2fa-pending";
+const MAX_TOTP_ATTEMPTS = 5;
 
 export async function POST(request: NextRequest) {
+  const blocked = checkRateLimit(request, "auth");
+  if (blocked) return blocked;
+
   try {
     // Read and validate the pending-2FA cookie
     const cookieStore = request.cookies;
@@ -16,19 +24,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No pending 2FA session" }, { status: 401 });
     }
 
-    let pending: { username: string; expiresAt: string };
-    try {
-      pending = JSON.parse(Buffer.from(pendingRaw, "base64").toString("utf-8"));
-    } catch {
+    const pending = verifyMfaPending(pendingRaw);
+    if (!pending) {
       return NextResponse.json({ error: "Invalid 2FA session" }, { status: 401 });
-    }
-
-    if (!pending.username || !pending.expiresAt) {
-      return NextResponse.json({ error: "Invalid 2FA session" }, { status: 401 });
-    }
-
-    if (new Date(pending.expiresAt) < new Date()) {
-      return NextResponse.json({ error: "2FA session expired. Please log in again." }, { status: 401 });
     }
 
     const user = await getUserByUsername(pending.username);
@@ -44,6 +42,9 @@ export async function POST(request: NextRequest) {
     const normalized = String(code).replace(/[\s\-]/g, "").toUpperCase();
     let verified = false;
 
+    // Decrypt TOTP secret (backward-compatible: unencrypted secrets also work)
+    const totpSecretPlain = await decryptField(user.totpSecret);
+
     if (/^\d{6}$/.test(normalized)) {
       // Standard 6-digit TOTP code
       const totp = new OTPAuth.TOTP({
@@ -52,7 +53,7 @@ export async function POST(request: NextRequest) {
         algorithm: "SHA1",
         digits: 6,
         period: 30,
-        secret: OTPAuth.Secret.fromBase32(user.totpSecret),
+        secret: OTPAuth.Secret.fromBase32(totpSecretPlain),
       });
       const delta = totp.validate({ token: normalized, window: 1 });
       verified = delta !== null;
@@ -81,6 +82,23 @@ export async function POST(request: NextRequest) {
     }
 
     if (!verified) {
+      // Increment TOTP failure counter; lock account at threshold
+      const allUsers = await getUsers();
+      const uidx = allUsers.findIndex((u) => u.username === user.username);
+      if (uidx !== -1) {
+        const attempts = (allUsers[uidx].totpFailedAttempts ?? 0) + 1;
+        allUsers[uidx].totpFailedAttempts = attempts;
+        if (attempts >= MAX_TOTP_ATTEMPTS) {
+          allUsers[uidx].isLocked = true;
+          allUsers[uidx].lockedAt = new Date().toISOString();
+          await writeUsers(allUsers);
+          auditLog(request, { event: "auth.account.locked", outcome: "failure", actor: user.username, sessionType: "anonymous", details: { reason: "too many TOTP failures", attempts } });
+          const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || undefined;
+          notifySecurityEvent({ kind: "account_locked", username: user.username, ip, details: `Locked after ${attempts} failed TOTP attempts` });
+          return NextResponse.json({ error: "Account locked after too many failed MFA attempts. Contact an administrator." }, { status: 403 });
+        }
+        await writeUsers(allUsers);
+      }
       auditLog(request, {
         event: "auth.login.failed",
         outcome: "failure",
@@ -91,6 +109,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid verification code" }, { status: 401 });
     }
 
+    // Reset TOTP failure counter on success
+    {
+      const allUsers = await getUsers();
+      const uidx = allUsers.findIndex((u) => u.username === user.username);
+      if (uidx !== -1 && (allUsers[uidx].totpFailedAttempts ?? 0) > 0) {
+        allUsers[uidx].totpFailedAttempts = 0;
+        await writeUsers(allUsers);
+      }
+    }
+
     // Issue real session
     const sessionId = await createSession(user.username);
     const response = NextResponse.json({
@@ -99,13 +127,13 @@ export async function POST(request: NextRequest) {
       mustChangePassword: user.mustChangePassword === true,
     });
 
-    // Set session cookie
+    // Set session cookie (8-hour TTL, matches server-side expiresAt)
     response.cookies.set(getSessionCookieName(), sessionId, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
-      maxAge: 60 * 60 * 24 * 30,
+      maxAge: 60 * 60 * 8,
     });
 
     // Clear pending 2FA cookie

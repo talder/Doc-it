@@ -14,9 +14,11 @@ A self-hosted, Confluence-like documentation platform built with Next.js, TipTap
 
 ## Inspiration & Credits
 
-This project was heavily inspired by **[Jotty](https://github.com/fccview/jotty)** by [@fccview](https://github.com/fccview) — a fantastic lightweight self-hosted note-taking app with a clean interface and file-based storage philosophy.
+Three applications have been the primary functional inspiration behind Doc-it — shaping its feature set, UX philosophy, and documentation workflow:
 
-A huge shoutout and thank you to the Jotty developer for the great open-source work! Go check out and star the project:
+- **[Jotty](https://github.com/fccview/jotty)** by [@fccview](https://github.com/fccview) — a lightweight self-hosted note-taking app with a clean interface and file-based storage philosophy that directly inspired Doc-it's storage approach and simplicity.
+- **[Confluence](https://www.atlassian.com/software/confluence)** by Atlassian — the industry benchmark for team documentation, which has led the way in spaces, structured page hierarchies, and collaborative workflows that Doc-it aims to replicate in a self-hosted form.
+- **[Affine](https://affine.pro)** — a next-generation open-source knowledge base combining docs, whiteboards, and databases in a unified workspace, inspiring Doc-it's richer editor capabilities and embedded drawing/database features.
 
 > ⭐ **[github.com/fccview/jotty](https://github.com/fccview/jotty)**
 

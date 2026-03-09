@@ -43,8 +43,9 @@ function TagRenderer({
   const isSelected = selectedTag === tag.name;
 
   // Find docs that have this tag
+  const docNames = tag.docNames || [];
   const tagDocs = docs.filter((d) =>
-    tag.docNames.some((tn) =>
+    docNames.some((tn) =>
       tn === d.name || tn === `${d.category}/${d.name}` || tn.endsWith(`/${d.name}`)
     )
   );
@@ -82,11 +83,11 @@ function TagRenderer({
       {!isCollapsed && hasContent && (
         <div className="ml-3 border-l border-border-light pl-1">
           {/* Documents with this tag */}
-          {tagDocs.map((doc) => {
+          {tagDocs.map((doc, i) => {
             const isActive = activeDoc?.name === doc.name && activeDoc?.category === doc.category;
             return (
               <button
-                key={`${doc.category}/${doc.name}`}
+                key={`${doc.category}/${doc.name}-${i}`}
                 onClick={() => onSelectDoc(doc)}
                 className={`w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-sm transition-colors ${
                   isActive
@@ -101,9 +102,9 @@ function TagRenderer({
           })}
 
           {/* Child tags */}
-          {children.map((child) => (
+          {children.map((child, i) => (
             <TagRenderer
-              key={child.name}
+              key={`${child.name}-${i}`}
               tag={child}
               tagsIndex={tagsIndex}
               docs={docs}
@@ -183,9 +184,9 @@ export default function TagsList({ tagsIndex, docs, activeDoc, onTagSelect, onSe
 
       {!sectionCollapsed && (
         <div className="px-1">
-          {rootTags.map((tag) => (
+          {rootTags.map((tag, i) => (
             <TagRenderer
-              key={tag.name}
+              key={`${tag.name}-${i}`}
               tag={tag}
               tagsIndex={tagsIndex}
               docs={docs}

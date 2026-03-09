@@ -34,6 +34,8 @@ export default function ProfilePage() {
   const [fontSizePref, setFontSizePref] = useState<"sm" | "base" | "lg" | "xl">("base");
   const [alwaysShowToc, setAlwaysShowToc] = useState(false);
   const [accentColorPref, setAccentColorPref] = useState<string>("default");
+  const [spellcheckEnabled, setSpellcheckEnabled] = useState(true);
+  const [spellcheckLang, setSpellcheckLang] = useState("en");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // API Keys state
@@ -86,6 +88,8 @@ export default function ProfilePage() {
         setFontSizePref(data.preferences?.fontSize ?? "base");
         setAlwaysShowToc(data.preferences?.alwaysShowToc ?? false);
         setAccentColorPref(data.preferences?.accentColor ?? "default");
+        setSpellcheckEnabled(data.preferences?.spellcheckEnabled ?? true);
+        setSpellcheckLang(data.preferences?.spellcheckLanguage ?? "en");
         setLoading(false);
         fetchApiKeys();
         fetchTotpStatus();
@@ -134,7 +138,7 @@ export default function ProfilePage() {
     const res = await fetch("/api/auth/profile", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ preferences: { editorLineSpacing: lineSpacing, fontSize: fontSizePref, alwaysShowToc, accentColor: accentColorPref } }),
+      body: JSON.stringify({ preferences: { editorLineSpacing: lineSpacing, fontSize: fontSizePref, alwaysShowToc, accentColor: accentColorPref, spellcheckEnabled, spellcheckLanguage: spellcheckLang } }),
     });
     if (res.ok) flash("Preferences saved", "success");
     else flash("Failed to save preferences", "error");
@@ -425,6 +429,44 @@ export default function ProfilePage() {
               </p>
             </div>
 
+            {/* Spellcheck */}
+            <div className="flex items-center justify-between py-1">
+              <div>
+                <p className="text-sm font-medium text-text-primary">Spellcheck</p>
+                <p className="text-xs text-text-muted">Enable browser spellcheck in the editor</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <select
+                  value={spellcheckLang}
+                  onChange={(e) => setSpellcheckLang(e.target.value)}
+                  disabled={!spellcheckEnabled}
+                  className="text-xs border border-border rounded px-2 py-1 bg-surface text-text-primary disabled:opacity-40"
+                >
+                  <option value="en">English</option>
+                  <option value="de">Deutsch</option>
+                  <option value="nl">Nederlands</option>
+                  <option value="fr">Français</option>
+                  <option value="es">Español</option>
+                  <option value="it">Italiano</option>
+                  <option value="pt">Português</option>
+                </select>
+                <button
+                  role="switch"
+                  aria-checked={spellcheckEnabled}
+                  onClick={() => setSpellcheckEnabled((v) => !v)}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${
+                    spellcheckEnabled ? "bg-accent" : "bg-gray-300"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${
+                      spellcheckEnabled ? "translate-x-4.5" : "translate-x-0.5"
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+
             {/* Always show TOC */}
             <div className="flex items-center justify-between py-1">
               <div>
@@ -699,61 +741,11 @@ export default function ProfilePage() {
                     <RefreshCw className="w-3.5 h-3.5" />
                     Regenerate backup codes
                   </button>
-                  <button
-                    onClick={() => setTotpShowDisable(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition-colors"
-                  >
-                    <ShieldOff className="w-3.5 h-3.5" />
-                    Disable MFA
-                  </button>
                 </div>
-
-                {totpShowDisable && (
-                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg space-y-3">
-                    <p className="text-sm font-medium text-red-800">Confirm your password to disable MFA</p>
-                    <input
-                      type="password"
-                      value={totpDisablePassword}
-                      onChange={(e) => setTotpDisablePassword(e.target.value)}
-                      className="w-full px-3 py-1.5 text-sm border border-red-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-400 bg-white"
-                      placeholder="Current password"
-                      autoFocus
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        disabled={totpLoading || !totpDisablePassword}
-                        onClick={async () => {
-                          setTotpLoading(true);
-                          const res = await fetch("/api/auth/totp", {
-                            method: "DELETE",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ password: totpDisablePassword }),
-                          });
-                          setTotpLoading(false);
-                          if (res.ok) {
-                            setTotpEnabled(false);
-                            setTotpShowDisable(false);
-                            setTotpDisablePassword("");
-                            setTotpBackupRemaining(0);
-                            flash("MFA disabled", "success");
-                          } else {
-                            const d = await res.json();
-                            flash(d.error || "Failed to disable MFA", "error");
-                          }
-                        }}
-                        className="px-4 py-1.5 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
-                      >
-                        {totpLoading ? "Disabling…" : "Disable MFA"}
-                      </button>
-                      <button
-                        onClick={() => { setTotpShowDisable(false); setTotpDisablePassword(""); }}
-                        className="px-3 py-1.5 text-sm text-text-muted hover:text-text-secondary"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
+                <p className="text-xs text-text-muted flex items-center gap-1.5">
+                  <ShieldOff className="w-3 h-3" />
+                  MFA is enforced by security policy and cannot be disabled. Contact an admin if you have lost access to your authenticator.
+                </p>
               </div>
             )}
           </div>

@@ -2,9 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUsers, writeUsers, hashPassword, createSession, getSessionCookieName } from "@/lib/auth";
 import { notifyAdminNewUser } from "@/lib/email";
 import { auditLog } from "@/lib/audit";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { isPasswordValid, validatePassword } from "@/lib/password-policy";
 
 export async function POST(request: NextRequest) {
+  const blocked = checkRateLimit(request, "auth");
+  if (blocked) return blocked;
+
   try {
     const { username, password, email } = await request.json();
 

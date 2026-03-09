@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import {
   Pencil, Check, PenLine, MoreHorizontal, Copy, Printer, History,
-  FolderInput, Archive, Trash2, X, Star,
+  FolderInput, Archive, Trash2, X, Star, Share2, Link, Globe,
 } from "lucide-react";
 
 interface DocActionsMenuProps {
@@ -20,6 +20,7 @@ interface DocActionsMenuProps {
   onDelete: () => void;
   isFavorite?: boolean;
   onToggleFavorite?: () => void;
+  onShare?: () => void;
 }
 
 export default function DocActionsMenu({
@@ -36,6 +37,7 @@ export default function DocActionsMenu({
   onDelete,
   isFavorite,
   onToggleFavorite,
+  onShare,
 }: DocActionsMenuProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -138,6 +140,15 @@ export default function DocActionsMenu({
               <History className="w-4 h-4" />
               History
             </button>
+            {onShare && (
+              <button
+                onClick={() => { onShare(); setOpen(false); }}
+                className="doc-actions-item"
+              >
+                <Share2 className="w-4 h-4" />
+                Share publicly
+              </button>
+            )}
 
             {canWrite && (
               <>

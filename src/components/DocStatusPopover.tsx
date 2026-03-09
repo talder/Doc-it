@@ -34,17 +34,17 @@ export default function DocStatusPopover({
   onSave,
   canAssignReview = true,
 }: DocStatusPopoverProps) {
-  const [selectedStatus, setSelectedStatus] = useState<DocStatus>(currentStatus);
+  const [pendingReview, setPendingReview] = useState(false);
   const [selectedReviewer, setSelectedReviewer] = useState(currentReviewer || "");
   const ref = useRef<HTMLDivElement>(null);
 
   // Reset local state whenever popover opens
   useEffect(() => {
     if (isOpen) {
-      setSelectedStatus(currentStatus);
+      setPendingReview(false);
       setSelectedReviewer(currentReviewer || "");
     }
-  }, [isOpen, currentStatus, currentReviewer]);
+  }, [isOpen, currentReviewer]);
 
   // Close on outside click
   useEffect(() => {
@@ -58,56 +58,69 @@ export default function DocStatusPopover({
 
   if (!isOpen) return null;
 
-  const handleSave = () => {
-    if (selectedStatus === "review" && !selectedReviewer) return;
-    onSave(selectedStatus, selectedStatus === "review" ? selectedReviewer : undefined);
+  const handleSelect = (status: DocStatus) => {
+    if (status === "review") {
+      // Show reviewer picker instead of applying immediately
+      setPendingReview(true);
+      return;
+    }
+    onSave(status, undefined);
+    onClose();
+  };
+
+  const handleConfirmReview = () => {
+    if (!selectedReviewer) return;
+    onSave("review", selectedReviewer);
     onClose();
   };
 
   return (
-    <div ref={ref} className="doc-status-popover">
-      <div className="doc-status-popover-title">Set document status</div>
-
-      <div className="doc-status-options">
-        {STATUS_OPTIONS.filter((opt) => canAssignReview || opt.value !== "review").map((opt) => (
-          <button
-            key={opt.value}
-            onClick={() => setSelectedStatus(opt.value)}
-            className={`doc-status-option ${opt.cls} ${selectedStatus === opt.value ? "selected" : ""}`}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
-
-      {selectedStatus === "review" && (
-        <div className="doc-status-reviewer">
-          <label className="doc-status-reviewer-label">Assign reviewer</label>
-          <select
-            value={selectedReviewer}
-            onChange={(e) => setSelectedReviewer(e.target.value)}
-            className="doc-status-reviewer-select"
-          >
-            <option value="">— select a reviewer —</option>
-            {members.map((m) => (
-              <option key={m.username} value={m.username}>
-                {m.fullName ? `${m.fullName} (${m.username})` : m.username}
-              </option>
+    <div ref={ref} className="doc-status-popover" style={{ right: 0, left: "auto" }}>
+      {!pendingReview ? (
+        <>
+          <div className="doc-status-popover-title">Set status</div>
+          <div className="doc-status-options">
+            {STATUS_OPTIONS.filter((opt) => canAssignReview || opt.value !== "review").map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => handleSelect(opt.value)}
+                className={`doc-status-option ${opt.cls} ${currentStatus === opt.value ? "selected" : ""}`}
+              >
+                {opt.label}
+              </button>
             ))}
-          </select>
-        </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="doc-status-popover-title">Assign reviewer</div>
+          <div className="doc-status-reviewer">
+            <select
+              autoFocus
+              value={selectedReviewer}
+              onChange={(e) => setSelectedReviewer(e.target.value)}
+              className="doc-status-reviewer-select"
+            >
+              <option value="">— select a reviewer —</option>
+              {members.map((m) => (
+                <option key={m.username} value={m.username}>
+                  {m.fullName ? `${m.fullName} (${m.username})` : m.username}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="doc-status-popover-actions">
+            <button onClick={() => setPendingReview(false)} className="doc-status-cancel-btn">Back</button>
+            <button
+              onClick={handleConfirmReview}
+              disabled={!selectedReviewer}
+              className="doc-status-save-btn"
+            >
+              Assign
+            </button>
+          </div>
+        </>
       )}
-
-      <div className="doc-status-popover-actions">
-        <button onClick={onClose} className="doc-status-cancel-btn">Cancel</button>
-        <button
-          onClick={handleSave}
-          disabled={selectedStatus === "review" && !selectedReviewer}
-          className="doc-status-save-btn"
-        >
-          Save
-        </button>
-      </div>
     </div>
   );
 }

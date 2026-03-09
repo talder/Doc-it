@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser, getUsers, writeUsers, hashPassword, isPasswordInHistory } from "@/lib/auth";
+import { getCurrentUser, getUsers, writeUsers, hashPassword, isPasswordInHistory, resetUserMfa, invalidateUserSessions } from "@/lib/auth";
 import { isPasswordValid, validatePassword } from "@/lib/password-policy";
 import { auditLog } from "@/lib/audit";
 
@@ -24,7 +24,19 @@ export async function PUT(request: NextRequest, { params }: Params) {
   }
 
   const body = await request.json();
-  const { newUsername, password, isAdmin, unlock } = body;
+  const { newUsername, password, isAdmin, unlock, resetMfa } = body;
+
+  // Admin: reset MFA for user (forces re-enrollment on next login)
+  if (resetMfa === true) {
+    await resetUserMfa(targetUsername);
+    await invalidateUserSessions(targetUsername);
+    auditLog(request, { event: "auth.mfa.reset", outcome: "success", actor: admin.username, resource: targetUsername, resourceType: "user" });
+    const updatedUsers = await getUsers();
+    const u = updatedUsers.find((u) => u.username === targetUsername);
+    if (!u) return NextResponse.json({ error: "User not found" }, { status: 404 });
+    const { passwordHash, ...safe } = u;
+    return NextResponse.json(safe);
+  }
 
   // Unlock account
   if (unlock === true) {

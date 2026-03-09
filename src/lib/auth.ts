@@ -8,6 +8,8 @@ const USERS_FILE = "users.json";
 const SESSIONS_FILE = "sessions.json";
 const COOKIE_NAME = "docit-session";
 const BCRYPT_ROUNDS = 12;
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
+const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour inactivity timeout (NIS2)
 
 // --- Password ---
 
@@ -98,7 +100,13 @@ async function writeSessions(sessions: Record<string, Session>): Promise<void> {
 export async function createSession(username: string): Promise<string> {
   const sessionId = randomUUID();
   const sessions = await getSessions();
-  sessions[sessionId] = { username, createdAt: new Date().toISOString() };
+  const now = new Date();
+  sessions[sessionId] = {
+    username,
+    createdAt: now.toISOString(),
+    expiresAt: new Date(now.getTime() + SESSION_TTL_MS).toISOString(),
+    lastActivityAt: now.toISOString(),
+  };
   await writeSessions(sessions);
   return sessionId;
 }
@@ -113,6 +121,30 @@ export async function getSessionUser(sessionId: string): Promise<User | null> {
   const sessions = await getSessions();
   const session = sessions[sessionId];
   if (!session) return null;
+
+  const now = new Date();
+
+  // Enforce absolute session expiry
+  if (session.expiresAt && new Date(session.expiresAt) < now) {
+    delete sessions[sessionId];
+    await writeSessions(sessions);
+    return null;
+  }
+
+  // Enforce idle / inactivity timeout (NIS2)
+  if (session.lastActivityAt) {
+    const lastActivity = new Date(session.lastActivityAt);
+    if (now.getTime() - lastActivity.getTime() > IDLE_TIMEOUT_MS) {
+      delete sessions[sessionId];
+      await writeSessions(sessions);
+      return null;
+    }
+  }
+
+  // Touch: update last activity timestamp
+  session.lastActivityAt = now.toISOString();
+  await writeSessions(sessions);
+
   return getUserByUsername(session.username);
 }
 
@@ -144,4 +176,37 @@ export async function getCurrentSanitizedUser(): Promise<SanitizedUser | null> {
 
 export function getSessionCookieName(): string {
   return COOKIE_NAME;
+}
+
+/**
+ * Invalidate all sessions for a user, optionally preserving one session ID
+ * (e.g. the session that was just re-issued after a password change).
+ */
+export async function invalidateUserSessions(
+  username: string,
+  keepSessionId?: string
+): Promise<void> {
+  const sessions = await getSessions();
+  for (const id of Object.keys(sessions)) {
+    if (sessions[id].username === username && id !== keepSessionId) {
+      delete sessions[id];
+    }
+  }
+  await writeSessions(sessions);
+}
+
+/**
+ * Clear a user's TOTP state, forcing re-enrollment on next login.
+ * Called by admins when a user loses their authenticator device.
+ */
+export async function resetUserMfa(username: string): Promise<boolean> {
+  const users = await getUsers();
+  const idx = users.findIndex((u) => u.username === username);
+  if (idx === -1) return false;
+  delete users[idx].totpSecret;
+  delete users[idx].totpBackupCodes;
+  users[idx].totpEnabled = false;
+  users[idx].totpFailedAttempts = 0;
+  await writeUsers(users);
+  return true;
 }

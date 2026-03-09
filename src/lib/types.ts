@@ -18,6 +18,8 @@ export interface UserPreferences {
   accentColor?: string;
   pageWidth?: "narrow" | "wide" | "max";
   favorites?: FavoriteItem[];
+  spellcheckEnabled?: boolean;
+  spellcheckLanguage?: string;
 }
 
 export interface User {
@@ -37,6 +39,8 @@ export interface User {
   mustChangePassword?: boolean;
   /** Consecutive failed login attempts since last success */
   failedLoginAttempts?: number;
+  /** Consecutive failed TOTP attempts (separate from password failures) */
+  totpFailedAttempts?: number;
   /** ISO timestamp when account was locked */
   lockedAt?: string;
   /** True when account is locked — only admin can unlock */
@@ -54,6 +58,10 @@ export type SanitizedUser = Omit<User, "passwordHash">;
 export interface Session {
   username: string;
   createdAt: string;
+  /** ISO timestamp after which the session is considered expired */
+  expiresAt: string;
+  /** ISO timestamp of last request — used for idle timeout (NIS2) */
+  lastActivityAt?: string;
 }
 
 // === Spaces ===
@@ -168,12 +176,15 @@ export interface CustomProperty {
   value: string | number | boolean;
 }
 
+export type DocClassification = "public" | "internal" | "confidential" | "restricted";
+
 export interface DocMetadata {
   createdAt?: string;
   createdBy?: string;
   updatedAt?: string;
   updatedBy?: string;
   tags?: string[];
+  classification?: DocClassification;
   custom?: Record<string, CustomProperty>;
 }
 
@@ -323,7 +334,9 @@ export type AuditEventType =
   | "auth.account.unlocked"
   | "auth.mfa.enabled"
   | "auth.mfa.disabled"
-  | "auth.mfa.backup_used";
+  | "auth.mfa.backup_used"
+  | "auth.mfa.reset"
+  | "backup.run";
 
 export interface AuditEntry {
   eventId: string;
@@ -338,6 +351,10 @@ export interface AuditEntry {
   resource?: string;
   resourceType?: string;
   details?: Record<string, unknown>;
+  /** HMAC-SHA256 hash of the previous entry (tamper-evident chain) */
+  prevHash?: string;
+  /** HMAC-SHA256(key, prevHash + JSON(entry without hashes)) */
+  entryHash?: string;
 }
 
 export interface AuditLogPayload {
@@ -369,4 +386,56 @@ export interface AuditConfig {
   enabled: boolean;        // master switch — when false nothing is written
   localFile: AuditLocalFileConfig;
   syslog: AuditSyslogConfig;
+}
+
+// === Backup ===
+
+export type BackupSchedule = "manual" | "daily" | "weekly";
+
+export interface BackupLocalTarget {
+  id: string;
+  type: "local";
+  label: string;
+  /** Absolute path to write the backup archive (covers pre-mounted NFS/CIFS) */
+  path: string;
+}
+
+export interface BackupCifsTarget {
+  id: string;
+  type: "cifs";
+  label: string;
+  host: string;
+  share: string;
+  /** Remote path/filename prefix inside the share (e.g. "backups/") */
+  remotePath: string;
+  username: string;
+  /** Password stored encrypted via crypto.ts */
+  password?: string;
+}
+
+export type BackupTarget = BackupLocalTarget | BackupCifsTarget;
+
+export interface BackupConfig {
+  enabled: boolean;
+  schedule: BackupSchedule;
+  /** HH:MM in 24h format, used for daily/weekly */
+  scheduleTime: string;
+  /** Day of week for weekly (0=Sun … 6=Sat) */
+  scheduleDayOfWeek: number;
+  /** Number of local backup files to keep (0 = unlimited) */
+  retentionCount: number;
+  targets: BackupTarget[];
+}
+
+export interface BackupEntry {
+  filename: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
+export interface BackupResult {
+  success: boolean;
+  filename?: string;
+  error?: string;
+  targetResults: { label: string; success: boolean; error?: string }[];
 }

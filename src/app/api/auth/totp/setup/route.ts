@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { checkRateLimit } from "@/lib/rate-limit";
 import * as OTPAuth from "otpauth";
 import QRCode from "qrcode";
 
 export async function POST(_req: NextRequest) {
+  const blocked = checkRateLimit(_req, "auth");
+  if (blocked) return blocked;
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 

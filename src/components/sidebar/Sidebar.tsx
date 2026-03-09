@@ -279,35 +279,18 @@ export default function Sidebar({
           </div>
         ) : (
           <>
-            {/* Tags section (collapsible) */}
+            {/* Tags section (collapsible — TagsList has its own header) */}
             {tagCount > 0 && (
-              <div className="space-y-1">
-                <div className="flex items-center justify-between px-3 py-1">
-                  <button
-                    onClick={() => setTagsCollapsed(!tagsCollapsed)}
-                    className="flex items-center gap-1 text-xs font-bold uppercase text-text-muted tracking-wider hover:text-text-secondary"
-                  >
-                    {tagsCollapsed ? (
-                      <ChevronRight className="w-3 h-3" />
-                    ) : (
-                      <ChevronDown className="w-3 h-3" />
-                    )}
-                    Tags
-                  </button>
-                </div>
-                {!tagsCollapsed && (
-                  <TagsList
-                    tagsIndex={tagsIndex}
-                    docs={docs}
-                    activeDoc={activeDoc}
-                    onTagSelect={onTagSelect}
-                    onSelectDoc={onSelectDoc}
-                    selectedTag={selectedTag}
-                    onReindex={onReindexTags}
-                    isReindexing={isReindexing}
-                  />
-                )}
-              </div>
+              <TagsList
+                tagsIndex={tagsIndex}
+                docs={docs}
+                activeDoc={activeDoc}
+                onTagSelect={onTagSelect}
+                onSelectDoc={onSelectDoc}
+                selectedTag={selectedTag}
+                onReindex={onReindexTags}
+                isReindexing={isReindexing}
+              />
             )}
 
             {/* Databases section */}

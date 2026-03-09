@@ -17,6 +17,7 @@ import {
   randomBytes,
   createCipheriv,
   createDecipheriv,
+  createHmac,
   pbkdf2Sync,
 } from "crypto";
 import { readJsonConfig, writeJsonConfig } from "./config";
@@ -33,6 +34,7 @@ import type { NextRequest } from "next/server";
 
 const AUDIT_CONFIG_FILE = "audit.json";
 const AUDIT_KEY_FILE = "audit-key.json";
+const AUDIT_CHAIN_FILE = "audit-chain.json";
 const LOGS_DIR = path.join(process.cwd(), "logs");
 
 // ── Encryption helpers ─────────────────────────────────────────────────────────
@@ -247,9 +249,34 @@ async function _writeAuditLog(
 
 // ── Local JSONL transport ──────────────────────────────────────────────────────
 
+/** Compute HMAC-SHA256 of data using the audit key. */
+async function computeHmac(data: string): Promise<string> {
+  const key = await getAuditKey();
+  return createHmac("sha256", key).update(data).digest("hex");
+}
+
+/** Read the last hash from the chain state file. */
+async function getLastChainHash(): Promise<string> {
+  const state = await readJsonConfig<{ lastHash?: string }>(AUDIT_CHAIN_FILE, {});
+  return state.lastHash ?? "GENESIS";
+}
+
+/** Persist the latest hash to the chain state file. */
+async function setLastChainHash(hash: string): Promise<void> {
+  await writeJsonConfig(AUDIT_CHAIN_FILE, { lastHash: hash });
+}
+
 async function writeToLocalFile(entry: AuditEntry, retentionDays: number): Promise<void> {
   // Ensure logs directory exists
   await fs.mkdir(LOGS_DIR, { recursive: true });
+
+  // Build tamper-evident hash chain
+  const prevHash = await getLastChainHash();
+  entry.prevHash = prevHash;
+  // Compute hash over the entry content WITHOUT the entryHash field itself
+  const hashInput = prevHash + JSON.stringify(entry);
+  entry.entryHash = await computeHmac(hashInput);
+  await setLastChainHash(entry.entryHash);
 
   const dateStr = entry.timestamp.slice(0, 10); // YYYY-MM-DD
   const logFile = path.join(LOGS_DIR, `audit-${dateStr}.jsonl`);
@@ -287,6 +314,14 @@ async function runRetentionCleanup(retentionDays: number): Promise<void> {
 
 // ── Syslog transport ───────────────────────────────────────────────────────────
 
+/** Strip protocol prefix (http:// https://) and trailing slashes from syslog host */
+function cleanSyslogHost(host: string): string {
+  return host
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/+$/, "")
+    .trim();
+}
+
 async function forwardToSyslog(
   entry: AuditEntry,
   cfg: AuditSyslogConfig
@@ -299,6 +334,7 @@ async function forwardToSyslog(
   const hostname = cfg.hostname || os.hostname() || "-";
   const appName = cfg.appName || "doc-it";
   const timestamp = entry.timestamp;
+  const host = cleanSyslogHost(cfg.host);
 
   // RFC 5424: <PRI>VERSION SP TIMESTAMP SP HOSTNAME SP APP-NAME SP PROCID SP MSGID SP SD SP MSG
   const msgContent = JSON.stringify({
@@ -316,27 +352,27 @@ async function forwardToSyslog(
   const buf = Buffer.from(message, "utf-8");
 
   if (cfg.protocol === "udp") {
-    await sendSyslogUdp(buf, cfg.host, cfg.port);
+    await sendSyslogUdp(buf, host, cfg.port);
   } else {
-    await sendSyslogTcp(buf, cfg.host, cfg.port);
+    await sendSyslogTcp(buf, host, cfg.port);
   }
 }
 
-function sendSyslogUdp(buf: Buffer, host: string, port: number): Promise<void> {
+function sendSyslogUdp(buf: Buffer, host: string, port: number): Promise<{ ok: boolean; error?: string }> {
   return new Promise((resolve) => {
-    // Dynamic import to avoid bundling issues in non-Node environments
     import("dgram").then((dgram) => {
       const client = dgram.createSocket("udp4");
-      client.send(buf, 0, buf.length, port, host, () => {
+      client.send(buf, 0, buf.length, port, host, (err) => {
         client.close();
-        resolve();
+        if (err) resolve({ ok: false, error: err.message });
+        else resolve({ ok: true });
       });
-      client.on("error", () => { client.close(); resolve(); });
-    }).catch(() => resolve());
+      client.on("error", (err) => { client.close(); resolve({ ok: false, error: err.message }); });
+    }).catch((err) => resolve({ ok: false, error: err.message }));
   });
 }
 
-function sendSyslogTcp(buf: Buffer, host: string, port: number): Promise<void> {
+function sendSyslogTcp(buf: Buffer, host: string, port: number): Promise<{ ok: boolean; error?: string }> {
   return new Promise((resolve) => {
     import("net").then((net) => {
       const socket = net.createConnection(port, host, () => {
@@ -347,13 +383,42 @@ function sendSyslogTcp(buf: Buffer, host: string, port: number): Promise<void> {
         ]);
         socket.write(framed);
         socket.end();
-        resolve();
+        resolve({ ok: true });
       });
-      socket.setTimeout(3000);
-      socket.on("error", () => { socket.destroy(); resolve(); });
-      socket.on("timeout", () => { socket.destroy(); resolve(); });
-    }).catch(() => resolve());
+      socket.setTimeout(5000);
+      socket.on("error", (err) => { socket.destroy(); resolve({ ok: false, error: err.message }); });
+      socket.on("timeout", () => { socket.destroy(); resolve({ ok: false, error: "Connection timed out after 5s" }); });
+    }).catch((err) => resolve({ ok: false, error: err.message }));
   });
+}
+
+/**
+ * Send a test syslog message and return the result.
+ * Used by the admin UI to verify syslog connectivity.
+ */
+export async function testSyslog(
+  cfg: AuditSyslogConfig
+): Promise<{ ok: boolean; error?: string; message?: string }> {
+  const host = cleanSyslogHost(cfg.host);
+  if (!host) return { ok: false, error: "Syslog host is empty" };
+
+  const facilityNum = FACILITY_MAP[cfg.facility] ?? 16;
+  const pri = facilityNum * 8 + 6; // informational
+  const hostname = cfg.hostname || os.hostname() || "-";
+  const appName = cfg.appName || "doc-it";
+  const timestamp = new Date().toISOString();
+
+  const testMsg = `<${pri}>1 ${timestamp} ${hostname} ${appName} - syslog.test - Doc-it syslog test message at ${timestamp}`;
+  const buf = Buffer.from(testMsg, "utf-8");
+
+  const result = cfg.protocol === "udp"
+    ? await sendSyslogUdp(buf, host, cfg.port)
+    : await sendSyslogTcp(buf, host, cfg.port);
+
+  if (result.ok) {
+    return { ok: true, message: `Test ${cfg.protocol.toUpperCase()} message sent to ${host}:${cfg.port}` };
+  }
+  return { ok: false, error: result.error || "Unknown error" };
 }
 
 // ── Log query utilities (used by /api/audit route) ─────────────────────────────
@@ -470,4 +535,82 @@ export async function getCalendarCounts(
   }
 
   return { counts };
+}
+
+// ── Audit chain integrity verification ─────────────────────────────────────────
+
+export interface ChainVerifyResult {
+  ok: boolean;
+  totalEntries: number;
+  brokenLinks: { file: string; lineNum: number; eventId: string; reason: string }[];
+}
+
+/**
+ * Walk every audit log file in chronological order, decrypt each entry,
+ * recompute its HMAC, and verify the hash chain is intact.
+ */
+export async function verifyAuditChain(): Promise<ChainVerifyResult> {
+  let files: string[] = [];
+  try {
+    const all = await fs.readdir(LOGS_DIR);
+    files = all
+      .filter((f) => /^audit-\d{4}-\d{2}-\d{2}\.jsonl$/.test(f))
+      .sort(); // oldest first
+  } catch {
+    return { ok: true, totalEntries: 0, brokenLinks: [] };
+  }
+
+  const brokenLinks: ChainVerifyResult["brokenLinks"] = [];
+  let expectedPrev = "GENESIS";
+  let totalEntries = 0;
+
+  for (const file of files) {
+    const content = await fs.readFile(path.join(LOGS_DIR, file), "utf-8").catch(() => "");
+    const lines = content.split("\n").filter(Boolean);
+
+    for (let i = 0; i < lines.length; i++) {
+      totalEntries++;
+      try {
+        const plain = await decryptLine(lines[i]);
+        const entry = JSON.parse(plain) as AuditEntry;
+
+        // Check prevHash links to the previous entry's entryHash
+        if (entry.prevHash !== expectedPrev) {
+          brokenLinks.push({
+            file,
+            lineNum: i + 1,
+            eventId: entry.eventId ?? "unknown",
+            reason: `prevHash mismatch: expected ${expectedPrev.slice(0, 12)}…, got ${(entry.prevHash ?? "<missing>").slice(0, 12)}…`,
+          });
+        }
+
+        // Recompute entryHash
+        const savedHash = entry.entryHash;
+        const copy = { ...entry };
+        delete (copy as Record<string, unknown>).entryHash;
+        const hashInput = (entry.prevHash ?? "GENESIS") + JSON.stringify(copy);
+        const recomputed = await computeHmac(hashInput);
+
+        if (savedHash !== recomputed) {
+          brokenLinks.push({
+            file,
+            lineNum: i + 1,
+            eventId: entry.eventId ?? "unknown",
+            reason: "entryHash does not match recomputed HMAC — entry may have been tampered with",
+          });
+        }
+
+        expectedPrev = savedHash ?? expectedPrev;
+      } catch (err) {
+        brokenLinks.push({
+          file,
+          lineNum: i + 1,
+          eventId: "unknown",
+          reason: `Failed to decrypt/parse: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
+    }
+  }
+
+  return { ok: brokenLinks.length === 0, totalEntries, brokenLinks };
 }

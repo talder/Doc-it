@@ -44,6 +44,7 @@ import { DrawioExtension } from "./extensions/DrawioExtension";
 import { FontSize } from "./extensions/FontSize";
 import { TagLink, setTagClickHandler } from "./extensions/TagLink";
 import { TagSuggestion } from "./extensions/TagSuggestion";
+import { MentionNode, MentionSuggestion } from "./extensions/MentionSuggestion";
 import { CollapsibleList } from "./extensions/CollapsibleList";
 import { LinkedDocExtension, setLinkedDocClickHandler } from "./extensions/LinkedDocExtension";
 import type { LinkedDocAttrs } from "./extensions/LinkedDocExtension";
@@ -55,6 +56,10 @@ import { TemplatePlaceholderExtension } from "./extensions/TemplatePlaceholderEx
 import { EmojiShortcodeExtension } from "./extensions/EmojiShortcodeExtension";
 import { DatabaseBlockExtension } from "./extensions/DatabaseBlockExtension";
 import type { DatabaseBlockAttrs } from "./extensions/DatabaseBlockExtension";
+import { Extension } from "@tiptap/core";
+import { Plugin as PmPlugin, PluginKey as PmPluginKey } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { isNodeEmpty } from "@tiptap/core";
 import Picker from "@emoji-mart/react";
 // @ts-ignore
 import emojiPickerData from "@emoji-mart/data";
@@ -129,6 +134,7 @@ function DatabasePicker({
 
 const lowlight = createLowlight(common);
 lowlight.register("powershell", powershell);
+
 
 // ── Table cell color palette ─────────────────────────────────────────────
 const TABLE_CELL_COLORS: (string | null)[] = [
@@ -838,9 +844,12 @@ interface EditorProps {
   isTemplate?: boolean;
   pageWidth?: PageWidth;
   onPageWidthChange?: (w: PageWidth) => void;
+  spellcheckEnabled?: boolean;
+  spellcheckLanguage?: string;
+  spaceMembers?: { username: string; fullName?: string }[];
 }
 
-export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, category, onTagClick, editable = true, lineSpacing = "compact", isTemplate = false, pageWidth = "narrow", onPageWidthChange }: EditorProps) {
+export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, category, onTagClick, editable = true, lineSpacing = "compact", isTemplate = false, pageWidth = "narrow", onPageWidthChange, spellcheckEnabled = false, spellcheckLanguage = "en", spaceMembers = [] }: EditorProps) {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLoadingRef = useRef(false);
   const pendingSaveFnRef = useRef<null | (() => void)>(null);
@@ -880,6 +889,29 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [emojiPickerPos, setEmojiPickerPos] = useState<{ x: number; y: number } | null>(null);
   const [pendingEmojiEditor, setPendingEmojiEditor] = useState<any>(null);
+
+  // ── Color picker state ────────────────────────────────────────────────────
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [colorPickerPos, setColorPickerPos] = useState<{ x: number; y: number } | null>(null);
+  const [pendingColorEditor, setPendingColorEditor] = useState<any>(null);
+  const [colorPickerValue, setColorPickerValue] = useState("#3B82F6");
+  const [colorPickerFormat, setColorPickerFormat] = useState<"hex" | "rgb">("hex");
+  const colorPickerRef = useRef<HTMLDivElement>(null);
+
+  // ── Color format helpers ──────────────────────────────────────────────────
+  const hexToRgb = (hex: string): { r: number; g: number; b: number } | null => {
+    const m = hex.match(/^#([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})$/);
+    if (!m) return null;
+    return { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) };
+  };
+  const rgbToHex = (r: number, g: number, b: number): string =>
+    "#" + [r, g, b].map((v) => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0")).join("");
+  const colorDisplayValue = (): string => {
+    if (colorPickerFormat === "hex") return colorPickerValue.toUpperCase();
+    const rgb = hexToRgb(colorPickerValue);
+    if (!rgb) return colorPickerValue.toUpperCase();
+    return `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`;
+  };
 
   // ── Math editor state ───────────────────────────────────────────────────────
   const [mathEditorOpen, setMathEditorOpen] = useState(false);
@@ -984,7 +1016,40 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
       PDFEmbedExtension,
       TemplatePlaceholderExtension,
       EmojiShortcodeExtension,
+      MentionNode,
+      MentionSuggestion,
       DatabaseBlockExtension,
+      Extension.create({
+        name: "inlinePlaceholder",
+        addProseMirrorPlugins() {
+          const placeholderText = "Type / for commands";
+          return [
+            new PmPlugin({
+              key: new PmPluginKey("inlinePlaceholder"),
+              props: {
+                decorations: ({ doc, selection }) => {
+                  if (!this.editor.isEditable) return null;
+                  const { anchor } = selection;
+                  const decorations: Decoration[] = [];
+                  doc.descendants((node, pos) => {
+                    const hasAnchor = anchor >= pos && anchor <= pos + node.nodeSize;
+                    if (hasAnchor && !node.isLeaf && isNodeEmpty(node)) {
+                      decorations.push(
+                        Decoration.node(pos, pos + node.nodeSize, {
+                          class: "is-empty",
+                          "data-placeholder": placeholderText,
+                        })
+                      );
+                    }
+                    return false; // only top-level children
+                  });
+                  return DecorationSet.create(doc, decorations);
+                },
+              },
+            }),
+          ];
+        },
+      }),
     ],
     content: "",
     editable,
@@ -1112,8 +1177,19 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
     document.addEventListener("slash:pdf", handlePdf);
     document.addEventListener("slash:link", handleLink);
     document.addEventListener("slash:image", handleImage);
+    const handleColor = (e: Event) => {
+      const ev = e as CustomEvent;
+      setPendingColorEditor(ev.detail.editor);
+      const coords = ev.detail.coords as { left: number; bottom: number };
+      const x = typeof window !== "undefined" ? Math.min(coords.left, window.innerWidth - 300) : coords.left;
+      const y = typeof window !== "undefined" && coords.bottom + 280 > window.innerHeight ? Math.max(4, coords.bottom - 290) : coords.bottom + 8;
+      setColorPickerPos({ x, y });
+      setShowColorPicker(true);
+    };
+    document.addEventListener("slash:color", handleColor);
     document.addEventListener("slash:emoji", handleEmoji);
     return () => {
+      document.removeEventListener("slash:color", handleColor);
       document.removeEventListener("slash:math", handleMath);
       document.removeEventListener("slash:database", handleDatabase);
       document.removeEventListener("slash:database-existing", handleDatabaseExisting);
@@ -1208,6 +1284,12 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
       })
       .catch(() => {});
   }, [editor, spaceSlug]);
+
+  // Pass space members to MentionSuggestion extension
+  useEffect(() => {
+    if (!editor || !spaceMembers.length) return;
+    editor.commands.updateMemberData(spaceMembers);
+  }, [editor, spaceMembers]);
 
   // ── Attach hover-preview listeners to editor wrapper ────────────────────────
   useEffect(() => {
@@ -1328,7 +1410,7 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
   if (!editor) return null;
 
   return (
-    <div ref={editorWrapRef} className={`group flex-1 overflow-auto bg-surface${!editable ? " read-mode" : ""}${lineSpacing === "spaced" ? " editor-spaced" : ""}`}>
+    <div ref={editorWrapRef} className={`group flex-1 overflow-auto bg-surface${!editable ? " read-mode" : ""}${lineSpacing === "spaced" ? " editor-spaced" : ""}`} spellCheck={spellcheckEnabled} lang={spellcheckLanguage}>
       {/* Template editing banner */}
       {isTemplate && (
         <div className="template-editor-banner">
@@ -1338,6 +1420,7 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
       )}
       {editable && <BubbleMenu
         editor={editor}
+        pluginKey="textFormatMenu"
         options={{ placement: "top", offset: 8 }}
         shouldShow={({ editor, state }) => {
           const { from, to } = state.selection;
@@ -1465,6 +1548,7 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
       {/* Cell background color picker (appears when cursor is inside a table cell) */}
       {editable && <BubbleMenu
         editor={editor}
+        pluginKey="tableCellMenu"
         options={{ placement: "bottom-start", offset: 6 }}
         shouldShow={({ editor, state }) => {
           const { from, to } = state.selection;
@@ -1616,6 +1700,111 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
           setTplEditInitial(undefined);
         }}
       />
+
+      {/* Color picker (slash:color command) */}
+      {showColorPicker && colorPickerPos && (
+        <div
+          ref={colorPickerRef}
+          style={{ position: "fixed", left: colorPickerPos.x, top: colorPickerPos.y, zIndex: 9999 }}
+          className="bg-surface border border-border rounded-lg shadow-lg p-3 w-[260px]"
+        >
+          <p className="text-xs font-medium text-text-muted mb-2">Pick a color</p>
+          <div className="grid grid-cols-8 gap-1.5 mb-3">
+            {["#EF4444","#F97316","#F59E0B","#EAB308","#84CC16","#22C55E","#14B8A6","#06B6D4","#3B82F6","#6366F1","#8B5CF6","#A855F7","#D946EF","#EC4899","#F43F5E","#78716C","#000000","#374151","#6B7280","#9CA3AF","#D1D5DB","#E5E7EB","#F3F4F6","#FFFFFF"].map((c) => (
+              <button
+                key={c}
+                className={`w-6 h-6 rounded border ${colorPickerValue === c ? "ring-2 ring-accent ring-offset-1" : "border-border"}`}
+                style={{ background: c }}
+                onClick={() => setColorPickerValue(c)}
+              />
+            ))}
+          </div>
+          <div className="flex items-center gap-2 mb-2">
+            <input
+              type="color"
+              value={colorPickerValue}
+              onChange={(e) => setColorPickerValue(e.target.value)}
+              className="w-8 h-8 rounded cursor-pointer border-0 p-0"
+            />
+            {colorPickerFormat === "hex" ? (
+              <input
+                type="text"
+                value={colorPickerValue}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (/^#[0-9A-Fa-f]{0,6}$/.test(v)) setColorPickerValue(v);
+                }}
+                className="flex-1 text-sm font-mono border border-border rounded px-2 py-1 bg-surface text-text-primary"
+                placeholder="#hex"
+              />
+            ) : (
+              <input
+                type="text"
+                value={(() => { const rgb = hexToRgb(colorPickerValue); return rgb ? `${rgb.r}, ${rgb.g}, ${rgb.b}` : ""; })()}
+                onChange={(e) => {
+                  const parts = e.target.value.split(",").map((s) => s.trim());
+                  if (parts.length === 3) {
+                    const [r, g, b] = parts.map(Number);
+                    if ([r, g, b].every((n) => !isNaN(n) && n >= 0 && n <= 255)) {
+                      setColorPickerValue(rgbToHex(r, g, b));
+                    }
+                  }
+                }}
+                className="flex-1 text-sm font-mono border border-border rounded px-2 py-1 bg-surface text-text-primary"
+                placeholder="R, G, B"
+              />
+            )}
+          </div>
+          <div className="flex items-center gap-1 mb-3">
+            <span className="text-xs text-text-muted mr-1">Format:</span>
+            <button
+              className={`px-2 py-0.5 text-xs rounded font-medium ${colorPickerFormat === "hex" ? "bg-accent text-white" : "bg-muted text-text-muted hover:text-text-secondary"}`}
+              onClick={() => setColorPickerFormat("hex")}
+            >HEX</button>
+            <button
+              className={`px-2 py-0.5 text-xs rounded font-medium ${colorPickerFormat === "rgb" ? "bg-accent text-white" : "bg-muted text-text-muted hover:text-text-secondary"}`}
+              onClick={() => setColorPickerFormat("rgb")}
+            >RGB</button>
+          </div>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xs text-text-muted">Preview:</span>
+            <span
+              style={{ background: colorPickerValue, display: "inline-flex", alignItems: "center", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontFamily: "monospace", color: parseInt(colorPickerValue.slice(1, 3) || "ff", 16) * 0.299 + parseInt(colorPickerValue.slice(3, 5) || "ff", 16) * 0.587 + parseInt(colorPickerValue.slice(5, 7) || "ff", 16) * 0.114 > 150 ? "#000" : "#fff" }}
+            >
+              {colorDisplayValue()}
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <button
+              className="flex-1 px-3 py-1.5 text-xs font-medium bg-accent text-white rounded hover:bg-accent-hover"
+              onClick={() => {
+                const hex = colorPickerValue.toUpperCase();
+                const display = colorDisplayValue();
+                const lum = parseInt(hex.slice(1, 3), 16) * 0.299 + parseInt(hex.slice(3, 5), 16) * 0.587 + parseInt(hex.slice(5, 7), 16) * 0.114;
+                const textColor = lum > 150 ? "#000000" : "#FFFFFF";
+                const target = pendingColorEditor || editor;
+                target?.chain().focus().insertContent([
+                  {
+                    type: "text",
+                    text: ` ${display} `,
+                    marks: [
+                      { type: "highlight", attrs: { color: hex } },
+                      { type: "textStyle", attrs: { color: textColor } },
+                    ],
+                  },
+                  { type: "text", text: " " },
+                ]).run();
+                setShowColorPicker(false);
+                setPendingColorEditor(null);
+              }}
+            >Insert</button>
+            <button
+              className="px-3 py-1.5 text-xs text-text-muted hover:text-text-secondary"
+              onClick={() => { setShowColorPicker(false); setPendingColorEditor(null); }}
+            >Cancel</button>
+          </div>
+        </div>
+      )}
 
       {/* Emoji picker (slash:emoji command) */}
       {showEmojiPicker && emojiPickerPos && (

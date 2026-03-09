@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
+import crypto from "crypto";
 import { requireSpaceRole } from "@/lib/permissions";
-import { getCategoryDir } from "@/lib/config";
+import { getCategoryDir, ensureDir } from "@/lib/config";
 import { parseFrontmatter, stringifyFrontmatter } from "@/lib/frontmatter";
 import { auditLog } from "@/lib/audit";
 
@@ -145,8 +146,33 @@ export async function DELETE(request: NextRequest, { params }: Params) {
   }
 
   try {
+    // Soft delete: move to trash
+    const TRASH_DIR = path.join(process.cwd(), "trash", slug);
+    await ensureDir(TRASH_DIR);
+    const trashId = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
+    const content = await fs.readFile(resolved.filePath, "utf-8");
+    await fs.writeFile(path.join(TRASH_DIR, trashId), content, "utf-8");
+
+    // Update trash manifest
+    const manifestPath = path.join(TRASH_DIR, "manifest.json");
+    let manifest: { items: { id: string; name: string; category: string; filename: string; deletedBy: string; deletedAt: string; isTemplate?: boolean }[] } = { items: [] };
+    try {
+      const raw = await fs.readFile(manifestPath, "utf-8");
+      manifest = JSON.parse(raw);
+    } catch {}
+    manifest.items.unshift({
+      id: trashId,
+      name,
+      category,
+      filename: path.basename(resolved.filePath),
+      deletedBy: deleter.username,
+      deletedAt: new Date().toISOString(),
+      ...(resolved.isTemplate ? { isTemplate: true } : {}),
+    });
+    await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
+
     await fs.unlink(resolved.filePath);
-    auditLog(request, { event: "document.delete", outcome: "success", actor: deleter.username, spaceSlug: slug, resource: `${category}/${name}`, resourceType: "document" });
+    auditLog(request, { event: "document.delete", outcome: "success", actor: deleter.username, spaceSlug: slug, resource: `${category}/${name}`, resourceType: "document", details: { softDelete: true } });
     return NextResponse.json({ success: true });
   } catch {
     return NextResponse.json({ error: "Document not found" }, { status: 404 });
