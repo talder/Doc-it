@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "crypto";
+import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { readJsonConfig, writeJsonConfig } from "./config";
 import type { User, Session, SanitizedUser } from "./types";
@@ -6,11 +7,57 @@ import type { User, Session, SanitizedUser } from "./types";
 const USERS_FILE = "users.json";
 const SESSIONS_FILE = "sessions.json";
 const COOKIE_NAME = "docit-session";
+const BCRYPT_ROUNDS = 12;
 
 // --- Password ---
 
-export function hashPassword(password: string): string {
-  return createHash("sha256").update(password).digest("hex");
+/** Hash a password with bcrypt (async). Use this for all new hashes. */
+export async function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, BCRYPT_ROUNDS);
+}
+
+/**
+ * Verify a plaintext password against a stored hash.
+ * Supports both bcrypt hashes ($2b$…) and legacy SHA-256 hex hashes.
+ * Returns { match: true, needsRehash: false } for bcrypt,
+ * or { match: true, needsRehash: true } for a legacy SHA-256 match
+ * so the caller can transparently re-hash with bcrypt.
+ */
+export async function verifyPassword(
+  plain: string,
+  storedHash: string
+): Promise<{ match: boolean; needsRehash: boolean }> {
+  // bcrypt hashes start with $2a$ or $2b$
+  if (storedHash.startsWith("$2")) {
+    const match = await bcrypt.compare(plain, storedHash);
+    return { match, needsRehash: false };
+  }
+  // Legacy SHA-256: 64-char hex
+  const sha256 = createHash("sha256").update(plain).digest("hex");
+  if (sha256 === storedHash) {
+    return { match: true, needsRehash: true };
+  }
+  return { match: false, needsRehash: false };
+}
+
+/**
+ * Check if a plaintext password matches any hash in the history array.
+ * Used to enforce password reuse prevention (NIS2).
+ */
+export async function isPasswordInHistory(
+  plain: string,
+  history: string[]
+): Promise<boolean> {
+  for (const h of history) {
+    if (h.startsWith("$2")) {
+      if (await bcrypt.compare(plain, h)) return true;
+    } else {
+      // legacy SHA-256 entry
+      const sha256 = createHash("sha256").update(plain).digest("hex");
+      if (sha256 === h) return true;
+    }
+  }
+  return false;
 }
 
 // --- Users ---

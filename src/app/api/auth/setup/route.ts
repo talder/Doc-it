@@ -22,14 +22,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Passwords do not match" }, { status: 400 });
   }
 
-  if (password.length < 6) {
-    return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 });
+  const { isPasswordValid, validatePassword } = await import("@/lib/password-policy");
+  if (!isPasswordValid(password, { username: username.trim() })) {
+    const errors = validatePassword(password, { username: username.trim() });
+    return NextResponse.json({ error: errors[0] ?? "Password does not meet requirements" }, { status: 400 });
   }
 
   // Create admin user
   const newUser: User = {
     username: username.trim(),
-    passwordHash: hashPassword(password),
+    passwordHash: await hashPassword(password),
     isAdmin: true,
     isSuperAdmin: true,
     createdAt: new Date().toISOString(),

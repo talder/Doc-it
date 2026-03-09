@@ -40,7 +40,11 @@ export default function LoginPage() {
         return;
       }
 
-      router.push("/");
+      if (data.mustChangePassword) {
+        router.push("/change-password");
+      } else {
+        router.push("/");
+      }
     } catch {
       setError("Something went wrong");
     } finally {

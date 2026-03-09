@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import PasswordStrengthMeter from "@/components/PasswordStrengthMeter";
+import { isPasswordValid } from "@/lib/password-policy";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -77,8 +79,10 @@ export default function RegisterPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full px-3 py-2 bg-[var(--color-input-bg)] border border-[var(--color-input-border)] rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+                autoComplete="new-password"
                 required
               />
+              <PasswordStrengthMeter password={password} context={{ username }} />
             </div>
 
             {error && (
@@ -89,7 +93,7 @@ export default function RegisterPage() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !isPasswordValid(password, { username })}
               className="w-full py-2.5 bg-accent text-white font-medium rounded-lg hover:bg-accent-hover disabled:opacity-50 transition-colors"
             >
               {loading ? "Creating account..." : "Create account"}

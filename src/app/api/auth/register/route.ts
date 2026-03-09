@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUsers, writeUsers, hashPassword, createSession, getSessionCookieName } from "@/lib/auth";
 import { notifyAdminNewUser } from "@/lib/email";
 import { auditLog } from "@/lib/audit";
+import { isPasswordValid, validatePassword } from "@/lib/password-policy";
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,8 +16,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Username must be 2-32 characters" }, { status: 400 });
     }
 
-    if (password.length < 4) {
-      return NextResponse.json({ error: "Password must be at least 4 characters" }, { status: 400 });
+    if (!isPasswordValid(password, { username })) {
+      const errors = validatePassword(password, { username });
+      return NextResponse.json({ error: errors[0] ?? "Password does not meet requirements" }, { status: 400 });
     }
 
     const users = await getUsers();
@@ -26,7 +28,7 @@ export async function POST(request: NextRequest) {
 
     const newUser = {
       username,
-      passwordHash: hashPassword(password),
+      passwordHash: await hashPassword(password),
       isAdmin: false,
       email: email || "",
       status: "pending" as const,

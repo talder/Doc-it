@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser, getUsers, writeUsers, hashPassword, sanitizeUser } from "@/lib/auth";
+import { getCurrentUser, getUsers, writeUsers, hashPassword, verifyPassword, isPasswordInHistory, sanitizeUser } from "@/lib/auth";
+import { isPasswordValid, validatePassword } from "@/lib/password-policy";
 
 export async function GET() {
   try {
@@ -33,18 +34,38 @@ export async function PUT(request: NextRequest) {
     if (body.email !== undefined) users[idx].email = body.email;
     if (body.preferences !== undefined) users[idx].preferences = { ...users[idx].preferences, ...body.preferences };
 
-    // Password change (requires current password)
+    // Password change
     if (body.newPassword) {
-      if (!body.currentPassword) {
-        return NextResponse.json({ error: "Current password is required" }, { status: 400 });
+      const isForcedChange = users[idx].mustChangePassword === true && body.skipFirstLogin === true;
+
+      // Verify current password unless this is a forced first-login change
+      if (!isForcedChange) {
+        if (!body.currentPassword) {
+          return NextResponse.json({ error: "Current password is required" }, { status: 400 });
+        }
+        const { match } = await verifyPassword(body.currentPassword, users[idx].passwordHash);
+        if (!match) {
+          return NextResponse.json({ error: "Current password is incorrect" }, { status: 403 });
+        }
       }
-      if (hashPassword(body.currentPassword) !== users[idx].passwordHash) {
-        return NextResponse.json({ error: "Current password is incorrect" }, { status: 403 });
+
+      // Enforce password policy
+      const ctx = { username: users[idx].username, fullName: users[idx].fullName };
+      if (!isPasswordValid(body.newPassword, ctx)) {
+        const errors = validatePassword(body.newPassword, ctx);
+        return NextResponse.json({ error: errors[0] ?? "Password does not meet requirements" }, { status: 400 });
       }
-      if (body.newPassword.length < 4) {
-        return NextResponse.json({ error: "New password must be at least 4 characters" }, { status: 400 });
+
+      // Check password history (NIS2: unlimited)
+      const history = users[idx].passwordHistory ?? [];
+      if (await isPasswordInHistory(body.newPassword, [users[idx].passwordHash, ...history])) {
+        return NextResponse.json({ error: "You cannot reuse a previous password" }, { status: 400 });
       }
-      users[idx].passwordHash = hashPassword(body.newPassword);
+
+      // Store old hash in history, set new hash, clear forced-change flag
+      users[idx].passwordHistory = [users[idx].passwordHash, ...history];
+      users[idx].passwordHash = await hashPassword(body.newPassword);
+      users[idx].mustChangePassword = false;
     }
 
     await writeUsers(users);

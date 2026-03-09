@@ -3,6 +3,8 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Camera, Key, Plus, Trash2, Copy, Check } from "lucide-react";
+import PasswordStrengthMeter from "@/components/PasswordStrengthMeter";
+import { isPasswordValid } from "@/lib/password-policy";
 import { useTheme } from "@/components/ThemeProvider";
 import { ACCENT_PRESETS } from "@/lib/accent-presets";
 
@@ -541,6 +543,7 @@ export default function ProfilePage() {
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
                 className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-[var(--color-input-bg)] text-text-primary"
+                autoComplete="current-password"
               />
             </div>
             <div>
@@ -550,6 +553,11 @@ export default function ProfilePage() {
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-[var(--color-input-bg)] text-text-primary"
+                autoComplete="new-password"
+              />
+              <PasswordStrengthMeter
+                password={newPassword}
+                context={{ username, fullName }}
               />
             </div>
             <div>
@@ -559,12 +567,17 @@ export default function ProfilePage() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-[var(--color-input-bg)] text-text-primary"
+                autoComplete="new-password"
               />
+              {confirmPassword.length > 0 && newPassword !== confirmPassword && (
+                <p className="text-xs text-red-500 mt-1">Passwords do not match</p>
+              )}
             </div>
             <div className="pt-2">
               <button
                 onClick={handleChangePassword}
-                className="px-4 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors"
+                disabled={!isPasswordValid(newPassword, { username, fullName }) || newPassword !== confirmPassword || !currentPassword}
+                className="px-4 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50 transition-colors"
               >
                 Change Password
               </button>

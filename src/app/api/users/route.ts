@@ -38,8 +38,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Username must be at least 2 characters" }, { status: 400 });
   }
 
-  if (password.length < 6) {
-    return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 });
+  // Enforce password policy
+  const { isPasswordValid, validatePassword } = await import("@/lib/password-policy");
+  if (!isPasswordValid(password, { username })) {
+    const errors = validatePassword(password, { username });
+    return NextResponse.json({ error: errors[0] ?? "Password does not meet requirements" }, { status: 400 });
   }
 
   const existing = await getUserByUsername(username);
@@ -49,8 +52,9 @@ export async function POST(request: NextRequest) {
 
   const newUser: User = {
     username,
-    passwordHash: hashPassword(password),
+    passwordHash: await hashPassword(password),
     isAdmin: !!isAdmin,
+    mustChangePassword: true,
     createdAt: new Date().toISOString(),
   };
 

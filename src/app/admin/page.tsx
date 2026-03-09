@@ -3,6 +3,8 @@
 import { Suspense, useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Plus, Trash2, Shield, ShieldCheck, Users, Layout, Settings, Key, Copy, Check, ClipboardList, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import PasswordStrengthMeter from "@/components/PasswordStrengthMeter";
+import { isPasswordValid } from "@/lib/password-policy";
 import type { SanitizedUser, Space, SpaceRole, AuditConfig, AuditEntry } from "@/lib/types";
 
 type Tab = "users" | "spaces" | "service-keys" | "settings" | "audit";
@@ -448,8 +450,8 @@ function AdminContent() {
 
             {showCreateUser && (
               <div className="px-6 py-4 bg-gray-50 border-b border-border">
-                <div className="flex gap-3 items-end">
-                  <div className="flex-1">
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Username</label>
                     <input
                       type="text"
@@ -457,19 +459,31 @@ function AdminContent() {
                       onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
                       className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="username"
+                      autoFocus
                     />
                   </div>
-                  <div className="flex-1">
+                  <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Password</label>
                     <input
                       type="password"
                       value={newUser.password}
                       onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
                       className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="••••••"
+                      placeholder="••••••••••••"
+                      autoComplete="new-password"
                     />
                   </div>
-                  <label className="flex items-center gap-2 text-sm text-gray-600 pb-1">
+                </div>
+                {newUser.password && (
+                  <div className="mb-3">
+                    <PasswordStrengthMeter
+                      password={newUser.password}
+                      context={{ username: newUser.username }}
+                    />
+                  </div>
+                )}
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 text-sm text-gray-600">
                     <input
                       type="checkbox"
                       checked={newUser.isAdmin}
@@ -478,18 +492,21 @@ function AdminContent() {
                     />
                     Admin
                   </label>
-                  <button
-                    onClick={handleCreateUser}
-                    className="px-4 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-blue-700"
-                  >
-                    Create
-                  </button>
-                  <button
-                    onClick={() => setShowCreateUser(false)}
-                    className="px-3 py-1.5 text-sm text-gray-500 hover:text-text-secondary"
-                  >
-                    Cancel
-                  </button>
+                  <div className="ml-auto flex gap-2">
+                    <button
+                      onClick={handleCreateUser}
+                      disabled={!isPasswordValid(newUser.password, { username: newUser.username }) || !newUser.username}
+                      className="px-4 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      Create
+                    </button>
+                    <button
+                      onClick={() => setShowCreateUser(false)}
+                      className="px-3 py-1.5 text-sm text-gray-500 hover:text-text-secondary"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

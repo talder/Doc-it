@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserByUsername, hashPassword, createSession, getSessionCookieName } from "@/lib/auth";
+import { getUserByUsername, getUsers, writeUsers, hashPassword, verifyPassword, createSession, getSessionCookieName } from "@/lib/auth";
 import { auditLog } from "@/lib/audit";
 
 export async function POST(request: NextRequest) {
@@ -16,15 +16,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
 
-    const hash = hashPassword(password);
-    if (hash !== user.passwordHash) {
+    const { match, needsRehash } = await verifyPassword(password, user.passwordHash);
+    if (!match) {
       auditLog(request, { event: "auth.login.failed", outcome: "failure", actor: username, sessionType: "anonymous", details: { reason: "wrong password" } });
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
 
+    // Transparent SHA-256 → bcrypt migration on successful login
+    if (needsRehash) {
+      const users = await getUsers();
+      const idx = users.findIndex((u) => u.username === username);
+      if (idx !== -1) {
+        users[idx].passwordHash = await hashPassword(password);
+        await writeUsers(users);
+      }
+    }
+
     const sessionId = await createSession(username);
 
-    const response = NextResponse.json({ success: true, username: user.username });
+    const response = NextResponse.json({
+      success: true,
+      username: user.username,
+      mustChangePassword: user.mustChangePassword === true,
+    });
     response.cookies.set(getSessionCookieName(), sessionId, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",

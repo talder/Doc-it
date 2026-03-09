@@ -31,6 +31,10 @@ export interface User {
   createdAt: string;
   lastLogin?: string;
   preferences?: UserPreferences;
+  /** All previous bcrypt password hashes (unlimited, NIS2 compliance) */
+  passwordHistory?: string[];
+  /** Set by admin on user creation/reset — forces password change on first login */
+  mustChangePassword?: boolean;
 }
 
 export type SanitizedUser = Omit<User, "passwordHash">;

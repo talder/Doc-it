@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser, getUsers, writeUsers, hashPassword } from "@/lib/auth";
+import { getCurrentUser, getUsers, writeUsers, hashPassword, isPasswordInHistory } from "@/lib/auth";
+import { isPasswordValid, validatePassword } from "@/lib/password-policy";
 import { auditLog } from "@/lib/audit";
 
 type Params = { params: Promise<{ username: string }> };
@@ -35,10 +36,20 @@ export async function PUT(request: NextRequest, { params }: Params) {
   }
 
   if (password) {
-    if (password.length < 6) {
-      return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 });
+    // Enforce password policy (use target username for context)
+    if (!isPasswordValid(password, { username: users[idx].username })) {
+      const errors = validatePassword(password, { username: users[idx].username });
+      return NextResponse.json({ error: errors[0] ?? "Password does not meet requirements" }, { status: 400 });
     }
-    users[idx].passwordHash = hashPassword(password);
+    // Check password history
+    const history = users[idx].passwordHistory ?? [];
+    if (await isPasswordInHistory(password, [users[idx].passwordHash, ...history])) {
+      return NextResponse.json({ error: "Cannot reuse a previous password" }, { status: 400 });
+    }
+    // Rotate history
+    users[idx].passwordHistory = [users[idx].passwordHash, ...history];
+    users[idx].passwordHash = await hashPassword(password);
+    users[idx].mustChangePassword = true;
   }
 
   if (isAdmin !== undefined) {
