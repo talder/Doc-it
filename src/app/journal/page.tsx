@@ -37,10 +37,17 @@ export default function JournalPage() {
   const [newTplContent, setNewTplContent] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // Fetch current space slug from localStorage
+  // Available spaces (for Space Journal selector)
+  const [availableSpaces, setAvailableSpaces] = useState<{ slug: string; name: string }[]>([]);
+  const [showSpaceSelect, setShowSpaceSelect] = useState(false);
+
   useEffect(() => {
-    const stored = typeof window !== "undefined" ? localStorage.getItem("doc-it-current-space") : null;
-    if (stored) setSpaceSlug(stored);
+    fetch("/api/spaces")
+      .then((r) => r.ok ? r.json() : [])
+      .then((data: { slug: string; name: string }[]) => {
+        setAvailableSpaces(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {});
   }, []);
 
   // Fetch entries + templates
@@ -186,9 +193,44 @@ export default function JournalPage() {
             <button className={`jp-scope-btn${scope === "user" ? " jp-scope-btn--active" : ""}`} onClick={() => { setScope("user"); setSelectedEntry(null); }}>
               <Lock className="w-3.5 h-3.5" /> My Journal
             </button>
-            <button className={`jp-scope-btn${scope === "space" ? " jp-scope-btn--active" : ""}`} onClick={() => { setScope("space"); setSelectedEntry(null); }} disabled={!spaceSlug}>
-              <Globe className="w-3.5 h-3.5" /> Space Journal
-            </button>
+            <div className="relative">
+              <button
+                className={`jp-scope-btn${scope === "space" ? " jp-scope-btn--active" : ""}`}
+                onClick={() => {
+                  if (!spaceSlug) {
+                    setShowSpaceSelect((v) => !v);
+                  } else {
+                    setScope("space");
+                    setSelectedEntry(null);
+                    setShowSpaceSelect(false);
+                  }
+                }}
+                disabled={availableSpaces.length === 0}
+              >
+                <Globe className="w-3.5 h-3.5" />
+                {spaceSlug
+                  ? (availableSpaces.find((s) => s.slug === spaceSlug)?.name ?? "Space Journal")
+                  : "Space Journal"}
+              </button>
+              {showSpaceSelect && availableSpaces.length > 0 && (
+                <div className="absolute left-0 top-full mt-1 z-50 bg-surface border border-border rounded-lg shadow-lg py-1 min-w-[160px]">
+                  {availableSpaces.map((s) => (
+                    <button
+                      key={s.slug}
+                      className="w-full text-left px-3 py-1.5 text-sm hover:bg-muted text-text-primary"
+                      onClick={() => {
+                        setSpaceSlug(s.slug);
+                        setScope("space");
+                        setSelectedEntry(null);
+                        setShowSpaceSelect(false);
+                      }}
+                    >
+                      {s.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
           <button className="jp-action-btn" onClick={() => setShowListModal(true)}>
             <List className="w-4 h-4" /> All Entries
