@@ -88,7 +88,7 @@ export default function OfflineBundleModal({ onClose }: Props) {
       className="modal-overlay"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="modal-box" style={{ width: 480, maxWidth: "95vw" }}>
+      <div className="modal-container" style={{ width: 480, maxWidth: "95vw" }}>
         {/* Header */}
         <div className="modal-header">
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -110,7 +110,7 @@ export default function OfflineBundleModal({ onClose }: Props) {
                 Unzip the file and open the HTML in any modern browser.
                 Enter your passphrase to unlock the content.
               </p>
-              <button className="btn-primary" style={{ marginTop: 20 }} onClick={onClose}>
+              <button className="modal-btn-primary" style={{ marginTop: 20 }} onClick={onClose}>
                 Close
               </button>
             </div>
@@ -205,11 +205,11 @@ export default function OfflineBundleModal({ onClose }: Props) {
 
               {/* Actions */}
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-                <button className="btn-secondary" onClick={onClose} disabled={loading}>
+                <button className="modal-btn-cancel" onClick={onClose} disabled={loading}>
                   Cancel
                 </button>
                 <button
-                  className="btn-primary"
+                  className="modal-btn-primary"
                   onClick={handleGenerate}
                   disabled={loading || passphrase.length < 12}
                   style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 160 }}
