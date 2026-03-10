@@ -3,14 +3,14 @@ import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
 
-const ASSETS_DIR = path.join(process.cwd(), "docs", "attachments", "excalidraw");
+import { getDocsDir } from "@/lib/config";
+
+function getAssetsDir() {
+  return path.join(getDocsDir(), "attachments", "excalidraw");
+}
 
 async function ensureAssetsDir() {
-  try {
-    await fs.access(ASSETS_DIR);
-  } catch {
-    await fs.mkdir(ASSETS_DIR, { recursive: true });
-  }
+  await fs.mkdir(getAssetsDir(), { recursive: true }).catch(() => {});
 }
 
 // POST: Save a drawing (create or update)
@@ -24,8 +24,9 @@ export async function POST(request: NextRequest) {
   const safeName = (docName || "untitled").replace(/[^a-zA-Z0-9-_]/g, "-");
   const drawingId = id || `${safeName}-${shortId}`;
 
-  const jsonPath = path.join(ASSETS_DIR, `${drawingId}.excalidraw.json`);
-  const svgPath = path.join(ASSETS_DIR, `${drawingId}.excalidraw.svg`);
+  const assetsDir = getAssetsDir();
+  const jsonPath = path.join(assetsDir, `${drawingId}.excalidraw.json`);
+  const svgPath = path.join(assetsDir, `${drawingId}.excalidraw.svg`);
 
   await fs.writeFile(jsonPath, JSON.stringify(sceneData), "utf-8");
   await fs.writeFile(svgPath, svgData, "utf-8");

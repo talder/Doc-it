@@ -11,7 +11,7 @@ export async function GET() {
 
   const users = await getUsers();
   // Return sanitized user list
-  const sanitized = users.map(({ username, isAdmin, isSuperAdmin, createdAt, lastLogin, isLocked, failedLoginAttempts, lockedAt }) => ({
+  const sanitized = users.map(({ username, isAdmin, isSuperAdmin, createdAt, lastLogin, isLocked, failedLoginAttempts, lockedAt, authSource, adUsername, fullName, email }) => ({
     username,
     isAdmin,
     isSuperAdmin,
@@ -20,6 +20,10 @@ export async function GET() {
     isLocked: isLocked ?? false,
     failedLoginAttempts: failedLoginAttempts ?? 0,
     lockedAt,
+    authSource: authSource ?? "local",
+    adUsername: adUsername ?? null,
+    fullName: fullName ?? null,
+    email: email ?? null,
   }));
 
   return NextResponse.json(sanitized);

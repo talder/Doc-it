@@ -344,31 +344,21 @@ export default function Home() {
       });
   }, [user, currentSpace]);
 
-  // Fetch categories, docs, tags, templates, members when space changes
+  // Fetch all space sidebar data via the combined init endpoint (1 request vs 8)
   const fetchSpaceData = useCallback(async () => {
     if (!currentSpace) return;
     const slug = currentSpace.slug;
-    const [catsRes, docsRes, tagsRes, tplRes, membersRes, custRes, dbsRes, statusesRes] = await Promise.all([
-      fetch(`/api/spaces/${slug}/categories`),
-      fetch(`/api/spaces/${slug}/docs`),
-      fetch(`/api/spaces/${slug}/tags`),
-      fetch(`/api/spaces/${slug}/templates`),
-      fetch(`/api/spaces/${slug}/members`),
-      fetch(`/api/spaces/${slug}/customization`),
-      fetch(`/api/spaces/${slug}/databases`),
-      fetch(`/api/spaces/${slug}/statuses`),
-    ]);
-    const [cats, allDocs, tags, tpls, members, cust, dbs, statuses] = await Promise.all([
-      catsRes.json(), docsRes.json(), tagsRes.json(), tplRes.json(), membersRes.json(), custRes.json(), dbsRes.json(), statusesRes.json(),
-    ]);
-    setCategories(Array.isArray(cats) ? cats : []);
-    setDocs(Array.isArray(allDocs) ? allDocs : []);
-    setTagsIndex(tags && typeof tags === "object" && !Array.isArray(tags) ? tags : {});
-    setTemplates(Array.isArray(tpls) ? tpls : []);
-    setSpaceMembers(Array.isArray(members) ? members : []);
-    setCustomization(cust && cust.docIcons ? cust : { docIcons: {}, docColors: {}, categoryIcons: {}, categoryColors: {} });
-    setDatabasesList(Array.isArray(dbs) ? dbs : []);
-    setDocStatusMap(statuses && typeof statuses === "object" ? statuses : {});
+    const res = await fetch(`/api/spaces/${slug}/init`);
+    if (!res.ok) return;
+    const d = await res.json();
+    setCategories(Array.isArray(d.categories) ? d.categories : []);
+    setDocs(Array.isArray(d.docs) ? d.docs : []);
+    setTagsIndex(d.tags && typeof d.tags === "object" && !Array.isArray(d.tags) ? d.tags : {});
+    setTemplates(Array.isArray(d.templates) ? d.templates : []);
+    setSpaceMembers(Array.isArray(d.members) ? d.members : []);
+    setCustomization(d.customization?.docIcons ? d.customization : { docIcons: {}, docColors: {}, categoryIcons: {}, categoryColors: {} });
+    setDatabasesList(Array.isArray(d.databases) ? d.databases : []);
+    setDocStatusMap(d.statuses && typeof d.statuses === "object" ? d.statuses : {});
   }, [currentSpace]);
 
   useEffect(() => { fetchSpaceData(); }, [fetchSpaceData]);
@@ -407,34 +397,31 @@ export default function Home() {
       setIsEditing(false);
       setShowStatusPopover(false);
       setShowClassPopover(false);
-      // Fetch latest revision number
-      const histRes = await fetch(
-        `/api/spaces/${currentSpace.slug}/docs/${encodeURIComponent(doc.name)}/history?category=${encodeURIComponent(doc.category)}`
-      );
-      if (histRes.ok && docKeyRef.current === key) {
+      // Fetch revision history, status, and likes in parallel
+      const histUrl = `/api/spaces/${currentSpace.slug}/docs/${encodeURIComponent(doc.name)}/history?category=${encodeURIComponent(doc.category)}`;
+      const statusUrl = `/api/spaces/${currentSpace.slug}/docs/${encodeURIComponent(doc.name)}/status?category=${encodeURIComponent(doc.category)}`;
+      const likesUrl = `/api/spaces/${currentSpace.slug}/likes?doc=${encodeURIComponent(`${doc.category}/${doc.name}`)}`;
+      const [histRes, statusRes, likesRes] = await Promise.all([
+        fetch(histUrl),
+        doc.isTemplate ? Promise.resolve(null) : fetch(statusUrl),
+        doc.isTemplate ? Promise.resolve(null) : fetch(likesUrl),
+      ]);
+      if (docKeyRef.current !== key) return;
+      if (histRes.ok) {
         const revs = await histRes.json();
         setCurrentRevision(revs.length > 0 ? revs[revs.length - 1].rev : null);
       }
-      // Fetch doc status (skip for templates)
-      if (!doc.isTemplate && docKeyRef.current === key) {
-        const statusRes = await fetch(
-          `/api/spaces/${currentSpace.slug}/docs/${encodeURIComponent(doc.name)}/status?category=${encodeURIComponent(doc.category)}`
-        );
-        if (statusRes.ok && docKeyRef.current === key) setDocStatus(await statusRes.json());
-        else if (docKeyRef.current === key) setDocStatus({ status: "draft" });
+      if (statusRes && statusRes.ok) {
+        setDocStatus(await statusRes.json());
+      } else if (!doc.isTemplate) {
+        setDocStatus({ status: "draft" });
       }
-      // Fetch likes
-      if (!doc.isTemplate) {
-        const docKey = `${doc.category}/${doc.name}`;
-        fetch(`/api/spaces/${currentSpace.slug}/likes?doc=${encodeURIComponent(docKey)}`)
-          .then((r) => r.ok ? r.json() : null)
-          .then((data) => {
-            if (data && docKeyRef.current === key) {
-              setDocLikeCount(data.count ?? 0);
-              setDocLiked(!!data.likes?.[user?.username ?? ""]);
-            }
-          })
-          .catch(() => {});
+      if (likesRes && likesRes.ok) {
+        const likesData = await likesRes.json();
+        if (docKeyRef.current === key) {
+          setDocLikeCount(likesData.count ?? 0);
+          setDocLiked(!!likesData.likes?.[user?.username ?? ""]);
+        }
       }
     }
   }, [currentSpace, user]);
@@ -1682,6 +1669,7 @@ export default function Home() {
                 <SpaceHome
                   spaceSlug={currentSpace.slug}
                   spaceName={currentSpace.name}
+                  isAdmin={!!user?.isAdmin}
                   onOpenDoc={(name, category) => {
                     const target = docs.find((d) => d.name === name && d.category === category);
                     if (target) loadDoc(target);

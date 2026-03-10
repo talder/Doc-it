@@ -1,4 +1,6 @@
-# Doc-it
+<p align="center">
+  <img src="public/logo.png" alt="Doc-it" width="200" />
+</p>
 
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev)
@@ -74,12 +76,26 @@ Three applications have been the primary functional inspiration behind Doc-it �
 
 ### Change Log
 - **Operational change tracking** — log infrastructure and system changes with structured fields (system, category, risk, impact, status)
-- **Auto-incrementing IDs** — CHG-0001, CHG-0002, etc.
+- **Auto-incrementing IDs** — CHG-000001, CHG-000002, etc. (6-digit zero-padded)
 - **Categories** — Disk, Network, Security, Software, Hardware, Configuration, Other
 - **Risk levels** — Low, Medium, High, Critical
 - **Linked documentation** — optionally link a changelog entry to a document in any space
 - **Syslog forwarding** — change events forwarded to syslog (if enabled) with `[CHANGE]` marker
 - **Filtering** — search and filter by date range, category, system name, and free text
+- **Configurable retention** — entries older than the configured period are automatically pruned; default 5 years, adjustable in Admin → Settings
+
+### PKI / Certificate Manager
+- **Certificate store** — manage X.509 certificates in a hierarchical CA-chain tree view
+- **Key generation** — generate RSA-2048, RSA-4096, EC P-256, EC P-384, EC P-521, and Ed25519 private keys; keys are stored encrypted
+- **XCA-style CSR creation** — tabbed form with four sections:
+  - **Source** — optional template (with Apply Subject / Apply Extensions / Apply All buttons), signing mode (CSR only / self-signed / sign with CA), and signature algorithm (SHA-256/384/512)
+  - **Subject** — full Distinguished Name grid (Internal Name, CN, Email, O, OU, C, ST, L) + structured Subject Alternative Names editor (DNS, IP, email, URI, otherName)
+  - **Extensions** — Basic Constraints (type + path length + critical), Key Identifiers (SKI/AKI), validity period with quick-pick buttons, CDP and OCSP/AIA URLs
+  - **Key Usage** — Key Usage (9 flags) and Extended Key Usage (12 flags) with Critical toggle
+- **Templates** — save reusable certificate profiles (Subject + Extensions + Key Usage) and apply them to new CSRs
+- **Certificate operations** — import PEM/DER/PKCS7/PKCS12, export to PEM/DER/PKCS7/PKCS12, revoke with reason, renew, delete
+- **CRL generation** — generate and download Certificate Revocation Lists per CA
+- **Import** — drag-and-drop or browse to import certificate files (PEM, DER, PKCS7, PKCS12) and private key PEMs
 
 ### Asset Management
 - **IT asset registry** — track hardware, software, and infrastructure assets
@@ -296,7 +312,7 @@ src/
 
 ## Configuration
 
-All configuration is stored in a SQLite database at `config/docit.db` using a key-value table. On first startup, any existing JSON files in the `config/` directory are automatically migrated into the database.
+All runtime configuration is stored in a SQLite database at `config/docit.db` using a key-value table. On first startup, any existing JSON files in the `config/` directory are automatically migrated into the database.
 
 Key configuration entries (stored as JSON values):
 
@@ -308,10 +324,27 @@ Key configuration entries (stored as JSON values):
 - `helpdesk-tickets.json` — ticket storage
 - `assets.json` — asset registry
 - `changelog.json` — change log entries
+- `changelog-settings.json` — changelog retention period (default 5 years)
 - `audit.json` — audit configuration
 - `backup.json` — backup configuration and targets
 
 Avatars are stored in `config/avatars/`.
+
+### Storage Location (`docit.config.json`)
+
+By default all data directories (`docs/`, `archive/`, `history/`, `logs/`, `trash/`) are created inside the application directory. To move them to a different volume or mount point, create `docit.config.json` in the application root:
+
+```json
+{
+  "storageRoot": "/mnt/nas/doc-it-data"
+}
+```
+
+The path must be absolute. The change takes effect immediately — no restart required. **Move any existing data manually before saving the new path.**
+
+If the file is absent or `storageRoot` is omitted, doc-it falls back to the application directory (fully backward-compatible).
+
+The storage path can also be configured in **Admin → Settings → Storage Location**.
 
 ## License
 

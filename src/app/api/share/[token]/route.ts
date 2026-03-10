@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
-import { ensureDir } from "@/lib/config";
+import { ensureDir, getSpaceDir } from "@/lib/config";
 import { parseFrontmatter } from "@/lib/frontmatter";
 
 type Params = { params: Promise<{ token: string }> };
@@ -70,7 +70,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
   }
 
   // Read the document
-  const docPath = path.join(process.cwd(), "docs", slug, entry.category, `${entry.docName}.md`);
+  const docPath = path.join(getSpaceDir(slug), entry.category, `${entry.docName}.md`);
   try {
     const raw = await fs.readFile(docPath, "utf-8");
     const { body, metadata } = parseFrontmatter(raw);
@@ -118,7 +118,7 @@ export async function POST(request: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Incorrect password" }, { status: 403 });
   }
 
-  const docPath = path.join(process.cwd(), "docs", slug, entry.category, `${entry.docName}.md`);
+  const docPath = path.join(getSpaceDir(slug), entry.category, `${entry.docName}.md`);
   try {
     const raw = await fs.readFile(docPath, "utf-8");
     const { body, metadata } = parseFrontmatter(raw);

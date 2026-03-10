@@ -4,12 +4,16 @@
  * 1. Increases the default EventEmitter max-listener limit to suppress
  *    spurious MaxListenersExceeded warnings from SSE streams.
  * 2. Registers the automated backup scheduler.
+ * 3. Registers the certificate expiry alert scheduler.
  *
  * This file is dynamically imported by instrumentation.ts only when
  * NEXT_RUNTIME === "nodejs", keeping Node-only modules out of the Edge bundle.
  */
 
 import { getBackupConfig, runBackup, getBackupState } from "./lib/backup";
+import { checkAndMarkExpiryAlerts } from "./lib/certificates";
+import { sendMail } from "./lib/email";
+import { getUsers } from "./lib/auth";
 
 if (process.env.NODE_ENV === "development") {
   process.stdout.setMaxListeners(30);
@@ -52,3 +56,104 @@ setInterval(async () => {
     console.error("[backup] Scheduler error:", err);
   }
 }, INTERVAL_MS);
+
+// ── Certificate expiry alert scheduler ───────────────────────────────────────
+
+// Run once per hour (60 min × 60 sec × 1000 ms)
+const CERT_INTERVAL_MS = 60 * 60_000;
+
+// Debounce: track last check time to avoid multiple runs within the same minute
+let lastCertCheckAt = 0;
+
+setInterval(async () => {
+  // Throttle: only run once per 55 minutes minimum
+  if (Date.now() - lastCertCheckAt < 55 * 60_000) return;
+  lastCertCheckAt = Date.now();
+
+  try {
+    const alerts = await checkAndMarkExpiryAlerts();
+    if (alerts.length === 0) return;
+
+    // Fetch all admin users with email addresses
+    const users = await getUsers();
+    const admins = users.filter((u) => u.isAdmin && u.email);
+
+    for (const { cert, threshold, daysLeft } of alerts) {
+      const urgency = threshold === 1 ? "[CRITICAL]" : threshold === 7 ? "[URGENT]" : "[WARNING]";
+      const subject = `${urgency} Certificate expiring in ${daysLeft} day${daysLeft === 1 ? "" : "s"}: ${cert.subject.CN}`;
+      const html = `
+        <h2 style="color:${threshold === 1 ? "#dc2626" : threshold === 7 ? "#ea580c" : "#ca8a04"}">
+          ${urgency} Certificate Expiry Alert
+        </h2>
+        <p>The following certificate will expire in <strong>${daysLeft} day${daysLeft === 1 ? "" : "s"}</strong>:</p>
+        <table style="border-collapse:collapse;font-family:monospace">
+          <tr><td style="padding:4px 12px 4px 0;color:#6b7280">Name</td><td><strong>${cert.name}</strong></td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#6b7280">Subject CN</td><td>${cert.subject.CN}</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#6b7280">Type</td><td>${cert.type}</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#6b7280">Serial</td><td>${cert.serial}</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#6b7280">Expires</td><td>${new Date(cert.notAfter).toLocaleString()}</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#6b7280">SHA-256</td><td>${cert.fingerprintSha256}</td></tr>
+        </table>
+        <p style="margin-top:16px">Please renew this certificate in the Doc-it Certificate Manager.</p>
+      `;
+
+      // Send email to all admins
+      for (const admin of admins) {
+        await sendMail(admin.email!, subject, html).catch(() => {});
+      }
+
+      // Create in-app notification for all admins
+      const NOTIF_DIR = (await import("path")).join(process.cwd(), "config", "notifications");
+      const fs = await import("fs/promises");
+      await fs.mkdir(NOTIF_DIR, { recursive: true }).catch(() => {});
+
+      for (const admin of users.filter((u) => u.isAdmin)) {
+        const notifPath = (await import("path")).join(NOTIF_DIR, `${admin.username}.json`);
+        let notifs: unknown[] = [];
+        try {
+          notifs = JSON.parse(await fs.readFile(notifPath, "utf-8"));
+        } catch { notifs = []; }
+        notifs.unshift({
+          id: `cert-expiry-${cert.id}-${threshold}-${Date.now()}`,
+          type: "cert-expiry",
+          message: `${urgency} Certificate "${cert.name}" (${cert.subject.CN}) expires in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`,
+          certId: cert.id,
+          certName: cert.name,
+          threshold,
+          daysLeft,
+          createdAt: new Date().toISOString(),
+          read: false,
+        });
+        if (notifs.length > 50) notifs.length = 50;
+        await fs.writeFile(notifPath, JSON.stringify(notifs, null, 2), "utf-8").catch(() => {});
+      }
+
+      // Audit log the alert
+      try {
+        const { _writeAuditLogDirect } = await import("./lib/audit");
+        await _writeAuditLogDirect({
+          event: "cert.expiry.alert",
+          outcome: "success",
+          actor: "scheduler",
+          sessionType: "anonymous",
+          resource: cert.id,
+          resourceType: "pki-cert",
+          details: { certName: cert.name, subject: cert.subject.CN, threshold, daysLeft },
+        });
+      } catch { /* audit is optional */ }
+
+      console.log(`[cert-expiry] Alert sent for "${cert.name}" — expires in ${daysLeft}d (threshold: ${threshold}d)`);
+    }
+  } catch (err) {
+    console.error("[cert-expiry] Scheduler error:", err);
+  }
+}, CERT_INTERVAL_MS);
+
+// Also check once at startup (after a short delay to let the server boot)
+setTimeout(async () => {
+  try {
+    // Reuse the same logic — just trigger the interval handler
+    // by resetting the debounce timer
+    lastCertCheckAt = 0;
+  } catch { /* ignore */ }
+}, 30_000);

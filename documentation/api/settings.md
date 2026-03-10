@@ -86,6 +86,71 @@ Update the audit configuration.
 
 ---
 
+## GET /api/settings/changelog
+
+Return the change log retention settings.
+
+**Response `200`**
+```json
+{
+  "retentionYears": 5
+}
+```
+
+---
+
+## PUT /api/settings/changelog
+
+Update the change log retention period.
+
+**Request body**
+```json
+{
+  "retentionYears": 3
+}
+```
+
+`retentionYears` must be an integer between 1 and 99.
+
+---
+
+## GET /api/settings/storage
+
+Return the current storage configuration.
+
+**Response `200`**
+```json
+{
+  "storageRoot": "/mnt/nas/doc-it-data",
+  "effectiveRoot": "/mnt/nas/doc-it-data",
+  "paths": {
+    "docs": "/mnt/nas/doc-it-data/docs",
+    "archive": "/mnt/nas/doc-it-data/archive",
+    "history": "/mnt/nas/doc-it-data/history",
+    "trash": "/mnt/nas/doc-it-data/trash"
+  }
+}
+```
+
+`storageRoot` is `null` when no custom path has been configured (app directory is used as fallback).
+
+---
+
+## PUT /api/settings/storage
+
+Update the storage root path.
+
+**Request body**
+```json
+{
+  "storageRoot": "/mnt/nas/doc-it-data"
+}
+```
+
+The path must be absolute. The change takes effect immediately for subsequent requests. **Existing data must be moved manually.**
+
+---
+
 ## GET /api/admin/service-keys *(admin only)*
 
 List all service keys.

@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
 import { requireSpaceRole } from "@/lib/permissions";
-import { ensureDir, readJsonConfig } from "@/lib/config";
+import { ensureDir, readJsonConfig, getTrashDir, getCategoryDir } from "@/lib/config";
 import { auditLog } from "@/lib/audit";
 
 type Params = { params: Promise<{ slug: string }> };
 
-const TRASH_DIR = path.join(process.cwd(), "trash");
+const getTrashRoot = getTrashDir;
 
 interface TrashEntry {
   id: string;
@@ -28,11 +28,11 @@ interface TrashConfig {
 }
 
 function getTrashSpaceDir(slug: string) {
-  return path.join(TRASH_DIR, slug);
+  return path.join(getTrashRoot(), slug);
 }
 
 function getTrashManifestPath(slug: string) {
-  return path.join(TRASH_DIR, slug, "manifest.json");
+  return path.join(getTrashRoot(), slug, "manifest.json");
 }
 
 async function readManifest(slug: string): Promise<TrashManifest> {
@@ -119,7 +119,7 @@ export async function POST(request: NextRequest, { params }: Params) {
 
   if (action === "restore") {
     // Move file back to original location
-    const docsDir = path.join(process.cwd(), "docs", slug, item.category);
+    const docsDir = getCategoryDir(slug, item.category);
     await ensureDir(docsDir);
     const destPath = path.join(docsDir, item.filename);
     try {

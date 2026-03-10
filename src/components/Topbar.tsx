@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Search, LogOut, Settings, Sun, Moon, Archive, User, Bell, X, FileText, BookOpen, Check, HardDriveDownload, Home, Trophy, Share2, Trash2, Lock, Clock, BookMarked, ClipboardList, Monitor, Headset } from "lucide-react";
+import { ChevronDown, Search, LogOut, Settings, Sun, Moon, Archive, User, Bell, X, FileText, BookOpen, Check, HardDriveDownload, Home, Trophy, Share2, Trash2, Lock, Clock, BookMarked, ClipboardList, Monitor, Headset, ShieldCheck } from "lucide-react";
 import OfflineBundleModal from "@/components/OfflineBundleModal";
 import { useTheme, isLightTheme, type Theme } from "@/components/ThemeProvider";
 import type { Space, SanitizedUser, ReviewItem } from "@/lib/types";
@@ -131,8 +131,8 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
       {/* Left: Home + Space name + switcher + Search */}
       <div className="flex items-center gap-2 flex-1 min-w-0" ref={spaceRef}>
         {onHome && (
-          <button onClick={onHome} className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors" data-tip="Home">
-            <Home className="w-4 h-4" />
+          <button onClick={onHome} className="flex items-center gap-1.5 p-1.5 rounded-lg hover:bg-muted text-text-muted transition-colors" data-tip="Home">
+            <img src="/logo-icon.png" alt="Doc-it" className="w-9 h-9 rounded-lg" />
           </button>
         )}
         <div className="relative">
@@ -232,6 +232,17 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
         >
           <Headset className="w-4 h-4" />
         </button>
+
+        {/* Certificate Manager */}
+        {user?.isAdmin && (
+          <button
+            onClick={() => router.push("/certificates")}
+            className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
+            data-tip="Certificate Manager"
+          >
+            <ShieldCheck className="w-4 h-4" />
+          </button>
+        )}
 
         {/* Shared pages overview */}
         <div className="relative" ref={sharesRef}>

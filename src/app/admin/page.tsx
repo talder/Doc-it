@@ -2,16 +2,15 @@
 
 import { Suspense, useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Plus, Trash2, Shield, ShieldCheck, Users, Layout, Settings, Key, Copy, Check, ClipboardList, ChevronLeft, ChevronRight, Download, Lock, LockOpen, ChevronDown, ChevronUp, ShieldOff, HardDrive, RefreshCw, PlayCircle, XCircle, RotateCcw, Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Shield, ShieldCheck, Users, Layout, Settings, Key, Copy, Check, ClipboardList, ChevronLeft, ChevronRight, Download, Lock, LockOpen, ChevronDown, ChevronUp, ShieldOff, HardDrive, RefreshCw, PlayCircle, XCircle, RotateCcw, Eye, EyeOff, UsersRound, X, Network } from "lucide-react";
 import PasswordStrengthMeter from "@/components/PasswordStrengthMeter";
 import { isPasswordValid } from "@/lib/password-policy";
-import type { SanitizedUser, Space, SpaceRole, AuditConfig, AuditEntry } from "@/lib/types";
-
-type Tab = "users" | "spaces" | "service-keys" | "settings" | "audit" | "backup";
+import type { SanitizedUser, Space, SpaceRole, AuditConfig, AuditEntry, UserGroup, AdConfig, AdGroupMapping } from "@/lib/types";
+type Tab = "users" | "spaces" | "service-keys" | "groups" | "settings" | "audit" | "backup";
 
 interface BackupEntry { filename: string; sizeBytes: number; createdAt: string; }
-interface BackupTargetForm { id: string; type: "local" | "cifs"; label: string; path: string; host: string; share: string; remotePath: string; username: string; password: string; }
-const EMPTY_TARGET = (): BackupTargetForm => ({ id: crypto.randomUUID(), type: "local", label: "", path: "", host: "", share: "", remotePath: "", username: "", password: "" });
+interface BackupTargetForm { id: string; type: "local" | "cifs" | "sftp"; label: string; path: string; host: string; port: number; share: string; remotePath: string; username: string; password: string; privateKey: string; }
+const EMPTY_TARGET = (): BackupTargetForm => ({ id: crypto.randomUUID(), type: "local", label: "", path: "", host: "", port: 22, share: "", remotePath: "", username: "", password: "", privateKey: "" });
 
 interface ServiceKeyRecord {
   id: string;
@@ -32,6 +31,10 @@ interface AdminUser {
   isLocked?: boolean;
   failedLoginAttempts?: number;
   lockedAt?: string;
+  authSource?: "local" | "ad";
+  adUsername?: string | null;
+  fullName?: string | null;
+  email?: string | null;
 }
 
 export default function AdminPage() {
@@ -119,11 +122,55 @@ function AdminContent() {
   const [showNewTarget, setShowNewTarget] = useState(false);
   const [restoringFile, setRestoringFile] = useState<string | null>(null);
 
+  // Storage settings state
+  const [storageConfig, setStorageConfig] = useState<{ storageRoot: string | null; effectiveRoot: string; paths: Record<string, string> }>({
+    storageRoot: null, effectiveRoot: "", paths: {},
+  });
+  const [storageInput, setStorageInput] = useState("");
+  const [storageLoaded, setStorageLoaded] = useState(false);
+
+  // Changelog settings state
+  const [changelogSettings, setChangelogSettings] = useState({ retentionYears: 5 });
+  const [changelogSettingsLoaded, setChangelogSettingsLoaded] = useState(false);
+
+  // Active Directory settings state
+  const defaultAdConfig: Omit<AdConfig, "bindPasswordEncrypted"> & { bindPasswordSet?: boolean; bindPassword?: string } = {
+    enabled: false, host: "", port: 389, ssl: false, tlsRejectUnauthorized: true,
+    bindDn: "", baseDn: "", userSearchBase: "",
+    allowedGroups: [], allowedUsers: [], groupMappings: [],
+  };
+  const [adConfig, setAdConfig] = useState(defaultAdConfig);
+  const [adLoaded, setAdLoaded] = useState(false);
+  const [adBindPassword, setAdBindPassword] = useState("");
+  const [adTestResult, setAdTestResult] = useState<{ success: boolean; info?: string; error?: string } | null>(null);
+  const [adTesting, setAdTesting] = useState(false);
+  const [adSaving, setAdSaving] = useState(false);
+  // AD form helpers
+  const [newAllowedGroup, setNewAllowedGroup] = useState("");
+  const [newAllowedUser, setNewAllowedUser] = useState("");
+  const [newMappingGroupDn, setNewMappingGroupDn] = useState("");
+  const [newMappingSpaceSlug, setNewMappingSpaceSlug] = useState("");
+  const [newMappingRole, setNewMappingRole] = useState<SpaceRole>("reader");
+
+  // AD domain (from public config, for display in user list)
+  const [adDomainDisplay, setAdDomainDisplay] = useState("");
+  useEffect(() => {
+    fetch("/api/auth/config").then(r => r.json()).then(d => { if (d.adDomain) setAdDomainDisplay(d.adDomain); }).catch(() => {});
+  }, []);
+
   // Encryption key state
   const [keyFingerprint, setKeyFingerprint] = useState("");
   const [keyRevealed, setKeyRevealed] = useState<string | null>(null);
   const [keyRotating, setKeyRotating] = useState(false);
   const [keyRotationResult, setKeyRotationResult] = useState<{ newKey: string; summary: string } | null>(null);
+
+  // User groups state
+  const [userGroups, setUserGroups] = useState<UserGroup[]>([]);
+  const [groupsLoaded, setGroupsLoaded] = useState(false);
+  const [editingGroup, setEditingGroup] = useState<UserGroup | null>(null);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [newGroupDesc, setNewGroupDesc] = useState("");
+  const [groupMemberInput, setGroupMemberInput] = useState("");
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -182,6 +229,42 @@ function AdminContent() {
     if (res.ok) {
       const data = await res.json();
       setKeyFingerprint(data.fingerprint ?? "");
+    }
+  }, []);
+
+  const fetchStorageConfig = useCallback(async () => {
+    const res = await fetch("/api/settings/storage");
+    if (res.ok) {
+      const data = await res.json();
+      setStorageConfig(data);
+      setStorageInput(data.storageRoot ?? "");
+      setStorageLoaded(true);
+    }
+  }, []);
+
+  const fetchChangelogSettings = useCallback(async () => {
+    const res = await fetch("/api/settings/changelog");
+    if (res.ok) {
+      setChangelogSettings(await res.json());
+      setChangelogSettingsLoaded(true);
+    }
+  }, []);
+
+  const fetchAdConfig = useCallback(async () => {
+    const res = await fetch("/api/settings/ad");
+    if (res.ok) {
+      const data = await res.json();
+      setAdConfig(data);
+      setAdLoaded(true);
+    }
+  }, []);
+
+  const fetchUserGroups = useCallback(async () => {
+    const res = await fetch("/api/admin/user-groups");
+    if (res.ok) {
+      const data = await res.json();
+      setUserGroups(data.groups ?? []);
+      setGroupsLoaded(true);
     }
   }, []);
 
@@ -507,7 +590,16 @@ function AdminContent() {
             Service Keys
           </button>
           <button
-            onClick={() => { setTab("settings"); if (!smtpLoaded) fetchSmtp(); fetchKeyInfo(); }}
+            onClick={() => { setTab("groups"); if (!groupsLoaded) fetchUserGroups(); }}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+              tab === "groups" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
+            }`}
+          >
+            <UsersRound className="w-4 h-4" />
+            Groups
+          </button>
+          <button
+            onClick={() => { setTab("settings"); if (!smtpLoaded) fetchSmtp(); fetchKeyInfo(); if (!storageLoaded) fetchStorageConfig(); if (!changelogSettingsLoaded) fetchChangelogSettings(); if (!adLoaded) fetchAdConfig(); }}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
               tab === "settings" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
             }`}
@@ -620,21 +712,45 @@ function AdminContent() {
             )}
 
             <div className="divide-y divide-gray-100">
-              {users.map((u) => (
+              {users.map((u) => {
+                const isAd = u.authSource === "ad";
+                const initials = (u.fullName || u.username).split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
+                return (
                 <div key={u.username}>
                   <div className="flex items-center justify-between px-6 py-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-accent-light text-accent flex items-center justify-center text-sm font-medium">
-                        {u.username[0]?.toUpperCase()}
+                      {/* Avatar with real image + initials fallback */}
+                      <div className={`w-8 h-8 rounded-full relative flex items-center justify-center text-xs font-semibold text-white overflow-hidden flex-shrink-0 ${isAd ? "bg-blue-500" : "bg-violet-500"}`}>
+                        <span>{initials}</span>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={`/api/auth/avatar/${encodeURIComponent(u.username)}`}
+                          alt=""
+                          className="absolute inset-0 w-full h-full object-cover rounded-full"
+                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                        />
                       </div>
                       <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-text-primary">{u.username}</span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium text-text-primary">
+                            {u.fullName || u.username}
+                          </span>
+                          {u.fullName && (
+                            <span className="text-xs text-text-muted">{u.username}</span>
+                          )}
                           {u.isSuperAdmin && (
                             <span className="px-1.5 py-0.5 text-[10px] font-medium bg-purple-100 text-purple-700 rounded">Owner</span>
                           )}
                           {u.isAdmin && !u.isSuperAdmin && (
                             <span className="px-1.5 py-0.5 text-[10px] font-medium bg-accent-light text-accent-text rounded">Admin</span>
+                          )}
+                          {isAd ? (
+                            <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700 rounded flex items-center gap-0.5">
+                              <Network className="w-2.5 h-2.5" />
+                              {adDomainDisplay || "Domain"}
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-500 rounded">Local</span>
                           )}
                           {u.isLocked && (
                             <span className="px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-700 rounded flex items-center gap-0.5">
@@ -642,9 +758,14 @@ function AdminContent() {
                             </span>
                           )}
                         </div>
-                        {u.createdAt && (
-                          <span className="text-xs text-text-muted">Created {new Date(u.createdAt).toLocaleDateString()}</span>
-                        )}
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {u.createdAt && (
+                            <span className="text-xs text-text-muted">Created {new Date(u.createdAt).toLocaleDateString()}</span>
+                          )}
+                          {u.email && (
+                            <span className="text-xs text-text-muted">{u.email}</span>
+                          )}
+                        </div>
                         {u.isLocked && u.lockedAt && (
                           <span className="text-xs text-red-500 block">Locked {new Date(u.lockedAt).toLocaleString()}</span>
                         )}
@@ -709,7 +830,6 @@ function AdminContent() {
                       <div className="px-4 py-2 border-b border-border bg-gray-100">
                         <span className="text-xs font-medium text-gray-600">Space access for {u.username}</span>
                       </div>
-                      {/* Existing memberships */}
                       {spaces.filter((s) => s.permissions[u.username]).length === 0 ? (
                         <p className="px-4 py-2 text-xs text-text-muted">Not a member of any space.</p>
                       ) : (
@@ -739,7 +859,6 @@ function AdminContent() {
                           ))}
                         </div>
                       )}
-                      {/* Add to a space */}
                       {spaces.filter((s) => !s.permissions[u.username]).length > 0 && (
                         <div className="px-4 py-2 border-t border-border flex items-center gap-2">
                           <select
@@ -784,7 +903,8 @@ function AdminContent() {
                     </div>
                   )}
                 </div>
-              ))}
+              );
+              })}
             </div>
           </div>
         )}
@@ -1491,7 +1611,7 @@ function AdminContent() {
                       <div key={t.id} className="flex items-center gap-3 px-4 py-2 border border-border rounded-lg bg-gray-50">
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-text-primary">{t.label || "(unnamed)"}</p>
-                          <p className="text-xs text-text-muted">{t.type === "local" ? `Local: ${t.path}` : `CIFS: //${t.host}/${t.share}${t.remotePath}`}</p>
+                          <p className="text-xs text-text-muted">{t.type === "local" ? `Local: ${t.path}` : t.type === "cifs" ? `CIFS: //${t.host}/${t.share}${t.remotePath}` : `SFTP: ${t.username}@${t.host}:${(t as BackupTargetForm).port ?? 22}${t.remotePath}`}</p>
                         </div>
                         <button onClick={() => setBackupConfig({ ...backupConfig, targets: backupConfig.targets.filter((x) => x.id !== t.id) })} className="p-1 text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
                       </div>
@@ -1503,9 +1623,10 @@ function AdminContent() {
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
-<select value={newTarget.type} onChange={(e) => setNewTarget({ ...newTarget, type: e.target.value as "local"|"cifs" })} className="w-full text-sm border border-border rounded-lg px-2 py-1.5 h-[34px]">
+<select value={newTarget.type} onChange={(e) => setNewTarget({ ...newTarget, type: e.target.value as "local"|"cifs"|"sftp" })} className="w-full text-sm border border-border rounded-lg px-2 py-1.5 h-[34px]">
                             <option value="local">Local path (also NFS mount)</option>
                             <option value="cifs">CIFS / SMB share</option>
+                            <option value="sftp">SFTP</option>
                           </select>
                         </div>
                         <div>
@@ -1519,7 +1640,7 @@ function AdminContent() {
                           <input type="text" value={newTarget.path} onChange={(e) => setNewTarget({ ...newTarget, path: e.target.value })} placeholder="/mnt/nas/docit-backups" className="w-full text-sm border border-border rounded-lg px-2 py-1.5" />
                           <p className="text-xs text-text-muted mt-0.5">For NFS: mount the share at the OS level first, then provide the mount path here.</p>
                         </div>
-                      ) : (
+                      ) : newTarget.type === "cifs" ? (
                         <div className="space-y-2">
                           <div className="grid grid-cols-2 gap-3">
                             <div>
@@ -1547,6 +1668,38 @@ function AdminContent() {
                           </div>
                           <p className="text-xs text-text-muted">Requires <code className="font-mono">smbclient</code> to be installed on the server. The password is stored encrypted.</p>
                         </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="grid grid-cols-3 gap-3">
+                            <div className="col-span-2">
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Host</label>
+                              <input type="text" value={newTarget.host} onChange={(e) => setNewTarget({ ...newTarget, host: e.target.value })} placeholder="sftp.example.com" className="w-full text-sm border border-border rounded-lg px-2 py-1.5" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Port</label>
+                              <input type="number" value={newTarget.port} onChange={(e) => setNewTarget({ ...newTarget, port: parseInt(e.target.value) || 22 })} className="w-full text-sm border border-border rounded-lg px-2 py-1.5" />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Username</label>
+                              <input type="text" value={newTarget.username} onChange={(e) => setNewTarget({ ...newTarget, username: e.target.value })} className="w-full text-sm border border-border rounded-lg px-2 py-1.5" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Remote path</label>
+                              <input type="text" value={newTarget.remotePath} onChange={(e) => setNewTarget({ ...newTarget, remotePath: e.target.value })} placeholder="/backups/docit" className="w-full text-sm border border-border rounded-lg px-2 py-1.5" />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Password <span className="font-normal text-text-muted">(leave blank if using private key)</span></label>
+                            <input type="password" value={newTarget.password} onChange={(e) => setNewTarget({ ...newTarget, password: e.target.value })} className="w-full text-sm border border-border rounded-lg px-2 py-1.5" autoComplete="new-password" />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Private key <span className="font-normal text-text-muted">(PEM, leave blank if using password)</span></label>
+                            <textarea value={newTarget.privateKey} onChange={(e) => setNewTarget({ ...newTarget, privateKey: e.target.value })} placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" rows={4} className="w-full text-sm border border-border rounded-lg px-2 py-1.5 font-mono resize-y" />
+                          </div>
+                          <p className="text-xs text-text-muted">Password and private key are stored encrypted. Provide one or the other.</p>
+                        </div>
                       )}
                       <div className="flex gap-2 pt-1">
                         <button
@@ -1554,6 +1707,8 @@ function AdminContent() {
                             if (!newTarget.label) return flash("Label is required", "error");
                             if (newTarget.type === "local" && !newTarget.path) return flash("Path is required", "error");
                             if (newTarget.type === "cifs" && (!newTarget.host || !newTarget.share)) return flash("Host and share are required", "error");
+                            if (newTarget.type === "sftp" && (!newTarget.host || !newTarget.username)) return flash("Host and username are required", "error");
+                            if (newTarget.type === "sftp" && !newTarget.password && !newTarget.privateKey) return flash("Password or private key is required", "error");
                             setBackupConfig({ ...backupConfig, targets: [...backupConfig.targets, newTarget] });
                             setShowNewTarget(false);
                             setNewTarget(EMPTY_TARGET());
@@ -1630,8 +1785,262 @@ function AdminContent() {
           </div>
         )}
 
+        {/* User Groups Tab */}
+        {tab === "groups" && (
+          <div className="bg-surface rounded-xl shadow-sm border border-border">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <div>
+                <h2 className="text-lg font-semibold text-text-primary">User Groups</h2>
+                <p className="text-xs text-text-muted mt-0.5">Manage groups for dashboard link visibility</p>
+              </div>
+            </div>
+
+            {/* Create group form */}
+            <div className="px-6 py-4 bg-gray-50 border-b border-border">
+              <p className="text-xs font-medium text-gray-600 mb-2">Create New Group</p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newGroupName}
+                  onChange={(e) => setNewGroupName(e.target.value)}
+                  placeholder="Group name"
+                  className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="text"
+                  value={newGroupDesc}
+                  onChange={(e) => setNewGroupDesc(e.target.value)}
+                  placeholder="Description (optional)"
+                  className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  disabled={!newGroupName.trim()}
+                  onClick={async () => {
+                    const res = await fetch("/api/admin/user-groups", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ name: newGroupName.trim(), description: newGroupDesc.trim() }),
+                    });
+                    if (res.ok) {
+                      flash("Group created", "success");
+                      setNewGroupName("");
+                      setNewGroupDesc("");
+                      fetchUserGroups();
+                    } else {
+                      const d = await res.json();
+                      flash(d.error || "Failed to create group", "error");
+                    }
+                  }}
+                  className="px-4 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50"
+                >
+                  Create
+                </button>
+              </div>
+            </div>
+
+            {/* Groups list */}
+            {userGroups.length === 0 ? (
+              <p className="px-6 py-6 text-sm text-text-muted text-center">No user groups yet.</p>
+            ) : (
+              <div className="divide-y divide-border">
+                {userGroups.map((group) => (
+                  <div key={group.id} className="px-6 py-4">
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        {editingGroup?.id === group.id ? (
+                          <div className="flex gap-2 mb-2">
+                            <input
+                              type="text"
+                              value={editingGroup.name}
+                              onChange={(e) => setEditingGroup({ ...editingGroup, name: e.target.value })}
+                              className="px-2 py-1 text-sm border border-border rounded-lg"
+                            />
+                            <input
+                              type="text"
+                              value={editingGroup.description}
+                              onChange={(e) => setEditingGroup({ ...editingGroup, description: e.target.value })}
+                              placeholder="Description"
+                              className="px-2 py-1 text-sm border border-border rounded-lg flex-1"
+                            />
+                            <button
+                              onClick={async () => {
+                                const res = await fetch("/api/admin/user-groups", {
+                                  method: "PUT",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ id: editingGroup.id, name: editingGroup.name, description: editingGroup.description, members: editingGroup.members }),
+                                });
+                                if (res.ok) {
+                                  flash("Group updated", "success");
+                                  setEditingGroup(null);
+                                  fetchUserGroups();
+                                } else flash("Failed to update", "error");
+                              }}
+                              className="px-3 py-1 text-xs font-medium bg-accent text-white rounded-lg"
+                            >Save</button>
+                            <button onClick={() => setEditingGroup(null)} className="px-2 py-1 text-xs text-text-muted">Cancel</button>
+                          </div>
+                        ) : (
+                          <>
+                            <h3 className="text-sm font-semibold text-text-primary">{group.name}</h3>
+                            {group.description && <p className="text-xs text-text-muted">{group.description}</p>}
+                          </>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setEditingGroup({ ...group })}
+                          className="p-1 rounded hover:bg-muted text-text-muted hover:text-text-secondary"
+                          title="Edit group"
+                        >
+                          <Settings className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`Delete group "${group.name}"?`)) return;
+                            const res = await fetch("/api/admin/user-groups", {
+                              method: "DELETE",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ id: group.id }),
+                            });
+                            if (res.ok) { flash("Group deleted", "success"); fetchUserGroups(); }
+                            else flash("Failed to delete", "error");
+                          }}
+                          className="p-1 rounded hover:bg-red-100 text-text-muted hover:text-red-600"
+                          title="Delete group"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Members */}
+                    <div>
+                      <p className="text-xs font-medium text-gray-600 mb-1.5">Members ({group.members.length})</p>
+                      <div className="flex flex-wrap gap-1.5 mb-2">
+                        {group.members.length === 0 && (
+                          <span className="text-xs text-text-muted italic">No members</span>
+                        )}
+                        {group.members.map((m) => {
+                          const memberUser = users.find(u => u.username === m);
+                          const memberIsAd = memberUser?.authSource === "ad";
+                          return (
+                          <span key={m} className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full ${
+                            memberIsAd ? "bg-blue-100 text-blue-700" : "bg-accent/10 text-accent"
+                          }`}>
+                            {memberIsAd && <Network className="w-3 h-3 flex-shrink-0" />}
+                            {memberUser?.fullName || m}
+                            <button
+                              onClick={async () => {
+                                const updated = group.members.filter((u) => u !== m);
+                                const res = await fetch("/api/admin/user-groups", {
+                                  method: "PUT",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ id: group.id, members: updated }),
+                                });
+                                if (res.ok) fetchUserGroups();
+                                else flash("Failed to remove member", "error");
+                              }}
+                              className="hover:text-red-600"
+                              title={`Remove ${m}`}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                          );
+                        })}
+                      </div>
+                      <div className="flex gap-2">
+                        <select
+                          value={groupMemberInput}
+                          onChange={(e) => setGroupMemberInput(e.target.value)}
+                          className="text-sm border border-border rounded-lg px-2 py-1 h-[30px]"
+                        >
+                          <option value="">Add member…</option>
+                          {users
+                            .filter((u) => !group.members.includes(u.username))
+                            .map((u) => (
+                              <option key={u.username} value={u.username}>{u.username}</option>
+                            ))}
+                        </select>
+                        <button
+                          disabled={!groupMemberInput}
+                          onClick={async () => {
+                            if (!groupMemberInput) return;
+                            const updated = [...group.members, groupMemberInput];
+                            const res = await fetch("/api/admin/user-groups", {
+                              method: "PUT",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ id: group.id, members: updated }),
+                            });
+                            if (res.ok) {
+                              setGroupMemberInput("");
+                              fetchUserGroups();
+                            } else flash("Failed to add member", "error");
+                          }}
+                          className="px-3 py-1 text-xs font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50"
+                        >Add</button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Settings Tab */}
         {tab === "settings" && (<>
+
+          {/* Storage Settings */}
+          <div className="bg-surface rounded-xl shadow-sm border border-border mb-6">
+            <div className="px-6 py-4 border-b border-border">
+              <h2 className="text-lg font-semibold text-text-primary">Storage Location</h2>
+              <p className="text-xs text-text-muted mt-1">Configure where documents, archive, history and trash are stored. Saved to <code className="font-mono">docit.config.json</code> in the application root.</p>
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              {storageLoaded && (
+                <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs font-mono bg-gray-50 border border-border rounded-lg px-4 py-3">
+                  {Object.entries(storageConfig.paths).map(([key, p]) => (
+                    <div key={key} className="flex items-center gap-2">
+                      <span className="text-text-muted w-14 shrink-0">{key}/</span>
+                      <span className="text-text-primary truncate">{p}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Storage root (absolute path)</label>
+                <input
+                  type="text"
+                  value={storageInput}
+                  onChange={(e) => setStorageInput(e.target.value)}
+                  placeholder={storageConfig.effectiveRoot || process.cwd?.() || "/path/to/data"}
+                  className="w-full px-3 py-1.5 text-sm font-mono border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-text-muted mt-1">Leave empty to use the application directory. Must be an absolute path.</p>
+              </div>
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+                ⚠️ <strong>Files are NOT moved automatically.</strong> Move your existing <code className="font-mono">docs/</code>, <code className="font-mono">archive/</code>, <code className="font-mono">history/</code> and <code className="font-mono">trash/</code> directories to the new location before saving, otherwise documents will not be accessible.
+              </div>
+              <button
+                onClick={async () => {
+                  const root = storageInput.trim();
+                  if (!root) { flash("Enter an absolute path", "error"); return; }
+                  const res = await fetch("/api/settings/storage", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ storageRoot: root }),
+                  });
+                  if (res.ok) { flash("Storage settings saved", "success"); fetchStorageConfig(); }
+                  else { const d = await res.json(); flash(d.error || "Failed to save", "error"); }
+                }}
+                className="px-4 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors"
+              >
+                Save Storage Path
+              </button>
+            </div>
+          </div>
+
           <div className="bg-surface rounded-xl shadow-sm border border-border">
             <div className="px-6 py-4 border-b border-border">
               <h2 className="text-lg font-semibold text-text-primary">SMTP / Email Settings</h2>
@@ -1881,13 +2290,302 @@ function AdminContent() {
               </div>
             </div>
           </div>
+          {/* Active Directory */}
+          <div className="bg-surface rounded-xl shadow-sm border border-border mt-6">
+            <div className="px-6 py-4 border-b border-border flex items-center gap-3">
+              <Network className="w-5 h-5 text-accent shrink-0" />
+              <div className="flex-1">
+                <h2 className="text-lg font-semibold text-text-primary">Active Directory</h2>
+                <p className="text-xs text-text-muted mt-0.5">LDAP / LDAPS authentication with group-based space role mapping</p>
+              </div>
+              <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer shrink-0">
+                <input
+                  type="checkbox"
+                  checked={adConfig.enabled}
+                  onChange={(e) => setAdConfig({ ...adConfig, enabled: e.target.checked })}
+                  className="rounded"
+                />
+                Enabled
+              </label>
+            </div>
+            <div className="px-6 py-4 space-y-6">
+              {/* Connection */}
+              <div>
+                <h3 className="text-sm font-semibold text-text-primary mb-3">Connection</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Host / Domain Controller</label>
+                    <input type="text" value={adConfig.host} onChange={(e) => setAdConfig({ ...adConfig, host: e.target.value })}
+                      placeholder="dc01.example.com"
+                      className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Port</label>
+                    <input type="number" value={adConfig.port} onChange={(e) => setAdConfig({ ...adConfig, port: parseInt(e.target.value) || 389 })}
+                      className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-6 mt-3">
+                  <label className="flex items-center gap-2 text-sm text-gray-600">
+                    <input type="checkbox" checked={adConfig.ssl} onChange={(e) => setAdConfig({ ...adConfig, ssl: e.target.checked, port: e.target.checked ? 636 : 389 })} className="rounded" />
+                    Use LDAPS (TLS, port 636)
+                  </label>
+                  {adConfig.ssl && (
+                    <label className="flex items-center gap-2 text-sm text-gray-600">
+                      <input type="checkbox" checked={!adConfig.tlsRejectUnauthorized} onChange={(e) => setAdConfig({ ...adConfig, tlsRejectUnauthorized: !e.target.checked })} className="rounded" />
+                      Allow self-signed certificates
+                    </label>
+                  )}
+                </div>
+              </div>
+
+              {/* Bind Account */}
+              <div>
+                <h3 className="text-sm font-semibold text-text-primary mb-3">Service Account (Bind DN)</h3>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Bind DN</label>
+                    <input type="text" value={adConfig.bindDn} onChange={(e) => setAdConfig({ ...adConfig, bindDn: e.target.value })}
+                      placeholder="CN=svcDocIt,OU=Service Accounts,DC=example,DC=com"
+                      className="w-full px-3 py-1.5 text-sm font-mono border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Bind Password
+                      {adConfig.bindPasswordSet && <span className="ml-1 text-green-600 font-normal">(set)</span>}
+                    </label>
+                    <input type="password" value={adBindPassword} onChange={(e) => setAdBindPassword(e.target.value)}
+                      placeholder={adConfig.bindPasswordSet ? "Leave blank to keep current" : "Enter bind password"}
+                      className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Directory search */}
+              <div>
+                <h3 className="text-sm font-semibold text-text-primary mb-3">Directory Search</h3>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Base DN</label>
+                    <input type="text" value={adConfig.baseDn} onChange={(e) => setAdConfig({ ...adConfig, baseDn: e.target.value })}
+                      placeholder="DC=example,DC=com"
+                      className="w-full px-3 py-1.5 text-sm font-mono border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">User Search Base <span className="font-normal text-text-muted">(optional, defaults to Base DN)</span></label>
+                    <input type="text" value={adConfig.userSearchBase} onChange={(e) => setAdConfig({ ...adConfig, userSearchBase: e.target.value })}
+                      placeholder="OU=Users,DC=example,DC=com"
+                      className="w-full px-3 py-1.5 text-sm font-mono border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 mt-3">
+                  <button
+                    disabled={adTesting}
+                    onClick={async () => {
+                      setAdTesting(true); setAdTestResult(null);
+                      const payload: Record<string, unknown> = { ...adConfig, action: "test" };
+                      if (adBindPassword) payload.bindPassword = adBindPassword;
+                      const res = await fetch("/api/settings/ad", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+                      setAdTestResult(await res.json());
+                      setAdTesting(false);
+                    }}
+                    className="px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-muted transition-colors disabled:opacity-50"
+                  >
+                    {adTesting ? "Testing…" : "Test Connection"}
+                  </button>
+                  {adTestResult && (
+                    <span className={`text-sm ${adTestResult.success ? "text-green-600" : "text-red-600"}`}>
+                      {adTestResult.success ? `✓ ${adTestResult.info}` : `✗ ${adTestResult.error}`}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Allowed Groups */}
+              <div>
+                <h3 className="text-sm font-semibold text-text-primary mb-1">Allowed Groups</h3>
+                <p className="text-xs text-text-muted mb-3">Members of these AD groups may log in. Leave empty to allow any authenticated AD user.</p>
+                <div className="space-y-1.5 mb-2">
+                  {adConfig.allowedGroups.map((g, i) => (
+                    <div key={i} className="flex items-center gap-2 bg-gray-50 border border-border rounded-lg px-3 py-1.5">
+                      <span className="font-mono text-xs flex-1 truncate">{g}</span>
+                      <button onClick={() => setAdConfig({ ...adConfig, allowedGroups: adConfig.allowedGroups.filter((_, j) => j !== i) })} className="text-red-400 hover:text-red-600"><X className="w-3.5 h-3.5" /></button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input type="text" value={newAllowedGroup} onChange={(e) => setNewAllowedGroup(e.target.value)}
+                    placeholder="CN=DocIt-Users,OU=Groups,DC=example,DC=com"
+                    className="flex-1 px-3 py-1.5 text-sm font-mono border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onKeyDown={(e) => { if (e.key === "Enter" && newAllowedGroup.trim()) { setAdConfig({ ...adConfig, allowedGroups: [...adConfig.allowedGroups, newAllowedGroup.trim()] }); setNewAllowedGroup(""); } }}
+                  />
+                  <button disabled={!newAllowedGroup.trim()} onClick={() => { setAdConfig({ ...adConfig, allowedGroups: [...adConfig.allowedGroups, newAllowedGroup.trim()] }); setNewAllowedGroup(""); }}
+                    className="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50">Add</button>
+                </div>
+              </div>
+
+              {/* Allowed Users */}
+              <div>
+                <h3 className="text-sm font-semibold text-text-primary mb-1">Allowed Users</h3>
+                <p className="text-xs text-text-muted mb-3">Individual sAMAccountNames allowed to log in regardless of group membership.</p>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {adConfig.allowedUsers.map((u, i) => (
+                    <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-accent/10 text-accent rounded-full">
+                      {u}
+                      <button onClick={() => setAdConfig({ ...adConfig, allowedUsers: adConfig.allowedUsers.filter((_, j) => j !== i) })} className="hover:text-red-600"><X className="w-3 h-3" /></button>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input type="text" value={newAllowedUser} onChange={(e) => setNewAllowedUser(e.target.value)}
+                    placeholder="jsmith"
+                    className="w-48 px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onKeyDown={(e) => { if (e.key === "Enter" && newAllowedUser.trim()) { setAdConfig({ ...adConfig, allowedUsers: [...adConfig.allowedUsers, newAllowedUser.trim()] }); setNewAllowedUser(""); } }}
+                  />
+                  <button disabled={!newAllowedUser.trim()} onClick={() => { setAdConfig({ ...adConfig, allowedUsers: [...adConfig.allowedUsers, newAllowedUser.trim()] }); setNewAllowedUser(""); }}
+                    className="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50">Add</button>
+                </div>
+              </div>
+
+              {/* Group Mappings */}
+              <div>
+                <h3 className="text-sm font-semibold text-text-primary mb-1">Group → Space Role Mappings</h3>
+                <p className="text-xs text-text-muted mb-3">Map AD groups to doc-it space roles. Use space slug <code className="font-mono">*</code> to grant global admin.</p>
+                {adConfig.groupMappings.length > 0 && (
+                  <div className="border border-border rounded-lg overflow-hidden mb-3">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50 border-b border-border">
+                        <tr>
+                          <th className="text-left px-3 py-2 font-medium text-gray-600">Group DN</th>
+                          <th className="text-left px-3 py-2 font-medium text-gray-600 w-36">Space</th>
+                          <th className="text-left px-3 py-2 font-medium text-gray-600 w-20">Role</th>
+                          <th className="w-8" />
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {adConfig.groupMappings.map((m, i) => (
+                          <tr key={m.id} className="hover:bg-gray-50">
+                            <td className="px-3 py-2 font-mono truncate max-w-0" style={{maxWidth: "1px", width: "60%"}}>{m.groupDn}</td>
+                            <td className="px-3 py-2">{m.spaceSlug === "*" ? <span className="text-accent font-medium">global admin</span> : m.spaceSlug}</td>
+                            <td className="px-3 py-2 capitalize">{m.role}</td>
+                            <td className="px-3 py-2">
+                              <button onClick={() => setAdConfig({ ...adConfig, groupMappings: adConfig.groupMappings.filter((_, j) => j !== i) })} className="text-red-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {/* Add mapping row */}
+                <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 items-end">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Group DN</label>
+                    <input type="text" value={newMappingGroupDn} onChange={(e) => setNewMappingGroupDn(e.target.value)}
+                      placeholder="CN=DocIt-Writers,OU=Groups,DC=example,DC=com"
+                      className="w-full px-3 py-1.5 text-sm font-mono border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div className="w-36">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Space</label>
+                    <select value={newMappingSpaceSlug} onChange={(e) => setNewMappingSpaceSlug(e.target.value)}
+                      className="w-full px-2 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <option value="">Select…</option>
+                      <option value="*">* (global admin)</option>
+                      {spaces.map((s) => <option key={s.slug} value={s.slug}>{s.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="w-24">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
+                    <select value={newMappingRole} onChange={(e) => setNewMappingRole(e.target.value as SpaceRole)}
+                      className="w-full px-2 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <option value="reader">reader</option>
+                      <option value="writer">writer</option>
+                      <option value="admin">admin</option>
+                    </select>
+                  </div>
+                  <button
+                    disabled={!newMappingGroupDn.trim() || !newMappingSpaceSlug}
+                    onClick={() => {
+                      const mapping: AdGroupMapping = { id: crypto.randomUUID(), groupDn: newMappingGroupDn.trim(), spaceSlug: newMappingSpaceSlug, role: newMappingSpaceSlug === "*" ? "admin" : newMappingRole };
+                      setAdConfig({ ...adConfig, groupMappings: [...adConfig.groupMappings, mapping] });
+                      setNewMappingGroupDn(""); setNewMappingSpaceSlug(""); setNewMappingRole("reader");
+                    }}
+                    className="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50 self-end"
+                  ><Plus className="w-4 h-4" /></button>
+                </div>
+              </div>
+
+              <button
+                disabled={adSaving}
+                onClick={async () => {
+                  setAdSaving(true);
+                  const payload: Record<string, unknown> = { ...adConfig };
+                  if (adBindPassword) payload.bindPassword = adBindPassword;
+                  const res = await fetch("/api/settings/ad", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                  });
+                  setAdSaving(false);
+                  if (res.ok) {
+                    const data = await res.json();
+                    setAdConfig(data);
+                    setAdBindPassword("");
+                    flash("Active Directory settings saved", "success");
+                  } else {
+                    const d = await res.json();
+                    flash(d.error || "Failed to save AD settings", "error");
+                  }
+                }}
+                className="px-4 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50 transition-colors"
+              >
+                {adSaving ? "Saving…" : "Save AD Settings"}
+              </button>
+            </div>
+          </div>
+
+          {/* Change Log settings */}
+          <div className="bg-surface rounded-xl shadow-sm border border-border mt-6">
+            <div className="px-6 py-4 border-b border-border">
+              <h2 className="text-lg font-semibold text-text-primary">Change Log</h2>
+              <p className="text-xs text-text-muted mt-1">Operational change log settings. Entries older than the retention window are pruned automatically when new entries are added.</p>
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              <div className="max-w-xs">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Retention (years)</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={99}
+                  value={changelogSettings.retentionYears}
+                  onChange={(e) => setChangelogSettings({ retentionYears: parseInt(e.target.value) || 5 })}
+                  className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-text-muted mt-1">Change entries older than this are removed. Default: 5 years.</p>
+              </div>
+              <button
+                onClick={async () => {
+                  const res = await fetch("/api/settings/changelog", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(changelogSettings),
+                  });
+                  if (res.ok) flash("Change log settings saved", "success");
+                  else { const d = await res.json(); flash(d.error || "Failed to save", "error"); }
+                }}
+                className="px-4 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors"
+              >
+                Save Settings
+              </button>
+            </div>
+          </div>
         </>)}
       </div>
     </div>
   );
 }
 
-// ── Audit Calendar Component ─────────────────────────────────────────────────
+// ── Audit Calendar Component
 
 function AuditCalendar({
   year, month, counts, onDayClick,

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { X, Clock, AlertTriangle, CheckCircle, Monitor, Paperclip, Lock, Tag } from "lucide-react";
 import TicketCommentBox from "./TicketCommentBox";
+import TicketCertPanel from "./TicketCertPanel";
 import type { Ticket, HdGroup, HdCategory, HdFieldDef, TicketStatus, TicketPriority } from "@/lib/helpdesk";
 
 const STATUSES: TicketStatus[] = ["Open", "In Progress", "Waiting", "Resolved", "Closed"];
@@ -170,6 +171,11 @@ export default function TicketDetailPanel({ ticketId, groups, categories, fieldD
                     </div>
                   ))}
                 </div>
+
+                {/* Certificate Request panel */}
+                {catName === "Certificate Request" && (
+                  <TicketCertPanel ticket={ticket} onUpdated={() => { fetchTicket(); onUpdated(); }} />
+                )}
 
                 {/* Reply box */}
                 <TicketCommentBox ticketId={ticket.id} onCommentAdded={fetchTicket} />

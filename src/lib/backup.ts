@@ -6,6 +6,7 @@
  * targets:
  *   - Local path  — covers pre-mounted NFS shares too (admin mounts externally)
  *   - CIFS / SMB  — uses smbclient CLI to PUT the file directly without mounting
+ *   - SFTP        — uses ssh2 to PUT the file via SFTP (password or private key)
  *
  * Archival relies on the system `tar` command (available on all supported
  * platforms: Linux, macOS, and Windows 10+).
@@ -20,7 +21,7 @@ import { randomBytes, createCipheriv, createDecipheriv } from "crypto";
 import { pipeline } from "stream/promises";
 import { readJsonConfig, writeJsonConfig } from "./config";
 import { encryptField, decryptField, getSecretKeyBase64 } from "./crypto";
-import type { BackupConfig, BackupEntry, BackupResult, BackupTarget } from "./types";
+import type { BackupConfig, BackupEntry, BackupResult, BackupTarget, BackupSftpTarget } from "./types";
 
 const execFileAsync = promisify(execFile);
 
@@ -46,11 +47,21 @@ export async function getBackupConfig(): Promise<BackupConfig> {
   const stored = await readJsonConfig<Partial<BackupConfig>>(BACKUP_CONFIG_FILE, {});
   const merged: BackupConfig = { ...DEFAULT_CONFIG, ...stored, targets: stored.targets ?? [] };
 
-  // Decrypt CIFS passwords
+  // Decrypt CIFS + SFTP credentials
   const decryptedTargets = await Promise.all(
     merged.targets.map(async (t) => {
       if (t.type === "cifs" && t.password && t.password.startsWith("ENC:")) {
         try { return { ...t, password: await decryptField(t.password) }; } catch { return t; }
+      }
+      if (t.type === "sftp") {
+        let updated = { ...t };
+        if (updated.password?.startsWith("ENC:")) {
+          try { updated = { ...updated, password: await decryptField(updated.password) }; } catch {}
+        }
+        if (updated.privateKey?.startsWith("ENC:")) {
+          try { updated = { ...updated, privateKey: await decryptField(updated.privateKey) }; } catch {}
+        }
+        return updated;
       }
       return t;
     })
@@ -59,11 +70,21 @@ export async function getBackupConfig(): Promise<BackupConfig> {
 }
 
 export async function saveBackupConfig(config: BackupConfig): Promise<void> {
-  // Encrypt CIFS passwords before persisting
+  // Encrypt CIFS + SFTP credentials before persisting
   const encryptedTargets = await Promise.all(
     config.targets.map(async (t) => {
       if (t.type === "cifs" && t.password && !t.password.startsWith("ENC:")) {
         try { return { ...t, password: await encryptField(t.password) }; } catch { return t; }
+      }
+      if (t.type === "sftp") {
+        let updated = { ...t };
+        if (updated.password && !updated.password.startsWith("ENC:")) {
+          try { updated = { ...updated, password: await encryptField(updated.password) }; } catch {}
+        }
+        if (updated.privateKey && !updated.privateKey.startsWith("ENC:")) {
+          try { updated = { ...updated, privateKey: await encryptField(updated.privateKey) }; } catch {}
+        }
+        return updated;
       }
       return t;
     })
@@ -179,6 +200,9 @@ export async function runBackup(config?: BackupConfig): Promise<BackupResult> {
       } else if (target.type === "cifs") {
         await copyCifs(destPath, filename, target);
         targetResults.push({ label, success: true });
+      } else if (target.type === "sftp") {
+        await copySftp(destPath, filename, target);
+        targetResults.push({ label, success: true });
       }
     } catch (err) {
       targetResults.push({ label, success: false, error: err instanceof Error ? err.message : String(err) });
@@ -200,6 +224,44 @@ export async function runBackup(config?: BackupConfig): Promise<BackupResult> {
   await saveBackupState({ lastRunAt: now.toISOString() });
 
   return { success: true, filename, targetResults };
+}
+
+// ── SFTP copy via ssh2 ────────────────────────────────────────────────────────
+
+async function copySftp(
+  localPath: string,
+  remoteFilename: string,
+  target: BackupSftpTarget
+): Promise<void> {
+  const { Client } = await import("ssh2");
+  return new Promise<void>((resolve, reject) => {
+    const conn = new Client();
+
+    conn.on("ready", () => {
+      conn.sftp((err, sftp) => {
+        if (err) { conn.end(); return reject(err); }
+        const remotePath = (target.remotePath ?? "").replace(/\/$/, "") + "/" + remoteFilename;
+        sftp.fastPut(localPath, remotePath, (err2) => {
+          conn.end();
+          if (err2) reject(err2); else resolve();
+        });
+      });
+    });
+
+    conn.on("error", reject);
+
+    const connectCfg: Parameters<typeof conn.connect>[0] = {
+      host: target.host,
+      port: target.port ?? 22,
+      username: target.username,
+    };
+    if (target.privateKey) {
+      connectCfg.privateKey = target.privateKey;
+    } else if (target.password) {
+      connectCfg.password = target.password;
+    }
+    conn.connect(connectCfg);
+  });
 }
 
 // ── CIFS copy via smbclient ────────────────────────────────────────────────────

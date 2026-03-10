@@ -35,9 +35,9 @@ Click a tag in the sidebar **Tags** section to filter the document list to only 
 
 ---
 
-## Tag Index
+## Tag Storage
 
-Tags are stored as a flat index file (`data/spaces/<slug>/tags.json`) that maps each tag to the documents that use it. The index is updated automatically on every document save.
+Tags are stored in each document's YAML **frontmatter** (the `tags` array). The sidebar tag index is built dynamically by scanning all documents in the space.
 
 To manually rebuild the index (e.g., after a manual file change), click the **Reindex Tags** button in the sidebar Tags section.
 

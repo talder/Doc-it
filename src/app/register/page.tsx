@@ -45,8 +45,8 @@ export default function RegisterPage() {
       <div className="w-full max-w-sm">
         <div className="bg-surface rounded-xl shadow-lg p-8 border border-border">
           <div className="text-center mb-8">
-            <h1 className="text-2xl font-bold text-text-primary">Doc-it</h1>
-            <p className="text-sm text-text-muted mt-1">Create an account</p>
+            <img src="/logo.png" alt="Doc-it" className="w-40 h-40 mx-auto mb-2" />
+            <p className="text-sm text-text-muted">Create an account</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">

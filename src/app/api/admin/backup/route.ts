@@ -14,12 +14,14 @@ export async function GET() {
   if (!admin) return NextResponse.json({ error: "Admin access required" }, { status: 403 });
 
   const [config, backups] = await Promise.all([getBackupConfig(), listBackups()]);
-  // Strip passwords from config before returning
+  // Strip passwords/keys from config before returning
   const safeConfig = {
     ...config,
-    targets: config.targets.map((t) =>
-      t.type === "cifs" ? { ...t, password: t.password ? "••••••" : "" } : t
-    ),
+    targets: config.targets.map((t) => {
+      if (t.type === "cifs") return { ...t, password: t.password ? "\u2022\u2022\u2022\u2022\u2022\u2022" : "" };
+      if (t.type === "sftp") return { ...t, password: t.password ? "\u2022\u2022\u2022\u2022\u2022\u2022" : "", privateKey: t.privateKey ? "\u2022\u2022\u2022\u2022\u2022\u2022" : "" };
+      return t;
+    }),
   };
   return NextResponse.json({ config: safeConfig, backups });
 }
@@ -32,9 +34,18 @@ export async function PUT(request: NextRequest) {
   // If a CIFS password comes back as "••••••", preserve the existing encrypted value
   const current = await getBackupConfig();
   const mergedTargets = (body.targets ?? []).map((t: Record<string, unknown>) => {
-    if (t.type === "cifs" && t.password === "••••••") {
+    if (t.type === "cifs" && t.password === "\u2022\u2022\u2022\u2022\u2022\u2022") {
       const existing = current.targets.find((c) => c.id === t.id);
       if (existing && existing.type === "cifs") return { ...t, password: existing.password };
+    }
+    if (t.type === "sftp") {
+      const existing = current.targets.find((c) => c.id === t.id);
+      if (existing && existing.type === "sftp") {
+        const updated = { ...t };
+        if (t.password === "\u2022\u2022\u2022\u2022\u2022\u2022") updated.password = existing.password;
+        if (t.privateKey === "\u2022\u2022\u2022\u2022\u2022\u2022") updated.privateKey = existing.privateKey;
+        return updated;
+      }
     }
     return t;
   });

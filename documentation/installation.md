@@ -8,7 +8,7 @@
 | npm | 10 or later |
 | Operating System | macOS 12+, Ubuntu/Debian Linux, Windows 10/11 |
 
-No database server is required — doc-it stores all data in JSON and Markdown files on disk.
+No external database server is required — doc-it uses an embedded **SQLite** key-value store (`config/docit.db`) for configuration and Markdown files on disk for documents.
 
 ---
 
@@ -184,7 +184,7 @@ The upgrade path:
 4. Runs `npm run build`
 5. Restarts the service
 
-No database migrations are required. Back up `data/` and `logs/` before upgrading if you want a rollback point.
+No database migrations are required. Back up `config/`, `docs/`, `logs/`, and `history/` before upgrading if you want a rollback point.
 
 ---
 
@@ -216,25 +216,33 @@ The super-admin can never be deleted and always retains full access to all featu
 
 ## Data Storage
 
-All data is stored in the `data/` directory at the project root (created automatically):
+All data is stored on disk in several top-level directories (created automatically on first run):
 
 ```
-data/
-├── users.json          # User accounts
-├── spaces/
-│   └── <slug>/
-│       ├── space.json  # Space metadata & permissions
-│       ├── docs/       # Markdown documents (.md)
-│       ├── templates/  # Template documents (.mdt)
-│       ├── history/    # Revision snapshots
-│       ├── databases/  # Database schemas & rows
-│       └── ...
-├── service-keys.json   # Service key records
-└── settings/
-    ├── smtp.json
-    └── audit.json
+config/
+├── docit.db              # SQLite KV store (WAL mode) — users, spaces,
+│                         #   settings, service keys, helpdesk, assets, etc.
+└── avatars/              # User avatar images
+docs/
+└── <space-slug>/
+    ├── <category>/
+    │   ├── document.md   # Markdown documents
+    │   ├── template.mdt  # Template documents
+    │   └── attachments/  # Uploaded file attachments
+    ├── .databases/
+    │   └── <id>.db.json  # Database schema + rows (one file per database)
+    ├── .doc-status.json  # Document workflow statuses
+    └── .customization.json
+archive/
+└── <space-slug>/         # Archived (soft-deleted) documents
+history/
+└── <space-slug>/
+    └── <category>/
+        └── <docname>/    # Revision snapshots (1.md, 1.json, 2.md, ...)
 logs/
 └── audit-YYYY-MM-DD.jsonl  # Audit log files (one per day)
+backups/
+└── docit-backup-*.tar.gz.enc  # Encrypted backup archives
 ```
 
-Back up the `data/` and `logs/` directories to protect your content.
+Back up the `config/`, `docs/`, `history/`, and `logs/` directories to protect your content. Alternatively, use the built-in [Backup](features/backup.md) feature for automated encrypted backups.

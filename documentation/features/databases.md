@@ -96,4 +96,4 @@ Click the `…` menu in the sidebar → **Delete**. This action is permanent.
 
 ## Storage
 
-Database schemas are stored in `data/spaces/<slug>/databases/<id>/schema.json`. Row data is stored in `data/spaces/<slug>/databases/<id>/rows.json`.
+Each database (schema + all rows) is stored as a single JSON file at `docs/{space}/.databases/{id}.db.json`.

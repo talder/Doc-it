@@ -164,6 +164,40 @@ export async function saveAuditConfig(config: AuditConfig): Promise<void> {
   await writeJsonConfig(AUDIT_CONFIG_FILE, config);
 }
 
+// ── Serial write queue ────────────────────────────────────────────────────────
+
+/**
+ * All local-file writes go through this queue and are drained one at a time.
+ * Sequential processing is required to preserve HMAC chain integrity — each
+ * entry must read the previous hash before writing its own. Concurrent writes
+ * would produce duplicate prevHash values and silently corrupt the chain.
+ */
+
+interface _QueuedAuditEntry {
+  entry: AuditEntry;
+  retentionDays: number;
+}
+
+const _auditQueue: _QueuedAuditEntry[] = [];
+let _auditQueueRunning = false;
+
+function _enqueueAuditWrite(entry: AuditEntry, retentionDays: number): void {
+  _auditQueue.push({ entry, retentionDays });
+  if (!_auditQueueRunning) {
+    _auditQueueRunning = true;
+    _drainAuditQueue().catch(() => {});
+  }
+}
+
+async function _drainAuditQueue(): Promise<void> {
+  while (_auditQueue.length > 0) {
+    const item = _auditQueue[0];
+    await writeToLocalFile(item.entry, item.retentionDays).catch(() => {});
+    _auditQueue.shift();
+  }
+  _auditQueueRunning = false;
+}
+
 // ── Public API ─────────────────────────────────────────────────────────────────
 
 /**
@@ -172,6 +206,33 @@ export async function saveAuditConfig(config: AuditConfig): Promise<void> {
  */
 export function auditLog(request: NextRequest, payload: AuditLogPayload): void {
   _writeAuditLog(request, payload).catch(() => {});
+}
+
+/**
+ * Direct audit writer for server-side schedulers that have no NextRequest.
+ * Uses the provided actor/sessionType directly, no request context needed.
+ */
+export async function _writeAuditLogDirect(payload: AuditLogPayload & { actor: string }): Promise<void> {
+  const config = await getAuditConfig();
+  if (!config.enabled) return;
+
+  const entry: AuditEntry = {
+    eventId: randomUUID(),
+    timestamp: new Date().toISOString(),
+    event: payload.event,
+    outcome: payload.outcome,
+    actor: payload.actor,
+    sessionType: payload.sessionType ?? "anonymous",
+    ...(payload.spaceSlug ? { spaceSlug: payload.spaceSlug } : {}),
+    ...(payload.resource ? { resource: payload.resource } : {}),
+    ...(payload.resourceType ? { resourceType: payload.resourceType } : {}),
+    ...(payload.details ? { details: payload.details } : {}),
+  };
+
+  _enqueueAuditWrite(entry, config.localFile.retentionDays);
+  if (config.syslog.enabled && config.syslog.host) {
+    forwardToSyslog(entry, config.syslog).catch(() => {});
+  }
 }
 
 // ── Internal implementation ────────────────────────────────────────────────────
@@ -238,8 +299,8 @@ async function _writeAuditLog(
     ...(payload.details ? { details: payload.details } : {}),
   };
 
-  // Local JSONL — always
-  await writeToLocalFile(entry, config.localFile.retentionDays);
+  // Local JSONL — always (queued to preserve HMAC chain integrity)
+  _enqueueAuditWrite(entry, config.localFile.retentionDays);
 
   // Syslog — optional secondary forward
   if (config.syslog.enabled && config.syslog.host) {

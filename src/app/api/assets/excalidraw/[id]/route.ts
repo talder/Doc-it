@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
 
-const ASSETS_DIR = path.join(process.cwd(), "docs", "attachments", "excalidraw");
+import { getDocsDir } from "@/lib/config";
+
+function getAssetsDir() {
+  return path.join(getDocsDir(), "attachments", "excalidraw");
+}
 
 // GET: Load drawing data (JSON + SVG)
 export async function GET(
@@ -10,9 +14,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-
-  const jsonPath = path.join(ASSETS_DIR, `${id}.excalidraw.json`);
-  const svgPath = path.join(ASSETS_DIR, `${id}.excalidraw.svg`);
+  const assetsDir = getAssetsDir();
+  const jsonPath = path.join(assetsDir, `${id}.excalidraw.json`);
+  const svgPath = path.join(assetsDir, `${id}.excalidraw.svg`);
 
   try {
     const [sceneDataRaw, svgData] = await Promise.all([
@@ -37,8 +41,9 @@ export async function DELETE(
 ) {
   const { id } = await params;
 
-  const jsonPath = path.join(ASSETS_DIR, `${id}.excalidraw.json`);
-  const svgPath = path.join(ASSETS_DIR, `${id}.excalidraw.svg`);
+  const a = getAssetsDir();
+  const jsonPath = path.join(a, `${id}.excalidraw.json`);
+  const svgPath = path.join(a, `${id}.excalidraw.svg`);
 
   try {
     await Promise.all([

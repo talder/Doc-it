@@ -4,6 +4,13 @@ import { auditLog } from "@/lib/audit";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { notifySecurityEvent } from "@/lib/incident";
 import { createHmac } from "crypto";
+import {
+  getAdConfig,
+  authenticateAdUser,
+  resolveAdAccess,
+  upsertAdShadowUser,
+  syncAdSpacePermissions,
+} from "@/lib/ad";
 
 // HMAC key for signing the MFA-setup-pending cookie — auto-generated per process
 // (restarting the server invalidates pending cookies, which is acceptable)
@@ -39,17 +46,125 @@ export async function POST(request: NextRequest) {
   if (blocked) return blocked;
 
   try {
-    const { username, password } = await request.json();
+    const { username, password, mode } = await request.json();
 
     if (!username || !password) {
       return NextResponse.json({ error: "Username and password required" }, { status: 400 });
     }
 
+    // -----------------------------------------------------------------------
+    // AD authentication path
+    // -----------------------------------------------------------------------
+    const adConfig = await getAdConfig();
+    const useAd = mode === "ad" || (mode !== "local" && adConfig.enabled);
+
+    if (useAd && adConfig.enabled) {
+      const adResult = await authenticateAdUser(adConfig, username, password);
+
+      if (!adResult.success) {
+        auditLog(request, {
+          event: "auth.login.failed",
+          outcome: "failure",
+          actor: username,
+          sessionType: "anonymous",
+          details: { reason: adResult.error ?? "AD auth failed", mode: "ad" },
+        });
+        return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
+      }
+
+      const sam = adResult.sAMAccountName!;
+      const access = resolveAdAccess(sam, adResult.memberOf ?? [], adConfig);
+
+      if (!access.allowed) {
+        await upsertAdShadowUser({
+          sAMAccountName: sam,
+          displayName: adResult.displayName ?? sam,
+          email: adResult.email ?? "",
+          isAdmin: false,
+          status: "pending",
+        });
+        auditLog(request, {
+          event: "auth.login.failed",
+          outcome: "failure",
+          actor: sam,
+          sessionType: "anonymous",
+          details: { reason: "not in allow-list", mode: "ad" },
+        });
+        return NextResponse.json(
+          { error: "Your account is pending approval. Please contact an administrator." },
+          { status: 403 }
+        );
+      }
+
+      // Provision / update shadow user and sync space permissions
+      const shadowUser = await upsertAdShadowUser({
+        sAMAccountName: sam,
+        displayName: adResult.displayName ?? sam,
+        email: adResult.email ?? "",
+        isAdmin: access.isAdmin,
+        status: "active",
+      });
+      await syncAdSpacePermissions(shadowUser.username, access.spaceRoles, access.isAdmin);
+
+      // Re-fetch user record so TOTP state is fresh
+      const adUser = await getUserByUsername(shadowUser.username);
+      if (!adUser) {
+        return NextResponse.json({ error: "Account provisioning error" }, { status: 500 });
+      }
+
+      // TOTP: force enrollment if not yet set up
+      if (!adUser.totpEnabled) {
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+        const pending = signMfaPending(adUser.username, expiresAt);
+        const rSetup = NextResponse.json({ requiresMFASetup: true });
+        rSetup.cookies.set("docit-mfa-setup-pending", pending, {
+          httpOnly: true, secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
+          sameSite: "lax", path: "/", maxAge: 10 * 60,
+        });
+        return rSetup;
+      }
+
+      // TOTP: request second factor
+      if (adUser.totpEnabled) {
+        const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+        const pending = signMfaPending(adUser.username, expiresAt);
+        const r2fa = NextResponse.json({ requires2FA: true });
+        r2fa.cookies.set("docit-2fa-pending", pending, {
+          httpOnly: true, secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
+          sameSite: "lax", path: "/", maxAge: 5 * 60,
+        });
+        return r2fa;
+      }
+
+      const sessionId = await createSession(adUser.username);
+      const response = NextResponse.json({ success: true, username: adUser.username });
+      response.cookies.set(getSessionCookieName(), sessionId, {
+        httpOnly: true, secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
+        sameSite: "lax", path: "/", maxAge: 60 * 60 * 8,
+      });
+      auditLog(request, {
+        event: "auth.login", outcome: "success",
+        actor: adUser.username, sessionType: "session",
+        details: { mode: "ad" },
+      });
+      return response;
+    }
+
+    // -----------------------------------------------------------------------
+    // Local authentication path
+    // -----------------------------------------------------------------------
     const user = await getUserByUsername(username);
     if (!user) {
       auditLog(request, { event: "auth.login.failed", outcome: "failure", actor: username, sessionType: "anonymous", details: { reason: "user not found" } });
-      // Same error message — don't reveal whether user exists
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
+    }
+
+    // Redirect AD-sourced accounts back to AD login
+    if (user.authSource === "ad") {
+      return NextResponse.json(
+        { error: "This account uses Active Directory authentication. Please use AD login." },
+        { status: 403 }
+      );
     }
 
     // Account lockout check
@@ -64,7 +179,6 @@ export async function POST(request: NextRequest) {
     const { match, needsRehash } = await verifyPassword(password, user.passwordHash);
 
     if (!match) {
-      // Increment failure counter and lock if threshold reached
       const users = await getUsers();
       const idx = users.findIndex((u) => u.username === username);
       if (idx !== -1) {
@@ -83,7 +197,6 @@ export async function POST(request: NextRequest) {
           );
         }
         await writeUsers(users);
-        // Notify admin after 3+ consecutive failures
         if (attempts >= 3) {
           const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || undefined;
           notifySecurityEvent({ kind: "repeated_login_failures", username, ip, details: `${attempts} consecutive failed login attempts` });
@@ -109,49 +222,38 @@ export async function POST(request: NextRequest) {
 
     // If TOTP is not yet enabled — force MFA enrollment before issuing a session
     if (!user.totpEnabled) {
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 min
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
       const pending = signMfaPending(username, expiresAt);
       const rSetup = NextResponse.json({ requiresMFASetup: true });
       rSetup.cookies.set("docit-mfa-setup-pending", pending, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        path: "/",
-        maxAge: 10 * 60,
+        httpOnly: true, secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
+        sameSite: "lax", path: "/", maxAge: 10 * 60,
       });
       return rSetup;
     }
 
     // TOTP is enabled — request the second factor
     if (user.totpEnabled) {
-      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 min
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
       const pending = signMfaPending(username, expiresAt);
       const r2fa = NextResponse.json({ requires2FA: true });
       r2fa.cookies.set("docit-2fa-pending", pending, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        path: "/",
-        maxAge: 5 * 60,
+        httpOnly: true, secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
+        sameSite: "lax", path: "/", maxAge: 5 * 60,
       });
       return r2fa;
     }
 
     const sessionId = await createSession(username);
-
     const response = NextResponse.json({
       success: true,
       username: user.username,
       mustChangePassword: user.mustChangePassword === true,
     });
     response.cookies.set(getSessionCookieName(), sessionId, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 8,
+      httpOnly: true, secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
+      sameSite: "lax", path: "/", maxAge: 60 * 60 * 8,
     });
-
     auditLog(request, { event: "auth.login", outcome: "success", actor: username, sessionType: "session" });
     return response;
   } catch (error) {

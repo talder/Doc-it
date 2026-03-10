@@ -45,4 +45,4 @@ Templates can be shared between instances:
 
 ## Template Storage
 
-Templates are stored in `data/spaces/<slug>/templates/` as `.mdt` files. They follow the same revision-history mechanism as regular documents.
+Templates are stored alongside regular documents as `.mdt` files inside `docs/{space}/{category}/`. They follow the same revision-history mechanism as regular documents.

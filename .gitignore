@@ -30,7 +30,6 @@ npm-debug.log*
 /docs/
 /archive/
 /history/
-/node_modules_old/
 
 # typescript
 *.tsbuildinfo

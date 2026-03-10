@@ -22,6 +22,7 @@ export default function ProfilePage() {
   const { setAccentColor, setFontSize } = useTheme();
   const [loading, setLoading] = useState(true);
   const [username, setUsername] = useState("");
+  const [authSource, setAuthSource] = useState<"local" | "ad">("local");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
@@ -81,6 +82,7 @@ export default function ProfilePage() {
       .then((data) => {
         if (data.error) { router.replace("/login"); return; }
         setUsername(data.username || "");
+        setAuthSource(data.authSource === "ad" ? "ad" : "local");
         setFullName(data.fullName || "");
         setEmail(data.email || "");
         setAvatarUrl(`/api/auth/avatar/${encodeURIComponent(data.username)}?t=${Date.now()}`);
@@ -751,7 +753,20 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Change password */}
+        {/* Change password — hidden for AD accounts */}
+        {authSource === "ad" ? (
+          <div className="bg-surface rounded-xl shadow-sm border border-border">
+            <div className="px-6 py-4 border-b border-border flex items-center gap-2">
+              <h2 className="text-lg font-semibold text-text-primary">Password</h2>
+              <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded-full">Active Directory</span>
+            </div>
+            <div className="px-6 py-4">
+              <p className="text-sm text-text-muted">
+                This account is managed through <strong>Active Directory</strong>. Password changes must be made in AD — contact your system administrator.
+              </p>
+            </div>
+          </div>
+        ) : (
         <div className="bg-surface rounded-xl shadow-sm border border-border">
           <div className="px-6 py-4 border-b border-border">
             <h2 className="text-lg font-semibold text-text-primary">Change Password</h2>
@@ -805,6 +820,7 @@ export default function ProfilePage() {
             </div>
           </div>
         </div>
+        )}
       </div>
     </div>
   );

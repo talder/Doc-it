@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
   const resp = NextResponse.json({ success: true, backupCodes: plain });
   resp.cookies.set(getSessionCookieName(), newSessionId, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 8,

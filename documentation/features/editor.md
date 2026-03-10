@@ -88,7 +88,7 @@ Use `/linkpreview` to paste a URL and generate a rich card preview (title, descr
 
 ## Attachments
 
-Use `/attachment` to upload a file. The file is stored in `data/spaces/<slug>/attachments/` and a download link is embedded in the document.
+Use `/attachment` to upload a file. The file is stored in `docs/{space}/{category}/attachments/` and a download link is embedded in the document.
 
 ---
 

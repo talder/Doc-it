@@ -4,6 +4,7 @@ import path from "path";
 import { requireSpaceRole } from "@/lib/permissions";
 import { getCategoryDir, ensureDir } from "@/lib/config";
 import { auditLog } from "@/lib/audit";
+import { invalidateSpaceCache } from "@/lib/space-cache";
 
 type Params = { params: Promise<{ slug: string; name: string }> };
 
@@ -43,6 +44,7 @@ export async function POST(request: NextRequest, { params }: Params) {
   }
 
   await fs.rename(fromPath, toPath);
+  invalidateSpaceCache(slug);
   auditLog(request, { event: "document.move", outcome: "success", actor: mover.username, spaceSlug: slug, resource: `${fromCategory}/${name}`, resourceType: "document", details: { toCategory } });
   return NextResponse.json({ success: true, category: toCategory });
 }

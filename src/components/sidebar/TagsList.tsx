@@ -173,12 +173,14 @@ export default function TagsList({ tagsIndex, docs, activeDoc, onTagSelect, onSe
               <RefreshCw className={`w-3 h-3${isReindexing ? " animate-spin" : ""}`} />
             </button>
           )}
-          <button
-            onClick={handleToggleAll}
-            className="text-xs text-accent hover:underline"
-          >
-            {allCollapsed ? "Expand all" : "Collapse all"}
-          </button>
+          {!sectionCollapsed && (
+            <button
+              onClick={handleToggleAll}
+              className="text-xs text-accent hover:underline"
+            >
+              {allCollapsed ? "Expand all" : "Collapse all"}
+            </button>
+          )}
         </div>
       </div>
 

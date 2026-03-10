@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheck, HelpCircle } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -11,6 +11,11 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // AD vs local mode
+  const [adEnabled, setAdEnabled] = useState(false);
+  const [adDomain, setAdDomain] = useState("");
+  const [loginMode, setLoginMode] = useState<"ad" | "local">("local");
+  const [showFormatTip, setShowFormatTip] = useState(false);
   // 2FA step
   const [step, setStep] = useState<"credentials" | "totp" | "mfa-setup-scan" | "mfa-setup-verify" | "mfa-setup-backup">("credentials");
   const [totpCode, setTotpCode] = useState("");
@@ -22,13 +27,24 @@ export default function LoginPage() {
   const [setupBackupCodes, setSetupBackupCodes] = useState<string[]>([]);
   const [setupLoading, setSetupLoading] = useState(false);
 
-  // Check if setup is needed
+  // Check if setup is needed and load auth config
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.json())
       .then((data) => {
         if (data.needsSetup) router.replace("/setup");
         if (data.user) router.replace("/");
+      })
+      .catch(() => {});
+
+    fetch("/api/auth/config")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.adEnabled) {
+          setAdEnabled(true);
+          setLoginMode("ad");
+        }
+        if (data.adDomain) setAdDomain(data.adDomain);
       })
       .catch(() => {});
   }, [router]);
@@ -46,7 +62,7 @@ export default function LoginPage() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, mode: loginMode }),
       });
 
       const data = await res.json();
@@ -150,10 +166,26 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-surface-alt">
       <div className="w-full max-w-sm">
-        <div className="bg-surface rounded-xl shadow-lg p-8 border border-border">
-          <div className="text-center mb-8">
-            <h1 className="text-2xl font-bold text-text-primary">Doc-it</h1>
-            {step === "credentials" && <p className="text-sm text-text-muted mt-1">Sign in to continue</p>}
+        <div className="bg-surface rounded-xl shadow-lg p-8 border border-border overflow-hidden">
+          <div className="text-center mb-4">
+            <div className="-mt-4 -mb-2">
+              <img src="/logo.png" alt="Doc-it" className="w-52 h-52 mx-auto object-contain" />
+            </div>
+          {step === "credentials" && (
+            adEnabled && loginMode === "ad" ? (
+              <div className="mt-1">
+                <p className="text-sm text-text-muted">
+                  Sign in with your{" "}
+                  <span className="font-semibold text-text-primary">Active Directory</span>{" "}account
+                </p>
+                {adDomain && (
+                  <p className="text-xs font-mono text-accent mt-0.5">{adDomain}</p>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-text-muted">Sign in to continue</p>
+            )
+          )}
             {step === "totp" && (
               <div className="flex flex-col items-center gap-1 mt-2">
                 <ShieldCheck className="w-6 h-6 text-accent" />
@@ -179,7 +211,39 @@ export default function LoginPage() {
           {step === "credentials" ? (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-text-secondary mb-1">Username</label>
+                <div className="flex items-center gap-1 mb-1">
+                  <label className="text-sm font-medium text-text-secondary">
+                    {adEnabled && loginMode === "ad" ? "Username or email" : "Username"}
+                  </label>
+                  {adEnabled && loginMode === "ad" && (
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onMouseEnter={() => setShowFormatTip(true)}
+                        onMouseLeave={() => setShowFormatTip(false)}
+                        onFocus={() => setShowFormatTip(true)}
+                        onBlur={() => setShowFormatTip(false)}
+                        className="text-text-muted hover:text-text-secondary focus:outline-none"
+                        aria-label="Login format help"
+                      >
+                        <HelpCircle className="w-3.5 h-3.5" />
+                      </button>
+                      {showFormatTip && (
+                        <div className="absolute left-5 top-0 z-50 w-56 bg-gray-900 text-white text-xs rounded-lg px-3 py-2 shadow-lg pointer-events-none">
+                          <p className="font-medium mb-1">Accepted formats:</p>
+                          <p className="font-mono">jsmith</p>
+                          <p className="text-gray-400 text-[10px] mb-1">sAMAccountName</p>
+                          {adDomain && (
+                            <>
+                              <p className="font-mono">jsmith@{adDomain}</p>
+                              <p className="text-gray-400 text-[10px]">UPN / email</p>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <input
                   type="text"
                   value={username}
@@ -214,8 +278,24 @@ export default function LoginPage() {
               >
                 {loading ? "Signing in..." : "Sign in"}
               </button>
+
+              {/* AD / local mode toggle */}
+              {adEnabled && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginMode(loginMode === "ad" ? "local" : "ad");
+                    setError("");
+                  }}
+                  className="w-full py-2 text-xs text-text-muted hover:text-text-secondary transition-colors"
+                >
+                  {loginMode === "ad"
+                    ? "Use local account instead"
+                    : "← Sign in with Active Directory"}
+                </button>
+              )}
             </form>
-          ) : (
+          ) : step === "totp" ? (
             <form onSubmit={handleTotpSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-text-secondary mb-1">
@@ -257,10 +337,10 @@ export default function LoginPage() {
                 onClick={() => { setStep("credentials"); setError(""); setTotpCode(""); }}
                 className="w-full py-2 text-sm text-text-muted hover:text-text-secondary transition-colors"
               >
-                ← Back to login
+              ← Back to login
               </button>
             </form>
-          )}
+          ) : null}
 
           {/* Forced MFA scan step */}
           {step === "mfa-setup-scan" && (

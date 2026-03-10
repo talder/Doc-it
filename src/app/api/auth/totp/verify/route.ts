@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
     // Set session cookie (8-hour TTL, matches server-side expiresAt)
     response.cookies.set(getSessionCookieName(), sessionId, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
       sameSite: "lax",
       path: "/",
       maxAge: 60 * 60 * 8,
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
     // Clear pending 2FA cookie
     response.cookies.set(PENDING_COOKIE, "", {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
       sameSite: "lax",
       path: "/",
       maxAge: 0,

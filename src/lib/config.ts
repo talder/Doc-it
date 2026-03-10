@@ -5,10 +5,59 @@ import Database from "better-sqlite3";
 import type BetterSqlite3 from "better-sqlite3";
 
 const CONFIG_DIR = path.join(process.cwd(), "config");
-const DOCS_DIR = path.join(process.cwd(), "docs");
-const ARCHIVE_DIR = path.join(process.cwd(), "archive");
-const HISTORY_DIR = path.join(process.cwd(), "history");
 const DB_PATH = path.join(CONFIG_DIR, "docit.db");
+
+/** Path to the root-level config file that sets the storage location. */
+const DOCIT_CONFIG_FILE = path.join(process.cwd(), "docit.config.json");
+
+interface DocitConfig {
+  storageRoot?: string;
+}
+
+// Lazily resolved and cached. null = not yet read.
+let _storageRoot: string | null = null;
+
+/** Returns the storage root (base dir for docs/, archive/, history/, trash/).
+ *  Reads docit.config.json synchronously on first call, then caches.
+ *  Defaults to process.cwd() when the file is absent or storageRoot is unset. */
+export function getStorageRoot(): string {
+  if (_storageRoot !== null) return _storageRoot;
+  try {
+    const raw = fsSync.readFileSync(DOCIT_CONFIG_FILE, "utf-8");
+    const cfg = JSON.parse(raw) as DocitConfig;
+    if (cfg.storageRoot && path.isAbsolute(cfg.storageRoot)) {
+      _storageRoot = cfg.storageRoot;
+      return _storageRoot;
+    }
+  } catch {
+    // File missing or invalid — fall through to default
+  }
+  _storageRoot = process.cwd();
+  return _storageRoot;
+}
+
+/** Invalidate the cached storage root so the next call re-reads the file. */
+export function invalidateStorageCache(): void {
+  _storageRoot = null;
+}
+
+/** Read the current docit.config.json (or return defaults). */
+export function readStorageConfig(): DocitConfig {
+  try {
+    const raw = fsSync.readFileSync(DOCIT_CONFIG_FILE, "utf-8");
+    return JSON.parse(raw) as DocitConfig;
+  } catch {
+    return {};
+  }
+}
+
+/** Write storageRoot to docit.config.json and invalidate the cache. */
+export async function saveStorageConfig(storageRoot: string): Promise<void> {
+  const current = readStorageConfig();
+  const updated: DocitConfig = { ...current, storageRoot };
+  await fs.writeFile(DOCIT_CONFIG_FILE, JSON.stringify(updated, null, 2) + "\n", "utf-8");
+  invalidateStorageCache();
+}
 
 // ── SQLite singleton ──────────────────────────────────────────────────────────
 
@@ -93,46 +142,50 @@ function findJsonFiles(dir: string, root: string): { relPath: string; content: s
   return results;
 }
 
-// ── Directory helpers (unchanged) ─────────────────────────────────────────────
+// ── Directory helpers ─────────────────────────────────────────────────────────
 
 export function getConfigDir() {
   return CONFIG_DIR;
 }
 
 export function getDocsDir() {
-  return DOCS_DIR;
+  return path.join(getStorageRoot(), "docs");
 }
 
 export function getSpaceDir(spaceSlug: string) {
-  return path.join(DOCS_DIR, spaceSlug);
+  return path.join(getStorageRoot(), "docs", spaceSlug);
 }
 
 export function getCategoryDir(spaceSlug: string, categoryPath: string) {
-  return path.join(DOCS_DIR, spaceSlug, categoryPath);
+  return path.join(getStorageRoot(), "docs", spaceSlug, categoryPath);
 }
 
 export function getAttachmentsDir(spaceSlug: string, categoryPath: string) {
-  return path.join(DOCS_DIR, spaceSlug, categoryPath, "attachments");
+  return path.join(getStorageRoot(), "docs", spaceSlug, categoryPath, "attachments");
 }
 
 export function getArchiveDir() {
-  return ARCHIVE_DIR;
+  return path.join(getStorageRoot(), "archive");
 }
 
 export function getArchiveSpaceDir(spaceSlug: string) {
-  return path.join(ARCHIVE_DIR, spaceSlug);
+  return path.join(getStorageRoot(), "archive", spaceSlug);
 }
 
 export function getArchiveCategoryDir(spaceSlug: string, categoryPath: string) {
-  return path.join(ARCHIVE_DIR, spaceSlug, categoryPath);
+  return path.join(getStorageRoot(), "archive", spaceSlug, categoryPath);
 }
 
 export function getHistoryDir(spaceSlug: string, categoryPath: string, docName: string) {
-  return path.join(HISTORY_DIR, spaceSlug, categoryPath, docName);
+  return path.join(getStorageRoot(), "history", spaceSlug, categoryPath, docName);
+}
+
+export function getTrashDir() {
+  return path.join(getStorageRoot(), "trash");
 }
 
 export function getDocStatusFilePath(spaceSlug: string) {
-  return path.join(DOCS_DIR, spaceSlug, ".doc-status.json");
+  return path.join(getStorageRoot(), "docs", spaceSlug, ".doc-status.json");
 }
 
 export async function readDocStatusMap(spaceSlug: string): Promise<import("./types").DocStatusMap> {
@@ -154,7 +207,7 @@ export async function writeDocStatusMap(
 }
 
 export function getCustomizationPath(spaceSlug: string) {
-  return path.join(DOCS_DIR, spaceSlug, ".customization.json");
+  return path.join(getStorageRoot(), "docs", spaceSlug, ".customization.json");
 }
 
 export async function readCustomization(spaceSlug: string): Promise<import("./types").SpaceCustomization> {

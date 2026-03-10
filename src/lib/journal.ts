@@ -75,14 +75,27 @@ export async function writeUserJournal(username: string, data: JournalData): Pro
   await writeJsonConfig(userJournalPath(username), { entries, templates: data.templates });
 }
 
-// ── Space journal (plaintext) ────────────────────────────────────────
+// ── Space journal (encrypted content, same as user journals) ─────────
 
 export async function readSpaceJournal(slug: string): Promise<JournalData> {
-  return readJsonConfig<JournalData>(spaceJournalPath(slug), { ...EMPTY });
+  const data = await readJsonConfig<JournalData>(spaceJournalPath(slug), { ...EMPTY });
+  const entries = await Promise.all(
+    (data.entries || []).map(async (e) => ({
+      ...e,
+      content: await decryptField(e.content),
+    }))
+  );
+  return { entries, templates: data.templates || [] };
 }
 
 export async function writeSpaceJournal(slug: string, data: JournalData): Promise<void> {
-  await writeJsonConfig(spaceJournalPath(slug), data);
+  const entries = await Promise.all(
+    data.entries.map(async (e) => ({
+      ...e,
+      content: await encryptField(e.content),
+    }))
+  );
+  await writeJsonConfig(spaceJournalPath(slug), { entries, templates: data.templates });
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────

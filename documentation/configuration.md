@@ -6,7 +6,11 @@ doc-it ships with **17 built-in themes**. Each user can choose their own theme f
 
 Themes affect the colour palette (background, surface, text, accent) across the entire interface. The selected theme is stored in the user's preferences and persists across devices.
 
-Available themes include: `default`, `dark`, `light`, `ocean`, `forest`, `sunset`, `midnight`, `rose`, `slate`, and more.
+Available themes:
+
+**Light:** `light`, `solarized-light`, `dracula-light`, `catppuccin-latte`, `blossom`, `lavender`, `paper`, `high-contrast`
+
+**Dark:** `dark`, `dracula`, `nord`, `solarized-dark`, `github-dark`, `catppuccin`, `twilight`, `midnight-rose`, `high-contrast-dark`
 
 ---
 
@@ -41,7 +45,7 @@ Fields:
 | From address | Sender address shown to recipients |
 | Admin email | Destination for system alerts |
 
-Configuration is stored in `data/settings/smtp.json`.
+Configuration is stored in the SQLite KV store (`config/docit.db`) under the key `smtp.json`.
 
 ---
 
@@ -54,20 +58,33 @@ See [Admin → Audit](admin/audit.md) for full configuration options including:
 - Retention period (days)
 - Optional syslog forwarding (UDP or TCP, RFC 5424)
 
-Configuration is stored in `data/settings/audit.json`.
+Configuration is stored in the SQLite KV store (`config/docit.db`) under the key `audit.json`.
+
+---
+
+## Storage Location
+
+By default, all data directories (`docs/`, `archive/`, `history/`, `logs/`, `trash/`) live inside the application directory. To redirect them to a separate volume or NAS mount, create `docit.config.json` in the application root:
+
+```json
+{
+  "storageRoot": "/mnt/nas/doc-it-data"
+}
+```
+
+Rules:
+- The path must be **absolute**.
+- The file is optional — if absent or if `storageRoot` is omitted, the application directory is used (fully backward-compatible).
+- The change is **hot**: it takes effect on the next incoming request without a server restart.
+- doc-it does **not** move existing files automatically. Migrate data directories manually before changing the path.
+
+You can also set or inspect the storage root via **Admin → Settings → Storage Location** or the API (`GET/PUT /api/settings/storage`).
 
 ---
 
 ## Environment Variables
 
-doc-it uses Next.js conventions. You can create a `.env.local` file in the project root for any custom overrides:
-
-```bash
-# Optional: override the data directory path
-# DATA_DIR=/mnt/storage/doc-it-data
-```
-
-No environment variables are required for basic operation.
+No environment variables are required for basic operation. doc-it uses `docit.config.json` (above) instead of environment variables for storage path configuration.
 
 ---
 

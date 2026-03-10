@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, verifyPassword } from "@/lib/auth";
+import { getAdConfig, authenticateAdUser } from "@/lib/ad";
+import { auditLog } from "@/lib/audit";
 
 const AUDIT_AUTH_COOKIE = "docit-audit-auth";
 const VALIDITY_SECONDS = 15 * 60; // 15 minutes
@@ -34,8 +36,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Password is required" }, { status: 400 });
   }
 
-  const { match } = await verifyPassword(password, user.passwordHash);
-  if (!match) {
+  let verified = false;
+  if (user.authSource === "ad") {
+    const adConfig = await getAdConfig();
+    const result = await authenticateAdUser(adConfig, user.adUsername ?? user.username, password);
+    verified = result.success;
+  } else {
+    const { match } = await verifyPassword(password, user.passwordHash);
+    verified = match;
+  }
+
+  if (!verified) {
+    auditLog(request, { event: "auth.sudo", outcome: "failure", actor: user.username, details: { reason: "incorrect password" } });
     return NextResponse.json({ error: "Incorrect password" }, { status: 401 });
   }
 
@@ -46,10 +58,12 @@ export async function POST(request: NextRequest) {
     })
   ).toString("base64");
 
+  auditLog(request, { event: "auth.sudo", outcome: "success", actor: user.username });
+
   const response = NextResponse.json({ confirmed: true });
   response.cookies.set(AUDIT_AUTH_COOKIE, payload, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
     sameSite: "lax",
     path: "/",
     maxAge: VALIDITY_SECONDS,

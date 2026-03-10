@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
 
   response.cookies.set(getSessionCookieName(), sessionId, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 8,
@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
   // Clear the MFA setup pending cookie
   response.cookies.set("docit-mfa-setup-pending", "", {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
     sameSite: "lax",
     path: "/",
     maxAge: 0,

@@ -43,6 +43,34 @@ User: (SMTP Access Key ID)   Pass: (SMTP Secret)
 
 ---
 
+## Change Log
+
+Configure how long change log entries are retained.
+
+| Field | Description | Default |
+|---|---|---|
+| Retention (years) | Entries older than this are pruned automatically on each write | `5` |
+
+Click **Save** to apply. Pruning runs on the next new entry; existing old entries are not removed until a new entry is added.
+
+---
+
+## Storage Location
+
+Sets the root directory where all data directories (`docs/`, `archive/`, `history/`, `logs/`, `trash/`) are stored.
+
+| Field | Description |
+|---|---|
+| Storage Root | Absolute path on the server filesystem (e.g. `/mnt/nas/doc-it-data`) |
+
+Leave blank to use the application directory (default, backward-compatible).
+
+> **Warning:** doc-it does **not** migrate existing files when you change this path. Move all data directories manually to the new location before saving, otherwise documents and history will appear missing.
+
+The effective path and all resolved sub-paths are shown in a read-only preview below the input field.
+
+---
+
 ## Audit Settings
 
 See [Admin — Audit](audit.md) for the audit logging configuration which lives in the Audit tab.

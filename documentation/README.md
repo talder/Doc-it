@@ -20,6 +20,12 @@
   - [Distraction-Free Mode](features/distraction-free.md)
   - [Document History](features/document-history.md)
   - [Audit Logging](features/audit-logging.md)
+  - [Journal](features/journal.md)
+  - [Change Log](features/changelog.md)
+  - [PKI / Certificate Manager](features/pki.md)
+  - [Asset Management](features/asset-management.md)
+  - [Helpdesk & Ticketing](features/helpdesk.md)
+  - [Backup & Recovery](features/backup.md)
 - **API Reference**
   - [Authentication](api/authentication.md)
   - [Spaces](api/spaces.md)
@@ -79,6 +85,11 @@ Select your space from the top bar, click **New Document** in the sidebar, choos
 | **Database** | A structured spreadsheet-style table with Table / Kanban / Calendar / Gallery views. |
 | **Service Key** | A long-lived bearer token for CI/CD or external integrations. |
 | **Audit Log** | An immutable, always-on JSONL log of every security-relevant event. Optional syslog forward. |
+| **Journal** | Personal (encrypted) or space-shared daily log entries with tags, mood, and templates. |
+| **Change Log** | Immutable operational change register for tracking infrastructure changes. |
+| **Asset Registry** | IT asset management with hierarchical containers, custom fields, and status tracking. |
+| **Helpdesk** | Ticketing system with groups, SLA policies, automation rules, custom forms, and a self-service portal. |
+| **Backup** | Automated AES-256-GCM encrypted backups with local and CIFS/SMB targets. |
 
 ---
 

@@ -25,10 +25,10 @@ In the History Modal, click **Restore** next to any revision. The document conte
 
 ## Revision Storage
 
-Revisions are stored in `data/spaces/<slug>/history/<docname>/` as numbered `.md` files accompanied by a metadata `.json` sidecar:
+Revisions are stored in `history/{space}/{category}/{docname}/` as numbered `.md` files accompanied by a metadata `.json` sidecar:
 
 ```
-data/spaces/my-space/history/my-doc/
+history/my-space/guides/my-doc/
 ├── 1.md
 ├── 1.json   # { rev, author, timestamp }
 ├── 2.md

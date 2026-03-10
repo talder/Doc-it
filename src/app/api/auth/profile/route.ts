@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, getUsers, writeUsers, hashPassword, verifyPassword, isPasswordInHistory, sanitizeUser, createSession, getSessionCookieName, invalidateUserSessions } from "@/lib/auth";
 import { isPasswordValid, validatePassword } from "@/lib/password-policy";
+import { auditLog } from "@/lib/audit";
 
 export async function GET() {
   try {
@@ -36,6 +37,14 @@ export async function PUT(request: NextRequest) {
 
     // Password change
     if (body.newPassword) {
+      // AD users cannot change passwords through doc-it
+      if (users[idx].authSource === "ad") {
+        return NextResponse.json(
+          { error: "Password changes for Active Directory accounts must be made in Active Directory." },
+          { status: 400 }
+        );
+      }
+
       const isForcedChange = users[idx].mustChangePassword === true && body.skipFirstLogin === true;
 
       // Verify current password unless this is a forced first-login change
@@ -45,6 +54,7 @@ export async function PUT(request: NextRequest) {
         }
         const { match } = await verifyPassword(body.currentPassword, users[idx].passwordHash);
         if (!match) {
+          auditLog(request, { event: "auth.password.change", outcome: "failure", actor: user.username, details: { reason: "current password incorrect" } });
           return NextResponse.json({ error: "Current password is incorrect" }, { status: 403 });
         }
       }
@@ -70,6 +80,23 @@ export async function PUT(request: NextRequest) {
 
     await writeUsers(users);
 
+    // Audit profile changes
+    const profileChanges: Record<string, unknown> = {};
+    if (body.fullName !== undefined) profileChanges.fullName = true;
+    if (body.email !== undefined) profileChanges.email = true;
+    if (body.preferences !== undefined) profileChanges.preferences = true;
+    if (body.newPassword) profileChanges.passwordChanged = true;
+    if (Object.keys(profileChanges).length > 0) {
+      auditLog(request, {
+        event: body.newPassword ? "auth.password.change" : "user.update",
+        outcome: "success",
+        actor: user.username,
+        resource: user.username,
+        resourceType: "user",
+        details: profileChanges,
+      });
+    }
+
     // If password changed, invalidate all existing sessions and issue a fresh one
     if (body.newPassword) {
       const newSessionId = await createSession(users[idx].username);
@@ -77,7 +104,7 @@ export async function PUT(request: NextRequest) {
       const resp = NextResponse.json(sanitizeUser(users[idx]));
       resp.cookies.set(getSessionCookieName(), newSessionId, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
+        secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
         sameSite: "lax",
         path: "/",
         maxAge: 60 * 60 * 8,

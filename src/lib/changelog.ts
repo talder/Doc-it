@@ -46,6 +46,10 @@ export interface ChangeLogEntry {
   createdAt: string;       // ISO timestamp (when the record was logged)
 }
 
+export interface ChangeLogSettings {
+  retentionYears: number;
+}
+
 export interface ChangeLogData {
   nextNumber: number;
   entries: ChangeLogEntry[];
@@ -54,8 +58,17 @@ export interface ChangeLogData {
 // ── Constants ────────────────────────────────────────────────────────
 
 const CHANGELOG_FILE = "changelog.json";
+const SETTINGS_FILE = "changelog-settings.json";
+const DEFAULT_SETTINGS: ChangeLogSettings = { retentionYears: 5 };
 
 const EMPTY: ChangeLogData = { nextNumber: 1, entries: [] };
+
+/** Return the ISO date string (YYYY-MM-DD) that marks the oldest entry to keep. */
+function retentionCutoff(retentionYears: number): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - retentionYears);
+  return d.toISOString().slice(0, 10);
+}
 
 const FACILITY_MAP: Record<string, number> = {
   kern: 0, user: 1, mail: 2, daemon: 3, auth: 4, syslog: 5, lpr: 6,
@@ -72,6 +85,14 @@ export async function readChangeLog(): Promise<ChangeLogData> {
 
 async function writeChangeLog(data: ChangeLogData): Promise<void> {
   await writeJsonConfig(CHANGELOG_FILE, data);
+}
+
+export async function readChangeLogSettings(): Promise<ChangeLogSettings> {
+  return readJsonConfig<ChangeLogSettings>(SETTINGS_FILE, { ...DEFAULT_SETTINGS });
+}
+
+export async function saveChangeLogSettings(settings: ChangeLogSettings): Promise<void> {
+  await writeJsonConfig(SETTINGS_FILE, settings);
 }
 
 // ── Public API ───────────────────────────────────────────────────────
@@ -91,7 +112,7 @@ export interface CreateChangeFields {
 export async function addChangeLogEntry(fields: CreateChangeFields): Promise<ChangeLogEntry> {
   const data = await readChangeLog();
   const num = data.nextNumber || 1;
-  const id = `CHG-${String(num).padStart(4, "0")}`;
+  const id = `CHG-${String(num).padStart(6, "0")}`;
 
   const entry: ChangeLogEntry = {
     id,
@@ -109,6 +130,12 @@ export async function addChangeLogEntry(fields: CreateChangeFields): Promise<Cha
 
   data.entries.push(entry);
   data.nextNumber = num + 1;
+
+  // Prune entries that have aged out of the retention window
+  const settings = await readChangeLogSettings();
+  const cutoff = retentionCutoff(settings.retentionYears);
+  data.entries = data.entries.filter((e) => e.date >= cutoff);
+
   await writeChangeLog(data);
 
   // Fire-and-forget syslog

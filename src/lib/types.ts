@@ -51,6 +51,45 @@ export interface User {
   totpEnabled?: boolean;
   /** SHA-256 hashes of single-use TOTP backup codes */
   totpBackupCodes?: string[];
+  /** Authentication source — 'local' (default) or 'ad' (Active Directory shadow account) */
+  authSource?: "local" | "ad";
+  /** sAMAccountName as returned by AD (preserved for display / audit) */
+  adUsername?: string;
+}
+
+// === Active Directory ===
+
+export interface AdGroupMapping {
+  id: string;
+  /** Full LDAP DN of the AD group, e.g. "CN=DocIt-Writers,OU=Groups,DC=example,DC=com" */
+  groupDn: string;
+  /** doc-it space slug, or "*" to grant global admin */
+  spaceSlug: string;
+  role: SpaceRole;
+}
+
+export interface AdConfig {
+  enabled: boolean;
+  host: string;
+  port: number;
+  /** Use LDAPS (port 636 + TLS) instead of plain LDAP */
+  ssl: boolean;
+  /** Allow self-signed / untrusted TLS certificates */
+  tlsRejectUnauthorized: boolean;
+  /** DN of the service account used to search the directory */
+  bindDn: string;
+  /** AES-256-GCM encrypted bind password (ENC:… prefix) */
+  bindPasswordEncrypted?: string;
+  /** Base DN for the directory, e.g. "DC=example,DC=com" */
+  baseDn: string;
+  /** Sub-tree to search for user objects; defaults to baseDn if empty */
+  userSearchBase: string;
+  /** AD group DNs whose members are allowed to log in */
+  allowedGroups: string[];
+  /** Individual sAMAccountNames allowed to log in regardless of group */
+  allowedUsers: string[];
+  /** Map AD groups to doc-it space roles */
+  groupMappings: AdGroupMapping[];
 }
 
 export type SanitizedUser = Omit<User, "passwordHash">;
@@ -336,7 +375,28 @@ export type AuditEventType =
   | "auth.mfa.disabled"
   | "auth.mfa.backup_used"
   | "auth.mfa.reset"
-  | "backup.run";
+  | "backup.run"
+  | "cert.key.generate"
+  | "cert.key.import"
+  | "cert.key.export"
+  | "cert.key.delete"
+  | "cert.csr.create"
+  | "cert.csr.import"
+  | "cert.csr.sign"
+  | "cert.csr.delete"
+  | "cert.import"
+  | "cert.create"
+  | "cert.revoke"
+  | "cert.renew"
+  | "cert.export"
+  | "cert.delete"
+  | "cert.crl.generate"
+  | "cert.expiry.alert"
+  | "auth.password.change"
+  | "auth.sudo"
+  | "user.group.create"
+  | "user.group.update"
+  | "user.group.delete";
 
 export interface AuditEntry {
   eventId: string;
@@ -413,7 +473,23 @@ export interface BackupCifsTarget {
   password?: string;
 }
 
-export type BackupTarget = BackupLocalTarget | BackupCifsTarget;
+export interface BackupSftpTarget {
+  id: string;
+  type: "sftp";
+  label: string;
+  host: string;
+  /** Port, default 22 */
+  port: number;
+  username: string;
+  /** Password stored encrypted via crypto.ts (mutually exclusive with privateKey) */
+  password?: string;
+  /** PEM private key content stored encrypted via crypto.ts */
+  privateKey?: string;
+  /** Remote directory path, e.g. "/backups/docit/" */
+  remotePath: string;
+}
+
+export type BackupTarget = BackupLocalTarget | BackupCifsTarget | BackupSftpTarget;
 
 export interface BackupConfig {
   enabled: boolean;
@@ -438,4 +514,215 @@ export interface BackupResult {
   filename?: string;
   error?: string;
   targetResults: { label: string; success: boolean; error?: string }[];
+}
+
+// === User Groups ===
+
+export interface UserGroup {
+  id: string;
+  name: string;
+  description: string;
+  members: string[];      // usernames
+  createdAt: string;
+}
+
+export interface UserGroupsData {
+  groups: UserGroup[];
+}
+
+// === Dashboard ===
+
+export interface DashboardLink {
+  id: string;
+  title: string;
+  description: string;
+  url: string;
+  icon: string;             // emoji, URL, "favicon", "si-*", "lucide-*"
+  color: string;            // hex accent for the card
+  openInNewTab: boolean;
+  sectionId: string;
+  order: number;
+  visibleToGroups: string[]; // user group IDs — empty = visible to everyone
+}
+
+export interface DashboardSection {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  order: number;
+  collapsed: boolean;
+}
+
+export interface DashboardData {
+  sections: DashboardSection[];
+  links: DashboardLink[];
+}
+
+// === PKI / Certificate Manager ===
+
+export type PkiKeyAlgorithm =
+  | "RSA-2048"
+  | "RSA-4096"
+  | "EC-P256"
+  | "EC-P384"
+  | "EC-P521"
+  | "Ed25519";
+
+export type PkiCertType =
+  | "root-ca"
+  | "intermediate-ca"
+  | "tls-server"
+  | "tls-client"
+  | "code-signing"
+  | "email"
+  | "other";
+
+export type PkiRevocationReason =
+  | "unspecified"
+  | "key-compromise"
+  | "ca-compromise"
+  | "affiliation-changed"
+  | "superseded"
+  | "cessation-of-operation"
+  | "certificate-hold";
+
+export type PkiExportFormat =
+  | "PEM"
+  | "DER"
+  | "PKCS7"
+  | "PKCS7-chain"
+  | "PKCS12"
+  | "PEM-chain"
+  | "PEM+key"
+  | "cert-index";
+
+export interface PkiSubject {
+  CN: string;
+  O?: string;
+  OU?: string;
+  C?: string;
+  ST?: string;
+  L?: string;
+  emailAddress?: string;
+}
+
+export interface PkiExtensions {
+  san?: string[];                 // Subject Alternative Names (DNS:foo, IP:1.2.3.4, email:...
+  keyUsage?: string[];            // digitalSignature, keyCertSign, cRLSign, ...
+  keyUsageCritical?: boolean;
+  extKeyUsage?: string[];         // serverAuth, clientAuth, codeSigning, emailProtection, ...
+  extKeyUsageCritical?: boolean;
+  isCA?: boolean;
+  basicConstraintsCritical?: boolean;
+  pathLen?: number;               // BasicConstraints pathLenConstraint
+  subjectKeyIdentifier?: boolean;
+  authorityKeyIdentifier?: boolean;
+  crlDistributionPoints?: string[];
+  ocspResponders?: string[];
+}
+
+export interface PkiPrivateKey {
+  id: string;
+  name: string;
+  comment: string;
+  algorithm: PkiKeyAlgorithm;
+  /** AES-256-GCM encrypted PEM via crypto.ts encryptField */
+  pemEncrypted: string;
+  /** Unencrypted PEM of the public key */
+  publicKeyPem: string;
+  /** SHA-256 fingerprint (hex) of the public key */
+  fingerprint: string;
+  createdAt: string;
+  createdBy: string;
+  allowedUsers: string[];
+  allowedGroups: string[];
+}
+
+export interface PkiCsr {
+  id: string;
+  name: string;
+  comment: string;
+  subject: PkiSubject;
+  extensions: PkiExtensions;
+  /** PEM-encoded PKCS#10 CSR */
+  pem: string;
+  /** ID of the private key in this store used to create the CSR (if generated here) */
+  keyId?: string;
+  /** ID of the certificate that was issued from this CSR */
+  signedCertId?: string;
+  createdAt: string;
+  createdBy: string;
+  allowedUsers: string[];
+  allowedGroups: string[];
+}
+
+export interface PkiCertificate {
+  id: string;
+  name: string;
+  comment: string;
+  type: PkiCertType;
+  subject: PkiSubject;
+  issuer: PkiSubject;
+  /** Hex-encoded serial number */
+  serial: string;
+  /** ID of the issuing certificate in this store */
+  issuerId?: string;
+  /** ID of the private key in this store corresponding to this cert */
+  keyId?: string;
+  /** ID of the CSR this cert was issued from */
+  csrId?: string;
+  /** PEM-encoded certificate */
+  pem: string;
+  notBefore: string;
+  notAfter: string;
+  /** SHA-1 fingerprint (hex, colon-separated) */
+  fingerprintSha1: string;
+  /** SHA-256 fingerprint (hex, colon-separated) */
+  fingerprintSha256: string;
+  isRevoked: boolean;
+  revokedAt?: string;
+  revokeReason?: PkiRevocationReason;
+  /** Tracks which expiry alert has already been sent (prevents re-alerting) */
+  lastAlertedThreshold?: 30 | 7 | 1;
+  createdAt: string;
+  createdBy: string;
+  allowedUsers: string[];
+  allowedGroups: string[];
+}
+
+export interface PkiCrl {
+  id: string;
+  /** ID of the CA certificate that issued this CRL */
+  caId: string;
+  /** PEM-encoded CRL */
+  pem: string;
+  thisUpdate: string;
+  nextUpdate: string;
+  revokedCount: number;
+  createdAt: string;
+  createdBy: string;
+}
+
+export interface PkiTemplate {
+  id: string;
+  name: string;
+  type: PkiCertType;
+  subject: Partial<PkiSubject>;
+  extensions: PkiExtensions;
+  /** Default validity period in days */
+  validityDays: number;
+  createdAt: string;
+}
+
+export interface PkiStore {
+  keys: PkiPrivateKey[];
+  csrs: PkiCsr[];
+  certs: PkiCertificate[];
+  crls: PkiCrl[];
+  templates: PkiTemplate[];
+}
+
+export interface PkiCertNode extends PkiCertificate {
+  children: PkiCertNode[];
 }
