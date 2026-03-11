@@ -64,7 +64,7 @@ export default function ArchiveModal({ isOpen, spaceSlug, onClose, onUnarchived 
   const categories = Object.keys(grouped).sort();
 
   return (
-    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+<div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal-container" style={{ maxWidth: 600, maxHeight: "70vh" }}>
         <div className="modal-header">
           <div className="flex items-center gap-2">

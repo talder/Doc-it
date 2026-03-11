@@ -6,6 +6,7 @@ import { requireSpaceRole } from "@/lib/permissions";
 import { getCategoryDir, ensureDir } from "@/lib/config";
 import { parseFrontmatter, stringifyFrontmatter } from "@/lib/frontmatter";
 import { auditLog } from "@/lib/audit";
+import { invalidateSpaceCache } from "@/lib/space-cache";
 
 type Params = { params: Promise<{ slug: string; name: string }> };
 
@@ -172,6 +173,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
 
     await fs.unlink(resolved.filePath);
+    invalidateSpaceCache(slug);
     auditLog(request, { event: "document.delete", outcome: "success", actor: deleter.username, spaceSlug: slug, resource: `${category}/${name}`, resourceType: "document", details: { softDelete: true } });
     return NextResponse.json({ success: true });
   } catch {

@@ -1,41 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs/promises";
 import path from "path";
+import fs from "fs/promises";
 import { getCurrentUser } from "@/lib/auth";
-import { ensureDir } from "@/lib/config";
 import { sendMail } from "@/lib/email";
-
-const NOTIF_DIR = path.join(process.cwd(), "config", "notifications");
-
-interface Notification {
-  id: string;
-  type: "mention";
-  message: string;
-  from: string;
-  spaceSlug: string;
-  docName: string;
-  category: string;
-  createdAt: string;
-  read: boolean;
-}
-
-async function getUserNotifPath(username: string) {
-  await ensureDir(NOTIF_DIR);
-  return path.join(NOTIF_DIR, `${username}.json`);
-}
-
-async function readNotifications(username: string): Promise<Notification[]> {
-  try {
-    const data = await fs.readFile(await getUserNotifPath(username), "utf-8");
-    return JSON.parse(data);
-  } catch {
-    return [];
-  }
-}
-
-async function writeNotifications(username: string, notifs: Notification[]) {
-  await fs.writeFile(await getUserNotifPath(username), JSON.stringify(notifs, null, 2), "utf-8");
-}
+import { readNotifications, writeNotifications } from "@/lib/notifications";
+import type { AppNotification } from "@/lib/notifications";
 
 /** GET /api/notifications — get current user's notifications */
 export async function GET() {
@@ -80,7 +49,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing fields" }, { status: 400 });
     }
 
-    const notif: Notification = {
+    const notif: AppNotification = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       type: "mention",
       message: `${user.username} mentioned you in "${docName}"`,

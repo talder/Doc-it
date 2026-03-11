@@ -128,7 +128,7 @@ export default function OfflineBundleModal({ onClose }: Props) {
   return (
     <div
       className="modal-overlay"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="modal-container" style={{ width: 500, maxWidth: "95vw" }}>
         {/* Header */}

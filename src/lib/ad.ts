@@ -280,6 +280,7 @@ export async function upsertAdShadowUser(params: {
   email: string;
   isAdmin: boolean;
   status: "active" | "pending";
+  adGroups?: string[];
 }): Promise<User> {
   const users = await getUsers();
   const username = params.sAMAccountName.toLowerCase();
@@ -294,6 +295,7 @@ export async function upsertAdShadowUser(params: {
     users[idx].lastLogin = new Date().toISOString();
     users[idx].authSource = "ad";
     users[idx].adUsername = params.sAMAccountName;
+    if (params.adGroups) users[idx].adGroups = params.adGroups;
     await writeUsers(users);
     return users[idx];
   }
@@ -310,6 +312,7 @@ export async function upsertAdShadowUser(params: {
     lastLogin: new Date().toISOString(),
     authSource: "ad",
     adUsername: params.sAMAccountName,
+    adGroups: params.adGroups ?? [],
   };
 
   users.push(newUser);
@@ -322,11 +325,15 @@ export async function upsertAdShadowUser(params: {
 // ---------------------------------------------------------------------------
 
 /**
- * Authoritative sync of an AD user's space permissions.
- * For AD users, space access is entirely controlled by group mappings:
- * - Matched mapping → set that role (overwrites any previous value)
- * - No mapping for a space → remove the user from that space
- * - Global admin → set "admin" role on all spaces
+ * Sync an AD user's space permissions from group mappings.
+ *
+ * Only spaces that are referenced in at least one AD group mapping are
+ * considered "AD-managed".  For those spaces the role is set (or removed)
+ * based on group membership.  Spaces that have NO group mapping configured
+ * are left untouched so that admins can manually assign AD users to
+ * additional spaces without the sync wiping those assignments on login.
+ *
+ * Global admin → set "admin" role on all spaces (additive only).
  */
 export async function syncAdSpacePermissions(
   username: string,
@@ -334,6 +341,14 @@ export async function syncAdSpacePermissions(
   isAdmin: boolean
 ): Promise<void> {
   const spaces = await readJsonConfig<Space[]>("spaces.json", []);
+  const adConfig = await getAdConfig();
+
+  // Build set of space slugs that are managed by AD group mappings.
+  const adManagedSlugs = new Set<string>();
+  for (const mapping of adConfig.groupMappings) {
+    if (mapping.spaceSlug !== "*") adManagedSlugs.add(mapping.spaceSlug);
+  }
+
   let dirty = false;
 
   for (const space of spaces) {
@@ -341,11 +356,14 @@ export async function syncAdSpacePermissions(
     const currentRole = space.permissions[username];
 
     if (desiredRole) {
+      // AD mapping (or global admin) grants a role → set it
       if (currentRole !== desiredRole) {
         space.permissions[username] = desiredRole;
         dirty = true;
       }
-    } else if (currentRole !== undefined) {
+    } else if (currentRole !== undefined && adManagedSlugs.has(space.slug)) {
+      // Only remove the user from spaces that ARE managed by AD mappings.
+      // Manually-assigned spaces (no mapping configured) are left alone.
       delete space.permissions[username];
       dirty = true;
     }

@@ -2124,7 +2124,7 @@ export default function CertificatesTab() {
 
       {/* Passphrase modal for PEM+key / PKCS12 export */}
       {certExportPassModal && pendingExport && (
-        <div className="modal-overlay" onClick={() => setCertExportPassModal(false)}>
+        <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setCertExportPassModal(false); }}>
           <div className="modal-container" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">Export Passphrase</h2>

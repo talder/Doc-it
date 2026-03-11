@@ -57,7 +57,7 @@ export default function NewTemplateModal({
   const showCategoryPicker = templateCategories.length > 1;
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal-container" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div className="flex items-center gap-2">

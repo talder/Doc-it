@@ -11,6 +11,7 @@ import {
   upsertAdShadowUser,
   syncAdSpacePermissions,
 } from "@/lib/ad";
+import { notifyAdminsOfNewUser } from "@/lib/notifications";
 
 // HMAC key for signing the MFA-setup-pending cookie — auto-generated per process
 // (restarting the server invalidates pending cookies, which is acceptable)
@@ -62,6 +63,7 @@ export async function POST(request: NextRequest) {
       const adResult = await authenticateAdUser(adConfig, username, password);
 
       if (!adResult.success) {
+        const isConnectionError = adResult.error?.startsWith("AD connection error");
         auditLog(request, {
           event: "auth.login.failed",
           outcome: "failure",
@@ -69,6 +71,12 @@ export async function POST(request: NextRequest) {
           sessionType: "anonymous",
           details: { reason: adResult.error ?? "AD auth failed", mode: "ad" },
         });
+        if (isConnectionError) {
+          return NextResponse.json(
+            { error: "Unable to reach the Active Directory server. Please try again later or contact an administrator." },
+            { status: 502 }
+          );
+        }
         return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
       }
 
@@ -82,6 +90,7 @@ export async function POST(request: NextRequest) {
           email: adResult.email ?? "",
           isAdmin: false,
           status: "pending",
+          adGroups: adResult.memberOf ?? [],
         });
         auditLog(request, {
           event: "auth.login.failed",
@@ -97,14 +106,21 @@ export async function POST(request: NextRequest) {
       }
 
       // Provision / update shadow user and sync space permissions
+      const existingAdUser = await getUserByUsername(sam.toLowerCase());
       const shadowUser = await upsertAdShadowUser({
         sAMAccountName: sam,
         displayName: adResult.displayName ?? sam,
         email: adResult.email ?? "",
         isAdmin: access.isAdmin,
         status: "active",
+        adGroups: adResult.memberOf ?? [],
       });
       await syncAdSpacePermissions(shadowUser.username, access.spaceRoles, access.isAdmin);
+
+      // First-time AD login — notify admins
+      if (!existingAdUser) {
+        notifyAdminsOfNewUser(shadowUser.username, adResult.email ?? "", "ad").catch(() => {});
+      }
 
       // Re-fetch user record so TOTP state is fresh
       const adUser = await getUserByUsername(shadowUser.username);

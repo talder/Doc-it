@@ -5,6 +5,7 @@ import { requireSpaceRole } from "@/lib/permissions";
 import { getSpaceDir, getCategoryDir, ensureDir } from "@/lib/config";
 import { stringifyFrontmatter } from "@/lib/frontmatter";
 import { auditLog } from "@/lib/audit";
+import { invalidateSpaceCache } from "@/lib/space-cache";
 import type { DocFile } from "@/lib/types";
 
 const EXCLUDED = ["attachments", ".git", ".DS_Store"];
@@ -104,6 +105,7 @@ export async function POST(request: NextRequest, { params }: Params) {
   };
   const fileContent = stringifyFrontmatter(content || defaultBody, metadata);
   await fs.writeFile(filePath, fileContent, "utf-8");
+  invalidateSpaceCache(slug);
 
   auditLog(request, { event: "document.create", outcome: "success", actor: user.username, spaceSlug: slug, resource: `${category}/${safeName}`, resourceType: "document", details: { category, isTemplate: !!isTemplate } });
   return NextResponse.json(

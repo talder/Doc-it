@@ -4,6 +4,7 @@ import path from "path";
 import { requireSpaceRole } from "@/lib/permissions";
 import { getCategoryDir, getArchiveCategoryDir, ensureDir } from "@/lib/config";
 import { auditLog } from "@/lib/audit";
+import { invalidateSpaceCache } from "@/lib/space-cache";
 
 type Params = { params: Promise<{ slug: string; name: string }> };
 
@@ -36,6 +37,7 @@ export async function POST(request: NextRequest, { params }: Params) {
 
   await ensureDir(destDir);
   await fs.rename(srcPath, destPath);
+  invalidateSpaceCache(slug);
 
   auditLog(request, { event: "document.unarchive", outcome: "success", actor: unarchiver.username, spaceSlug: slug, resource: `${category}/${name}`, resourceType: "document" });
   return NextResponse.json({ success: true });

@@ -63,7 +63,7 @@ export default function CreateDocModal({
   const selectedLabel = categories.find((c) => c.path === category)?.name || category;
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal-container" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2 className="modal-title">Create a new document</h2>

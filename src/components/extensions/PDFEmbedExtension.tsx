@@ -2,7 +2,7 @@
 
 import { Node, mergeAttributes } from "@tiptap/core";
 import { ReactNodeViewRenderer, NodeViewWrapper } from "@tiptap/react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { FileText, Eye, EyeOff, ExternalLink, Download, Trash2 } from "lucide-react";
 
 // ─── PDF Attrs ────────────────────────────────────────────────────────────────
@@ -25,26 +25,38 @@ function PDFEmbedNodeView({ node, deleteNode }: { node: { attrs: PDFEmbedAttrs }
   const [showPreview, setShowPreview] = useState(false);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Ref so we can revoke on unmount without blobUrl being a dep (avoids
+  // premature revocation when the state update re-triggers the effect cleanup).
+  const blobUrlRef = useRef<string | null>(null);
 
-  // Pre-fetch PDF as blob URL when preview is opened (iframes can't send cookies)
+  // Pre-fetch PDF as blob URL when preview is opened.
+  // Always re-type as application/pdf so the browser invokes the PDF viewer
+  // regardless of what Content-Type the server sent.
   useEffect(() => {
     if (!showPreview) return;
-    if (blobUrl) return;
-    let revoke: string | null = null;
+    if (blobUrlRef.current) { setBlobUrl(blobUrlRef.current); return; }
+    let cancelled = false;
     fetch(pdfUrl, { credentials: "same-origin" })
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.blob();
+        return r.arrayBuffer();
       })
-      .then((blob) => {
-        revoke = URL.createObjectURL(blob);
-        setBlobUrl(revoke);
+      .then((buf) => {
+        if (cancelled) return;
+        const blob = new Blob([buf], { type: "application/pdf" });
+        const url = URL.createObjectURL(blob);
+        blobUrlRef.current = url;
+        setBlobUrl(url);
       })
-      .catch((e) => setError(String(e)));
-    return () => {
-      if (revoke) URL.revokeObjectURL(revoke);
-    };
-  }, [showPreview, pdfUrl, blobUrl]);
+      .catch((e) => { if (!cancelled) setError(String(e)); });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showPreview, pdfUrl]);
+
+  // Revoke blob URL only when component unmounts
+  useEffect(() => {
+    return () => { if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current); };
+  }, []);
 
   return (
     <NodeViewWrapper className="pdf-embed-wrapper" data-drag-handle="">
@@ -102,7 +114,17 @@ function PDFEmbedNodeView({ node, deleteNode }: { node: { attrs: PDFEmbedAttrs }
           ) : !blobUrl ? (
             <div className="pdf-embed-loading">Loading PDF…</div>
           ) : (
-            <iframe src={blobUrl} className="pdf-embed-iframe" title={originalName || filename} />
+          <object
+            data={blobUrl}
+            type="application/pdf"
+            className="pdf-embed-iframe"
+            aria-label={originalName || filename}
+          >
+            <div className="pdf-embed-error">
+              PDF preview not supported in this browser.{" "}
+              <a href={blobUrl || "#"} download={originalName || filename} style={{ color: "inherit", textDecoration: "underline" }}>Download instead</a>
+            </div>
+          </object>
           )}
         </div>
       )}

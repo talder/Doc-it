@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getCurrentSanitizedUser, hasUsers } from "@/lib/auth";
+import { getCurrentUser, sanitizeUser, hasUsers } from "@/lib/auth";
+import { getDashboardRole } from "@/lib/dashboard-access";
 
 export async function GET() {
   const usersExist = await hasUsers();
@@ -8,10 +9,12 @@ export async function GET() {
     return NextResponse.json({ needsSetup: true });
   }
 
-  const user = await getCurrentSanitizedUser();
-  if (!user) {
+  const fullUser = await getCurrentUser();
+  if (!fullUser) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  return NextResponse.json({ user });
+  const dashboardRole = await getDashboardRole(fullUser);
+
+  return NextResponse.json({ user: sanitizeUser(fullUser), dashboardRole });
 }

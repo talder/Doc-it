@@ -50,22 +50,3 @@ export async function sendMail(
     return false;
   }
 }
-
-export async function notifyAdminNewUser(
-  username: string,
-  email: string
-): Promise<boolean> {
-  const cfg = await getSmtpConfig();
-  if (!cfg.adminEmail) return false;
-
-  return sendMail(
-    cfg.adminEmail,
-    `[Doc-it] New user registration: ${username}`,
-    `<p>A new user has registered on Doc-it:</p>
-     <ul>
-       <li><strong>Username:</strong> ${username}</li>
-       <li><strong>Email:</strong> ${email || "(not provided)"}</li>
-     </ul>
-     <p>Please assign them to a space in the admin panel.</p>`
-  );
-}

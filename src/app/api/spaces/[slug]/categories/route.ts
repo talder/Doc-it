@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import { requireSpaceRole } from "@/lib/permissions";
 import { getSpaceDir, ensureDir } from "@/lib/config";
+import { invalidateSpaceCache } from "@/lib/space-cache";
 import type { Category } from "@/lib/types";
 
 const EXCLUDED = ["attachments", ".git", ".DS_Store", ".databases"];
@@ -89,6 +90,7 @@ export async function POST(request: NextRequest, { params }: Params) {
   }
 
   await ensureDir(catDir);
+  invalidateSpaceCache(slug);
   const catPath = parent ? `${parent}/${safeName}` : safeName;
 
   return NextResponse.json({ name: safeName, path: catPath }, { status: 201 });

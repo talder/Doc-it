@@ -91,7 +91,7 @@ export default function UrlInputModal({
   const canUpload = showFileUpload && onFileUpload;
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal-container" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div className="flex items-center gap-2">

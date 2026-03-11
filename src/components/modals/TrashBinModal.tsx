@@ -71,7 +71,7 @@ export default function TrashBinModal({ isOpen, spaceSlug, onClose, onRestored }
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div
         className="bg-surface rounded-xl shadow-xl border border-border w-full max-w-lg"
         onClick={(e) => e.stopPropagation()}

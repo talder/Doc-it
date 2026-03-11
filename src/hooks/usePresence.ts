@@ -43,7 +43,7 @@ export function usePresence({
   // POST helper
   const sendAction = useCallback(
     (action: "join" | "leave" | "heartbeat") => {
-      if (!presenceUrl || !category === undefined) return;
+      if (!presenceUrl || category === undefined) return;
       fetch(presenceUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

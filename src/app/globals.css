@@ -571,7 +571,43 @@ body {
 }
 
 .tiptap-editor .ProseMirror ul { list-style: disc; }
-.tiptap-editor .ProseMirror ol { list-style: decimal; }
+
+/* Hierarchical numbered list: 1  →  1.1  →  1.1.1 */
+.tiptap-editor .ProseMirror ol {
+  list-style: none;
+  counter-reset: ol-counter;
+}
+
+.tiptap-editor .ProseMirror ol > li {
+  counter-increment: ol-counter;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+
+/* Counter sits outside the editable <p> as a flex sibling */
+.tiptap-editor .ProseMirror ol > li::before {
+  content: counters(ol-counter, ".") ". ";
+  flex-shrink: 0;
+  margin-right: 0.15em;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* First paragraph takes the remaining row space */
+.tiptap-editor .ProseMirror ol > li > p:first-child {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+/* Additional paragraphs and nested lists each get their own full-width row */
+.tiptap-editor .ProseMirror ol > li > p:not(:first-child),
+.tiptap-editor .ProseMirror ol > li > ol,
+.tiptap-editor .ProseMirror ol > li > ul {
+  flex-basis: 100%;
+  margin-top: 0;
+}
 
 .tiptap-editor .ProseMirror blockquote {
   border-left: 3px solid var(--color-blockquote-border);
@@ -620,6 +656,7 @@ body {
   border-collapse: collapse;
   width: 100%;
   margin: 1em 0;
+  table-layout: fixed;
 }
 
 .tiptap-editor .ProseMirror th,
@@ -627,6 +664,7 @@ body {
   border: 1px solid var(--color-table-border);
   padding: 0.5em 0.75em;
   text-align: left;
+  word-break: break-word;
 }
 
 .tiptap-editor .ProseMirror th {
@@ -653,9 +691,10 @@ body {
   bottom: 0;
   width: 4px;
   background: var(--color-accent);
-  pointer-events: none;
   border-radius: 2px;
   opacity: 0.7;
+  cursor: col-resize;
+  z-index: 5;
 }
 
 /* Resize cursor state */
@@ -680,66 +719,144 @@ body {
   background-color: var(--color-muted);
 }
 
-/* ── Table toolbar (fixed above focused table) ─────────────────────────── */
-.table-toolbar {
+/* ── Column tabs (sit just above each column header cell) ──────────────── */
+.table-col-tab {
   position: fixed;
-  z-index: 200;
+  transform: translateX(-50%);
+  user-select: none;
+  z-index: 201;
+}
+
+.table-col-tab-btn {
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 3px 5px;
+  justify-content: center;
+  width: 22px;
+  height: 18px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 7px;
-  box-shadow: 0 2px 10px var(--color-shadow);
-  overflow-x: auto;
-  white-space: nowrap;
-  animation: fadeInPreview 0.1s ease;
-}
-
-.table-toolbar-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2px 7px;
-  height: 26px;
-  font-size: 0.72rem;
-  font-weight: 500;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--color-text-secondary);
+  border-radius: 4px 4px 0 0;
+  box-shadow: 0 -1px 4px var(--color-shadow);
+  color: var(--color-text-muted);
+  font-size: 0.65rem;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-  white-space: nowrap;
-  flex-shrink: 0;
+  transition: background 0.1s, color 0.1s;
+  padding: 0;
 }
 
-.table-toolbar-btn:hover {
+.table-col-tab-btn:hover,
+.table-col-tab-btn:focus-visible {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+  outline: none;
+}
+
+.table-col-dropdown {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 190px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px var(--color-shadow);
+  padding: 4px;
+  animation: fadeInPreview 0.1s ease;
+  z-index: 202;
+}
+
+/* ── Table options tab + dropdown (sits below focused table) ──────────── */
+.table-tab {
+  position: fixed;
+  transform: translateX(-50%);
+  user-select: none;
+  z-index: 201;
+}
+
+.table-tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 11px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  box-shadow: 0 2px 8px var(--color-shadow);
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.12s, background 0.12s;
+}
+
+.table-tab-btn:hover {
   background: var(--color-muted);
   color: var(--color-text-primary);
 }
 
-.table-toolbar-btn.active {
-  background: var(--color-accent-light);
-  color: var(--color-accent-text);
-  font-weight: 600;
+.table-tab-dropdown {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 200px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px var(--color-shadow);
+  padding: 4px;
+  animation: fadeInPreview 0.1s ease;
+  z-index: 202;
 }
 
-.table-toolbar-btn.danger {
+.table-tab-section {
+  padding: 4px 10px 2px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+}
+
+.table-tab-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 5px 10px;
+  border: none;
+  background: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.8125rem;
+  color: var(--color-text-primary);
+  text-align: left;
+  white-space: nowrap;
+  transition: background 0.1s;
+}
+
+.table-tab-item:hover {
+  background: var(--color-muted);
+}
+
+.table-tab-item.danger {
   color: #ef4444;
 }
 
-.table-toolbar-btn.danger:hover {
+.table-tab-item.danger:hover {
   background: rgba(239, 68, 68, 0.1);
 }
 
-.table-toolbar-sep {
-  width: 1px;
-  height: 18px;
-  background: var(--color-border);
-  margin: 0 2px;
-  flex-shrink: 0;
+.table-tab-item.check {
+  color: var(--color-accent);
+}
+
+.table-tab-sep {
+  height: 1px;
+  background: var(--color-border-light, var(--color-border));
+  margin: 3px 4px;
 }
 
 /* ── Cell background color picker bubble ──────────────────────────────── */
@@ -3058,95 +3175,78 @@ select.modal-input {
   background: var(--color-muted);
 }
 
-/* === Collapsible Bullet Lists (Logseq-style) === */
-
-/* Make list items with nested lists show a caret instead of the default bullet */
-.tiptap-editor .ProseMirror ul > li,
-.tiptap-editor .ProseMirror ol > li {
-  position: relative;
+/* === Collapsible Block === */
+.collapsible-block {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  margin: 0.75rem 0;
+  overflow: hidden;
 }
 
-/* Caret indicator for collapsible items (items with nested lists) */
-.tiptap-editor .ProseMirror ul:not([data-type="taskList"]) > li:has(> ul),
-.tiptap-editor .ProseMirror ul:not([data-type="taskList"]) > li:has(> ol),
-.tiptap-editor .ProseMirror ol > li:has(> ul),
-.tiptap-editor .ProseMirror ol > li:has(> ol) {
-  list-style: none;
+.collapsible-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--color-muted);
+  user-select: none;
+}
+
+.collapsible-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: none;
+  padding: 0;
   cursor: pointer;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+  border-radius: 4px;
+  transition: background 0.12s, color 0.12s;
 }
 
-/* Triangle caret for collapsible items */
-.tiptap-editor .ProseMirror ul:not([data-type="taskList"]) > li:has(> ul)::before,
-.tiptap-editor .ProseMirror ul:not([data-type="taskList"]) > li:has(> ol)::before,
-.tiptap-editor .ProseMirror ol > li:has(> ul)::before,
-.tiptap-editor .ProseMirror ol > li:has(> ol)::before {
-  content: '';
-  position: absolute;
-  left: -1.2em;
-  top: 0.65em;
-  width: 0;
-  height: 0;
-  border-left: 5px solid var(--color-text-muted);
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
+.collapsible-toggle:hover {
+  background: var(--color-muted-hover);
+  color: var(--color-text-primary);
+}
+
+.collapsible-toggle svg {
   transition: transform 0.15s ease;
+  transform: rotate(0deg);
+}
+
+.collapsible-toggle.open svg {
   transform: rotate(90deg);
-  transform-origin: 2px 4px;
 }
 
-/* Rotated caret when collapsed */
-.tiptap-editor .ProseMirror li[data-collapsed="true"]::before {
-  transform: rotate(0deg) !important;
+.collapsible-title {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  outline: none;
+  padding: 0;
+  min-width: 0;
+  cursor: text;
 }
 
-/* Hide nested lists when collapsed */
-.tiptap-editor .ProseMirror li[data-collapsed="true"] > ul,
-.tiptap-editor .ProseMirror li[data-collapsed="true"] > ol {
-  display: none;
+.collapsible-title:read-only {
+  cursor: default;
 }
 
-/* === Logseq-style bow connectors === */
-/* Vertical line from parent to last child */
-.tiptap-editor .ProseMirror ul:not([data-type="taskList"]) ul,
-.tiptap-editor .ProseMirror ul:not([data-type="taskList"]) ol,
-.tiptap-editor .ProseMirror ol ul,
-.tiptap-editor .ProseMirror ol ol {
-  position: relative;
+.collapsible-title::placeholder {
+  color: var(--color-text-muted);
+  font-weight: 400;
 }
 
-/* Vertical connector line */
-.tiptap-editor .ProseMirror ul:not([data-type="taskList"]) ul::before,
-.tiptap-editor .ProseMirror ul:not([data-type="taskList"]) ol::before,
-.tiptap-editor .ProseMirror ol ul::before,
-.tiptap-editor .ProseMirror ol ol::before {
-  content: '';
-  position: absolute;
-  left: -0.7em;
-  top: 0;
-  bottom: 0.9em;
-  width: 1px;
-  background: var(--color-border);
-}
-
-/* Horizontal connector to each child item */
-.tiptap-editor .ProseMirror ul:not([data-type="taskList"]) ul > li,
-.tiptap-editor .ProseMirror ul:not([data-type="taskList"]) ol > li,
-.tiptap-editor .ProseMirror ol ul > li,
-.tiptap-editor .ProseMirror ol ol > li {
-  position: relative;
-}
-
-.tiptap-editor .ProseMirror ul:not([data-type="taskList"]) ul > li::after,
-.tiptap-editor .ProseMirror ul:not([data-type="taskList"]) ol > li::after,
-.tiptap-editor .ProseMirror ol ul > li::after,
-.tiptap-editor .ProseMirror ol ol > li::after {
-  content: '';
-  position: absolute;
-  left: -0.7em;
-  top: 0.85em;
-  width: 0.5em;
-  height: 1px;
-  background: var(--color-border);
+.collapsible-body {
+  padding: 4px 12px 4px;
+  border-top: 1px solid var(--color-border);
 }
 
 /* === Link popover (cursor-in-link BubbleMenu) === */
@@ -3326,6 +3426,36 @@ select.modal-input {
   --color-chip-time-bg: #fffbeb;
   --color-chip-boolean: #15803d;
   --color-chip-boolean-bg: #f0fdf4;
+  --color-chip-ip: #c2410c;
+  --color-chip-ip-bg: #fff7ed;
+  --color-chip-mac: #a21caf;
+  --color-chip-mac-bg: #fdf4ff;
+  --color-chip-markdown: #4d7c0f;
+  --color-chip-markdown-bg: #f7fee7;
+  --color-chip-phone: #be123c;
+  --color-chip-phone-bg: #fff1f2;
+  --color-chip-color: #db2777;
+  --color-chip-color-bg: #fdf2f8;
+  --color-chip-currency: #92400e;
+  --color-chip-currency-bg: #fef3c7;
+  --color-chip-rating: #f97316;
+  --color-chip-rating-bg: #fff7ed;
+  --color-chip-version: #52525b;
+  --color-chip-version-bg: #f4f4f5;
+  --color-chip-duration: #0c4a6e;
+  --color-chip-duration-bg: #e0f2fe;
+  --color-chip-iban: #1e3a8a;
+  --color-chip-iban-bg: #dbeafe;
+  --color-chip-vat_be: #78350f;
+  --color-chip-vat_be-bg: #fffbeb;
+  --color-chip-address: #44403c;
+  --color-chip-address-bg: #fafaf9;
+  --color-chip-users: #065f46;
+  --color-chip-users-bg: #ecfdf5;
+  --color-chip-qr: #18181b;
+  --color-chip-qr-bg: #f4f4f5;
+  --color-chip-signature: #312e81;
+  --color-chip-signature-bg: #eef2ff;
 }
 
 [data-theme="dark"] {
@@ -3359,6 +3489,36 @@ select.modal-input {
   --color-chip-time-bg: #451a03;
   --color-chip-boolean: #4ade80;
   --color-chip-boolean-bg: #052e16;
+  --color-chip-ip: #fb923c;
+  --color-chip-ip-bg: #431407;
+  --color-chip-mac: #e879f9;
+  --color-chip-mac-bg: #4a044e;
+  --color-chip-markdown: #a3e635;
+  --color-chip-markdown-bg: #1a2c05;
+  --color-chip-phone: #fb7185;
+  --color-chip-phone-bg: #4c0519;
+  --color-chip-color: #f472b6;
+  --color-chip-color-bg: #500724;
+  --color-chip-currency: #fcd34d;
+  --color-chip-currency-bg: #451a03;
+  --color-chip-rating: #fdba74;
+  --color-chip-rating-bg: #3d1800;
+  --color-chip-version: #a1a1aa;
+  --color-chip-version-bg: #18181b;
+  --color-chip-duration: #7dd3fc;
+  --color-chip-duration-bg: #082040;
+  --color-chip-iban: #93c5fd;
+  --color-chip-iban-bg: #0f1f4a;
+  --color-chip-vat_be: #fed7aa;
+  --color-chip-vat_be-bg: #3d1a00;
+  --color-chip-address: #a8a29e;
+  --color-chip-address-bg: #1c1917;
+  --color-chip-users: #6ee7b7;
+  --color-chip-users-bg: #022c22;
+  --color-chip-qr: #d4d4d8;
+  --color-chip-qr-bg: #18181b;
+  --color-chip-signature: #a5b4fc;
+  --color-chip-signature-bg: #1e1b4b;
 }
 
 [data-theme="dracula"] {
@@ -3392,9 +3552,39 @@ select.modal-input {
   --color-chip-time-bg: #3d2b0a;
   --color-chip-boolean: #50fa7b;
   --color-chip-boolean-bg: #0a2512;
+  --color-chip-ip: #ff5555;
+  --color-chip-ip-bg: #2d1010;
+  --color-chip-mac: #bd93f9;
+  --color-chip-mac-bg: #2b1a45;
+  --color-chip-markdown: #f1fa8c;
+  --color-chip-markdown-bg: #2a2d0a;
+  --color-chip-phone: #ff6e6e;
+  --color-chip-phone-bg: #380d0d;
+  --color-chip-color: #ffb8d1;
+  --color-chip-color-bg: #3d0020;
+  --color-chip-currency: #ffdd57;
+  --color-chip-currency-bg: #2d2900;
+  --color-chip-rating: #ffa500;
+  --color-chip-rating-bg: #3d2000;
+  --color-chip-version: #9da5a4;
+  --color-chip-version-bg: #252830;
+  --color-chip-duration: #80d9fb;
+  --color-chip-duration-bg: #0a1d30;
+  --color-chip-iban: #74b9ff;
+  --color-chip-iban-bg: #0a1535;
+  --color-chip-vat_be: #ffd166;
+  --color-chip-vat_be-bg: #2d2100;
+  --color-chip-address: #bfbfbf;
+  --color-chip-address-bg: #222222;
+  --color-chip-users: #69ff47;
+  --color-chip-users-bg: #0d2200;
+  --color-chip-qr: #f8f8f2;
+  --color-chip-qr-bg: #282a36;
+  --color-chip-signature: #d6acff;
+  --color-chip-signature-bg: #1e1635;
 }
 
-/* ── Template action button (sidebar) ──────── */
+/* ── Template action button
 .bg-tpl-action   { background-color: var(--color-tpl-action) !important; }
 .hover\:bg-tpl-action-hover:hover { background-color: var(--color-tpl-action-hover) !important; }
 
@@ -3553,6 +3743,21 @@ select.modal-input {
 .template-chip.template-chip-date       { background: var(--color-chip-date-bg);         color: var(--color-chip-date); }
 .template-chip.template-chip-time       { background: var(--color-chip-time-bg);         color: var(--color-chip-time); }
 .template-chip.template-chip-boolean    { background: var(--color-chip-boolean-bg);      color: var(--color-chip-boolean); }
+.template-chip.template-chip-ip         { background: var(--color-chip-ip-bg);            color: var(--color-chip-ip); }
+.template-chip.template-chip-mac        { background: var(--color-chip-mac-bg);           color: var(--color-chip-mac); }
+.template-chip.template-chip-markdown   { background: var(--color-chip-markdown-bg);      color: var(--color-chip-markdown); }
+.template-chip.template-chip-phone      { background: var(--color-chip-phone-bg);         color: var(--color-chip-phone); }
+.template-chip.template-chip-color      { background: var(--color-chip-color-bg);          color: var(--color-chip-color); }
+.template-chip.template-chip-currency   { background: var(--color-chip-currency-bg);       color: var(--color-chip-currency); }
+.template-chip.template-chip-rating     { background: var(--color-chip-rating-bg);          color: var(--color-chip-rating); }
+.template-chip.template-chip-version    { background: var(--color-chip-version-bg);         color: var(--color-chip-version); }
+.template-chip.template-chip-duration   { background: var(--color-chip-duration-bg);        color: var(--color-chip-duration); }
+.template-chip.template-chip-iban       { background: var(--color-chip-iban-bg);            color: var(--color-chip-iban); }
+.template-chip.template-chip-vat_be     { background: var(--color-chip-vat_be-bg);          color: var(--color-chip-vat_be); }
+.template-chip.template-chip-address    { background: var(--color-chip-address-bg);         color: var(--color-chip-address); }
+.template-chip.template-chip-users      { background: var(--color-chip-users-bg);           color: var(--color-chip-users); }
+.template-chip.template-chip-qr         { background: var(--color-chip-qr-bg);              color: var(--color-chip-qr); }
+.template-chip.template-chip-signature  { background: var(--color-chip-signature-bg);       color: var(--color-chip-signature); }
 
 .template-chip-prefix {
   font-weight: 700;
@@ -3648,18 +3853,128 @@ textarea.modal-input {
 .tpl-form-fields {
   border: 1px solid var(--color-tpl-hover);
   border-radius: 8px;
-  padding: 12px;
+  padding: 14px;
   background: var(--color-tpl-light);
-  margin-bottom: 4px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
 }
 
 .tpl-form-fields-title {
+  grid-column: 1 / -1;
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--color-tpl-text);
-  margin-bottom: 10px;
+  margin-bottom: 0;
+}
+
+/* Full-width field inside the 2-column grid */
+.tpl-field-wide {
+  grid-column: 1 / -1;
+}
+
+/* Sticky footer for the template fill form */
+.tpl-form-footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--color-border);
+  padding: 14px 24px !important;
+  padding-top: 14px !important;
+}
+
+.tpl-field-hint {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  margin-top: 3px;
+  font-family: ui-monospace, 'Fira Mono', monospace;
+}
+
+.tpl-field-error {
+  font-size: 0.72rem;
+  color: #dc2626;
+  margin-top: 3px;
+}
+
+.modal-input.input-invalid {
+  border-color: #dc2626;
+  outline-color: #dc2626;
+}
+
+.modal-input.input-valid {
+  border-color: #16a34a;
+}
+
+/* ── Mini Markdown Editor (template form field) ─── */
+.mini-md-editor {
+  display: flex;
+  flex-direction: column;
+  border: 1.5px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
+.mini-md-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 4px 6px;
+  background: var(--color-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.mini-md-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 24px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  flex-shrink: 0;
+}
+
+.mini-md-toolbar button:hover {
+  background: var(--color-border);
+  color: var(--color-text-primary);
+}
+
+.mini-md-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--color-border);
+  margin: 0 3px;
+  flex-shrink: 0;
+}
+
+.mini-md-textarea {
+  border: none !important;
+  border-radius: 0 !important;
+  resize: vertical;
+  min-height: 120px;
+  font-family: ui-monospace, 'Fira Mono', monospace;
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.mini-md-textarea:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.mini-md-editor:focus-within {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 20%, transparent);
 }
 
 /* ── Create doc tabs ─────────────────────── */

@@ -4,6 +4,7 @@ import path from "path";
 import { requireSpaceRole } from "@/lib/permissions";
 import { ensureDir, readJsonConfig, getTrashDir, getCategoryDir } from "@/lib/config";
 import { auditLog } from "@/lib/audit";
+import { invalidateSpaceCache } from "@/lib/space-cache";
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -131,6 +132,7 @@ export async function POST(request: NextRequest, { params }: Params) {
     }
     manifest.items.splice(idx, 1);
     await writeManifest(slug, manifest);
+    invalidateSpaceCache(slug);
     auditLog(request, { event: "document.unarchive", outcome: "success", actor: user.username, spaceSlug: slug, resource: `${item.category}/${item.name}`, resourceType: "document", details: { action: "restore-from-trash" } });
     return NextResponse.json({ success: true });
   }

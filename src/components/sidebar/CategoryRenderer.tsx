@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { ChevronRight, ChevronDown, Folder, FolderOpen, FileText, FilePlus, FolderPlus, Pencil, Trash2, ArrowRight, LayoutTemplate, Download, Upload, Smile, Palette, X, Star } from "lucide-react";
+import { ChevronRight, ChevronDown, Folder, FolderOpen, FileText, FilePlus, FolderPlus, Pencil, Trash2, Archive, ArrowRight, LayoutTemplate, Download, Upload, Smile, Palette, X, Star } from "lucide-react";
 import ContextMenu from "@/components/ContextMenu";
 import type { Category, DocFile, SpaceCustomization, FavoriteItem } from "@/lib/types";
 import Picker from "@emoji-mart/react";
@@ -27,6 +27,7 @@ interface CategoryRendererProps {
   onNewSubcategory: (parent: string) => void;
   onRenameCategory: (path: string) => void;
   onDeleteCategory: (path: string) => void;
+  onArchiveCategory?: (path: string) => void;
   onEditDoc: (doc: DocFile) => void;
   onDeleteDoc: (doc: DocFile) => void;
   onMoveDoc: (doc: DocFile) => void;
@@ -59,6 +60,7 @@ export default function CategoryRenderer({
   onNewSubcategory,
   onRenameCategory,
   onDeleteCategory,
+  onArchiveCategory,
   onEditDoc,
   onDeleteDoc,
   onMoveDoc,
@@ -159,6 +161,9 @@ export default function CategoryRenderer({
           ? [{ label: "Import Template", icon: <Upload className="w-4 h-4" />, onClick: () => onImportTemplate(category.path), divider: true }]
           : []),
         { label: "Rename", icon: <Pencil className="w-4 h-4" />, onClick: () => onRenameCategory(category.path), divider: !isTplCategory && !onSetCategoryColor },
+        ...(!isTplCategory && onArchiveCategory
+          ? [{ label: "Archive", icon: <Archive className="w-4 h-4" />, onClick: () => onArchiveCategory(category.path) }]
+          : []),
         { label: "Delete", icon: <Trash2 className="w-4 h-4" />, onClick: () => onDeleteCategory(category.path), variant: "destructive" as const },
       ]
     : [];
@@ -278,6 +283,7 @@ export default function CategoryRenderer({
               onNewSubcategory={onNewSubcategory}
               onRenameCategory={onRenameCategory}
               onDeleteCategory={onDeleteCategory}
+              onArchiveCategory={onArchiveCategory}
               onEditDoc={onEditDoc}
               onDeleteDoc={onDeleteDoc}
               onMoveDoc={onMoveDoc}

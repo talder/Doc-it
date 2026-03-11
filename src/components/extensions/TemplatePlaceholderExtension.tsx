@@ -17,6 +17,21 @@ const TYPE_PREFIX: Record<string, string> = {
   date:        "D",
   time:        "⏱",
   boolean:     "✓",
+  ip:          "IP",
+  mac:         "MAC",
+  markdown:    "Md",
+  phone:       "☎",
+  color:       "Clr",
+  currency:    "¤",
+  rating:      "★",
+  version:     "v",
+  duration:    "Dur",
+  iban:        "IBAN",
+  vat_be:      "VAT",
+  address:     "⌂",
+  users:       "Usr",
+  qr:          "QR",
+  signature:   "✍",
 };
 
 function TemplatePlaceholderView({

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUsers, writeUsers, hashPassword, createSession, getSessionCookieName } from "@/lib/auth";
-import { notifyAdminNewUser } from "@/lib/email";
+import { notifyAdminsOfNewUser } from "@/lib/notifications";
 import { auditLog } from "@/lib/audit";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { isPasswordValid, validatePassword } from "@/lib/password-policy";
@@ -42,8 +42,8 @@ export async function POST(request: NextRequest) {
     users.push(newUser);
     await writeUsers(users);
 
-    // Notify admin (fire and forget)
-    notifyAdminNewUser(username, email || "").catch(() => {});
+    // Notify all admins (in-app + email, fire-and-forget)
+    notifyAdminsOfNewUser(username, email || "", "local").catch(() => {});
 
     // Log the user in immediately
     const sessionId = await createSession(username);

@@ -31,8 +31,9 @@ interface SidebarProps {
   onSelectDoc: (doc: DocFile) => void;
   onNewDoc: (category?: string) => void;
   onNewCategory: (parent?: string) => void;
-  onRenameCategory: (path: string) => void;
   onDeleteCategory: (path: string) => void;
+  onArchiveCategory?: (path: string) => void;
+  onRenameCategory: (path: string) => void;
   onEditDoc: (doc: DocFile) => void;
   onDeleteDoc: (doc: DocFile) => void;
   onMoveDoc: (doc: DocFile) => void;
@@ -73,6 +74,7 @@ export default function Sidebar({
   onNewCategory,
   onRenameCategory,
   onDeleteCategory,
+  onArchiveCategory,
   onEditDoc,
   onDeleteDoc,
   onMoveDoc,
@@ -422,26 +424,27 @@ export default function Sidebar({
                       onSelectDoc={onSelectDoc}
                       onNewDoc={onNewDoc}
                       onNewSubcategory={onNewCategory}
-                      onRenameCategory={onRenameCategory}
-                      onDeleteCategory={onDeleteCategory}
-                      onEditDoc={onEditDoc}
-                      onDeleteDoc={onDeleteDoc}
-                      onMoveDoc={onMoveDoc}
-                      onExportTemplate={onExportTemplate}
-                      onImportTemplate={() => importInputRef.current?.click()}
-                      onNewTemplate={(cat) => onNewTemplate?.(cat)}
-                      canWrite={canWrite}
-                      customization={customization}
-                      docStatusMap={docStatusMap}
-                      onSetDocIcon={onSetDocIcon}
-                      onSetDocColor={onSetDocColor}
-                      onSetCategoryIcon={onSetCategoryIcon}
-                      onSetCategoryColor={onSetCategoryColor}
-                      favorites={favorites}
-                      spaceSlug={currentSpaceSlug}
-                      spaceName={currentSpaceName}
-                      onToggleFavorite={onToggleFavorite}
-                    />
+                  onRenameCategory={onRenameCategory}
+                  onDeleteCategory={onDeleteCategory}
+                  onArchiveCategory={onArchiveCategory}
+                  onEditDoc={onEditDoc}
+                  onDeleteDoc={onDeleteDoc}
+                  onMoveDoc={onMoveDoc}
+                  onExportTemplate={onExportTemplate}
+                  onImportTemplate={() => importInputRef.current?.click()}
+                  onNewTemplate={(cat) => onNewTemplate?.(cat)}
+                  canWrite={canWrite}
+                  customization={customization}
+                  docStatusMap={docStatusMap}
+                  onSetDocIcon={onSetDocIcon}
+                  onSetDocColor={onSetDocColor}
+                  onSetCategoryIcon={onSetCategoryIcon}
+                  onSetCategoryColor={onSetCategoryColor}
+                  favorites={favorites}
+                  spaceSlug={currentSpaceSlug}
+                  spaceName={currentSpaceName}
+                  onToggleFavorite={onToggleFavorite}
+                />
                   ))}
 
                   {/* Uncategorized docs */}

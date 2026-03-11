@@ -50,7 +50,7 @@ export default function JournalQuickEntry({ isOpen, onClose, onSave, templates, 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="jqe-card" onClick={(e) => e.stopPropagation()}>
         <div className="jqe-header">
           <h2 className="text-base font-semibold text-text-primary">

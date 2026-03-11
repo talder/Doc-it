@@ -48,6 +48,7 @@ const ALL_THEMES_OPTIONS = [...LIGHT_THEMES_OPTIONS, ...DARK_THEMES_OPTIONS];
 
 export interface AppNotification {
   id: string;
+  type?: string;
   message: string;
   docName: string;
   category: string;
@@ -465,16 +466,26 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
               {notifications.length === 0 ? (
                 <div className="notif-empty">No notifications</div>
               ) : (
-                notifications.map((n) => (
+              notifications.map((n) => (
                   <div key={n.id} className="notif-item">
-                    <FileText className="w-3.5 h-3.5 text-accent flex-shrink-0 mt-0.5" />
+                    {n.type === "new_user" ? (
+                      <User className="w-3.5 h-3.5 text-amber-500 flex-shrink-0 mt-0.5" />
+                    ) : (
+                      <FileText className="w-3.5 h-3.5 text-accent flex-shrink-0 mt-0.5" />
+                    )}
                     <div className="notif-item-body">
                       <span className="notif-item-msg">{n.message}</span>
                       <div className="notif-item-meta">
                         <span>{n.time}</span>
-                        <button className="notif-action-btn" onClick={() => { setNotifsOpen(false); onNotificationAction?.(n); }}>
-                          Edit Now
-                        </button>
+                        {n.type === "new_user" ? (
+                          <button className="notif-action-btn" onClick={() => { setNotifsOpen(false); router.push("/admin"); }}>
+                            Admin Panel
+                          </button>
+                        ) : (
+                          <button className="notif-action-btn" onClick={() => { setNotifsOpen(false); onNotificationAction?.(n); }}>
+                            Edit Now
+                          </button>
+                        )}
                       </div>
                     </div>
                     <button className="notif-dismiss-btn" onClick={() => onDismissNotification?.(n.id)} title="Dismiss">

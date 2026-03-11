@@ -13,6 +13,7 @@ import {
   writeCustomization,
 } from "@/lib/config";
 import { getUsers, writeUsers } from "@/lib/auth";
+import { invalidateSpaceCache } from "@/lib/space-cache";
 import type { FavoriteItem } from "@/lib/types";
 
 type Params = { params: Promise<{ slug: string; name: string }> };
@@ -207,6 +208,7 @@ export async function POST(request: NextRequest, { params }: Params) {
     // Non-fatal
   }
 
+  invalidateSpaceCache(slug);
   auditLog(request, { event: "document.rename", outcome: "success", actor: renamer.username, spaceSlug: slug, resource: `${category}/${name}`, resourceType: "document", details: { newName: safeName } });
   return NextResponse.json({ success: true, name: safeName });
 }

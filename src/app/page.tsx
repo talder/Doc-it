@@ -13,6 +13,7 @@ import CreateCategoryModal from "@/components/modals/CreateCategoryModal";
 import CreateDocModal from "@/components/modals/CreateDocModal";
 import RenameCategoryModal from "@/components/modals/RenameCategoryModal";
 import ConfirmModal from "@/components/modals/ConfirmModal";
+import DeleteCategoryModal from "@/components/modals/DeleteCategoryModal";
 import ArchiveModal from "@/components/modals/ArchiveModal";
 import HistoryModal from "@/components/modals/HistoryModal";
 import MoveDocModal from "@/components/modals/MoveDocModal";
@@ -22,7 +23,7 @@ import NewTemplateModal from "@/components/modals/NewTemplateModal";
 import DatabaseCreateModal from "@/components/modals/DatabaseCreateModal";
 import TrashBinModal from "@/components/modals/TrashBinModal";
 import DatabaseView from "@/components/database/DatabaseView";
-import type { Space, SanitizedUser, Category, DocFile, TagsIndex, TemplateInfo, DocStatusEntry, DocStatusMap, ReviewItem, SpaceCustomization, DocMetadata, DocClassification, FavoriteItem } from "@/lib/types";
+import type { Space, SanitizedUser, Category, DocFile, TagsIndex, TemplateInfo, DocStatusEntry, DocStatusMap, ReviewItem, SpaceCustomization, DocMetadata, DocClassification, FavoriteItem, DashboardRole } from "@/lib/types";
 import DocStatsFooter from "@/components/DocStatsFooter";
 import DocStatusPopover from "@/components/DocStatusPopover";
 import DocInfoPanel from "@/components/DocInfoPanel";
@@ -94,6 +95,7 @@ export default function Home() {
   const router = useRouter();
   const { setAccentColor, setFontSize } = useTheme();
   const [user, setUser] = useState<SanitizedUser | null>(null);
+  const [dashboardRole, setDashboardRole] = useState<DashboardRole>("none");
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [currentSpace, setCurrentSpace] = useState<Space | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -123,6 +125,9 @@ export default function Home() {
   const [renameCategoryName, setRenameCategoryName] = useState("");
   const [showDeleteCategoryModal, setShowDeleteCategoryModal] = useState(false);
   const [deleteCategoryPath, setDeleteCategoryPath] = useState("");
+  const [deleteCategoryName, setDeleteCategoryName] = useState("");
+  const [deleteCategoryDocCount, setDeleteCategoryDocCount] = useState(0);
+  const [deleteCategorySubCount, setDeleteCategorySubCount] = useState(0);
   const [showDeleteDocModal, setShowDeleteDocModal] = useState(false);
   const [deleteDocTarget, setDeleteDocTarget] = useState<DocFile | null>(null);
   const [showMoveDocModal, setShowMoveDocModal] = useState(false);
@@ -181,6 +186,10 @@ export default function Home() {
   // Search modal
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [searchInitialQuery, setSearchInitialQuery] = useState<string | undefined>();
+
+  // Unsaved changes guard
+  const [showUnsavedModal, setShowUnsavedModal] = useState(false);
+  const pendingNavRef = useRef<(() => void) | null>(null);
 
   // Global Cmd+K / Ctrl+K shortcut for search
   useEffect(() => {
@@ -266,11 +275,12 @@ export default function Home() {
   });
   const [showPresenceWarning, setShowPresenceWarning] = useState(false);
 
-  // Persistent notifications
-  const [notifications, setNotifications] = useState<{ id: string; message: string; docName: string; category: string; time: string }[]>([]);
-  const addNotification = useCallback((message: string, docName: string, category: string) => {
+  // Persistent notifications (Topbar bell)
+  const [notifications, setNotifications] = useState<{ id: string; type?: string; message: string; docName: string; category: string; time: string }[]>([]);
+  const addNotification = useCallback((message: string, docName: string, category: string, type?: string) => {
     setNotifications((prev) => [{
       id: `${Date.now()}-${Math.random()}`,
+      type,
       message,
       docName,
       category,
@@ -328,6 +338,7 @@ export default function Home() {
         if (data.needsSetup) { router.replace("/setup"); return; }
         if (!data.user) { router.replace("/login"); return; }
         setUser(data.user);
+        setDashboardRole(data.dashboardRole ?? "none");
       })
       .catch(() => router.replace("/login"));
   }, [router]);
@@ -345,6 +356,12 @@ export default function Home() {
   }, [user, currentSpace]);
 
   // Fetch all space sidebar data via the combined init endpoint (1 request vs 8)
+  const guardedNav = useCallback((action: () => void) => {
+    if (!isEditing) { action(); return; }
+    pendingNavRef.current = action;
+    setShowUnsavedModal(true);
+  }, [isEditing]);
+
   const fetchSpaceData = useCallback(async () => {
     if (!currentSpace) return;
     const slug = currentSpace.slug;
@@ -475,7 +492,7 @@ export default function Home() {
   }, [currentSpace, activeDoc]);
 
   // Check for server-side notifications on login
-  const [loginNotifs, setLoginNotifs] = useState<{ id: string; message: string; docName: string; category: string; spaceSlug: string; createdAt: string }[]>([]);
+  const [loginNotifs, setLoginNotifs] = useState<{ id: string; type?: string; message: string; docName: string; category: string; spaceSlug: string; createdAt: string }[]>([]);
   const [showLoginNotifsModal, setShowLoginNotifsModal] = useState(false);
 
   useEffect(() => {
@@ -487,6 +504,10 @@ export default function Home() {
         if (unread.length > 0) {
           setLoginNotifs(unread);
           setShowLoginNotifsModal(true);
+          // Also add to the Topbar bell so they stay visible after dismissing the modal
+          for (const n of unread) {
+            addNotification(n.message, n.docName ?? "", n.category ?? "", n.type);
+          }
           // Mark all as read
           fetch("/api/notifications", {
             method: "POST",
@@ -496,6 +517,7 @@ export default function Home() {
         }
       })
       .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   // Fetch review items across all accessible spaces
@@ -520,11 +542,11 @@ export default function Home() {
       const target = docs.find(
         (d) => d.name === docName && d.category === docCategory
       );
-      if (target) loadDoc(target);
+      if (target) guardedNav(() => loadDoc(target));
     };
     document.addEventListener("navigate:doc", handler);
     return () => document.removeEventListener("navigate:doc", handler);
-  }, [docs, loadDoc]);
+  }, [docs, loadDoc, guardedNav]);
 
   // Save (auto-save while editing) — stores latest content for revision on Done
   const handleSave = useCallback(async (content: string) => {
@@ -532,7 +554,9 @@ export default function Home() {
     // Key from the closure's activeDoc — NOT docKeyRef which may already point to a new doc
     const saveKey = `${currentSpace.slug}/${activeDoc.category}/${activeDoc.name}`;
     setSaveStatus("saving");
-    setLastSavedMarkdown(content);
+    // Guard against overwriting a newly-loaded doc's content if the user
+    // navigated away before this debounced save fired.
+    if (docKeyRef.current === saveKey) setLastSavedMarkdown(content);
     const saveRes = await fetch(`/api/spaces/${currentSpace.slug}/docs/${encodeURIComponent(activeDoc.name)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -700,7 +724,7 @@ export default function Home() {
     if (res.ok) {
       await fetchSpaceData();
       const newDoc = await res.json();
-      loadDoc({ name: newDoc.name, filename: newDoc.filename, category, space: currentSpace.slug, isTemplate: true });
+      await loadDoc({ name: newDoc.name, filename: newDoc.filename, category, space: currentSpace.slug, isTemplate: true });
       setIsEditing(true);
     }
   };
@@ -726,7 +750,7 @@ export default function Home() {
         body: JSON.stringify({ content, category }),
       });
       await fetchSpaceData();
-      loadDoc({ name: newDoc.name, filename: newDoc.filename, category, space: currentSpace.slug });
+      await loadDoc({ name: newDoc.name, filename: newDoc.filename, category, space: currentSpace.slug });
       setIsEditing(true);
     }
   };
@@ -734,7 +758,7 @@ export default function Home() {
   const handleExportTemplate = async (doc: DocFile) => {
     if (!currentSpace) return;
     const res = await fetch(
-      `/api/spaces/${currentSpace.slug}/templates/${encodeURIComponent(doc.name)}/export`
+      `/api/spaces/${currentSpace.slug}/templates/${encodeURIComponent(doc.name)}/export?category=${encodeURIComponent(doc.category)}`
     );
     if (!res.ok) return;
     const blob = await res.blob();
@@ -767,7 +791,7 @@ export default function Home() {
     if (res.ok) {
       await fetchSpaceData();
       const newDoc = await res.json();
-      loadDoc({ name: newDoc.name, filename: newDoc.filename, category, space: currentSpace.slug });
+      await loadDoc({ name: newDoc.name, filename: newDoc.filename, category, space: currentSpace.slug });
       setIsEditing(true);
     }
   };
@@ -808,7 +832,18 @@ export default function Home() {
 
   const handleDeleteCategory = (path: string) => {
     if (!currentSpace || !canWrite) return;
+    const cat = categories.find((c) => c.path === path);
+    // Count total docs recursively
+    const countDocs = (p: string): number => {
+      const direct = docs.filter((d) => d.category === p).length;
+      const subs = categories.filter((c) => c.parent === p);
+      return direct + subs.reduce((sum, s) => sum + countDocs(s.path), 0);
+    };
+    const directSubs = categories.filter((c) => c.parent === path).length;
     setDeleteCategoryPath(path);
+    setDeleteCategoryName(cat?.name || path.split("/").pop() || path);
+    setDeleteCategoryDocCount(countDocs(path));
+    setDeleteCategorySubCount(directSubs);
     setShowDeleteCategoryModal(true);
   };
 
@@ -817,6 +852,17 @@ export default function Home() {
     await fetch(`/api/spaces/${currentSpace.slug}/categories/${deleteCategoryPath}`, { method: "DELETE" });
     await fetchSpaceData();
     if (activeDoc && activeDoc.category.startsWith(deleteCategoryPath)) {
+      setActiveDoc(null);
+      setMarkdown("");
+    }
+  };
+
+  const handleConfirmArchiveCategory = async (path?: string) => {
+    if (!currentSpace) return;
+    const target = path ?? deleteCategoryPath;
+    await fetch(`/api/spaces/${currentSpace.slug}/categories/${target}`, { method: "POST" });
+    await fetchSpaceData();
+    if (activeDoc && activeDoc.category.startsWith(target)) {
       setActiveDoc(null);
       setMarkdown("");
     }
@@ -952,6 +998,27 @@ export default function Home() {
     editStartMarkdownRef.current = null;
   };
 
+  const handleUnsavedSave = async () => {
+    const fn = pendingNavRef.current;
+    pendingNavRef.current = null;
+    setShowUnsavedModal(false);
+    await handleToggleEdit();
+    fn?.();
+  };
+
+  const handleUnsavedDiscard = async () => {
+    const fn = pendingNavRef.current;
+    pendingNavRef.current = null;
+    setShowUnsavedModal(false);
+    await handleDiscard();
+    fn?.();
+  };
+
+  const handleUnsavedCancel = () => {
+    setShowUnsavedModal(false);
+    pendingNavRef.current = null;
+  };
+
   const handleEnterDistractionFree = () => {
     if (hasOtherEditors) { setShowPresenceWarning(true); return; }
     editStartMarkdownRef.current = lastSavedMarkdown ?? markdown;
@@ -1054,15 +1121,17 @@ export default function Home() {
   };
 
   const handleNavigateToReview = (item: ReviewItem) => {
-    if (item.spaceSlug !== currentSpace?.slug) {
-      handleSwitchSpace(item.spaceSlug);
-      setPendingDocLoad({ name: item.docName, category: item.category });
-    } else {
-      const target = docs.find(
-        (d) => d.name === item.docName && d.category === item.category
-      );
-      if (target) loadDoc(target);
-    }
+    guardedNav(() => {
+      if (item.spaceSlug !== currentSpace?.slug) {
+        handleSwitchSpace(item.spaceSlug);
+        setPendingDocLoad({ name: item.docName, category: item.category });
+      } else {
+        const target = docs.find(
+          (d) => d.name === item.docName && d.category === item.category
+        );
+        if (target) loadDoc(target);
+      }
+    });
   };
 
   // --- Page width ---
@@ -1164,7 +1233,7 @@ export default function Home() {
 
     if (matchingDocs.length === 1) {
       // Navigate directly to the single doc
-      loadDoc(matchingDocs[0]);
+      guardedNav(() => loadDoc(matchingDocs[0]));
     } else if (matchingDocs.length > 1) {
       // Select the tag to show docs in sidebar
       setSelectedTag(tagName);
@@ -1173,6 +1242,7 @@ export default function Home() {
 
   const [adminContacts, setAdminContacts] = useState<{ username: string; email: string }[]>([]);
   const [isReindexing, setIsReindexing] = useState(false);
+  const [reindexToastMsg, setReindexToastMsg] = useState<string | null>(null);
   const handleReindexTags = async () => {
     if (!currentSpace || isReindexing) return;
     setIsReindexing(true);
@@ -1181,6 +1251,12 @@ export default function Home() {
       if (res.ok) {
         const tags = await res.json();
         setTagsIndex(tags);
+        const count = Object.keys(tags).length;
+        setReindexToastMsg(`Tags reindexed — ${count} tag${count !== 1 ? "s" : ""} found`);
+        setTimeout(() => setReindexToastMsg(null), 3000);
+      } else {
+        setReindexToastMsg("Reindex failed");
+        setTimeout(() => setReindexToastMsg(null), 3000);
       }
     } finally {
       setIsReindexing(false);
@@ -1196,6 +1272,18 @@ export default function Home() {
         .catch(() => {});
     }
   }, [loading, user, spaces]);
+
+  // Warn on browser-level navigation (reload, tab close) while editing
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (!isEditing) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isEditing]);
 
   if (loading) {
     return <div className="flex items-center justify-center h-screen bg-surface-alt"><p className="text-text-muted">Loading...</p></div>;
@@ -1257,11 +1345,11 @@ export default function Home() {
         currentSpace={currentSpace}
         spaces={spaces}
         user={user}
-        onSwitchSpace={handleSwitchSpace}
+        onSwitchSpace={(slug) => guardedNav(() => handleSwitchSpace(slug))}
         onLogout={handleLogout}
         onOpenArchive={() => setShowArchiveModal(true)}
         onOpenTrash={() => setShowTrashModal(true)}
-        onHome={() => { setActiveDoc(null); setActiveDatabase(null); setActiveDatabaseSearch(""); setIsEditing(false); setShowHome(true); }}
+        onHome={() => guardedNav(() => { setActiveDoc(null); setActiveDatabase(null); setActiveDatabaseSearch(""); setShowHome(true); })}
         onSearch={(q) => { setSearchInitialQuery(q); setShowSearchModal(true); }}
         reviewItems={reviewItems}
         onNavigateToReview={handleNavigateToReview}
@@ -1271,7 +1359,7 @@ export default function Home() {
         onNotificationAction={(n) => {
           dismissNotification(n.id);
           const target = docs.find((d) => d.name === n.docName && d.category === n.category);
-          if (target) { loadDoc(target); setIsEditing(true); }
+          if (target) guardedNav(() => { loadDoc(target); setIsEditing(true); })
         }}
       />
       <div className="flex flex-1 overflow-hidden">
@@ -1281,11 +1369,12 @@ export default function Home() {
           tagsIndex={tagsIndex}
           databases={databasesList}
           activeDoc={activeDoc}
-          onSelectDoc={loadDoc}
+          onSelectDoc={(doc) => guardedNav(() => loadDoc(doc))}
           onNewDoc={handleNewDoc}
           onNewCategory={handleNewCategory}
           onRenameCategory={handleRenameCategory}
           onDeleteCategory={handleDeleteCategory}
+          onArchiveCategory={(path) => handleConfirmArchiveCategory(path)}
           onEditDoc={handleEditDoc}
           onDeleteDoc={handleDeleteDoc}
           onMoveDoc={handleMoveDoc}
@@ -1298,10 +1387,7 @@ export default function Home() {
           onExportTemplate={handleExportTemplate}
           onImportTemplate={handleImportTemplate}
           onNewDatabase={() => setShowSidebarDbCreateModal(true)}
-          onSelectDatabase={(dbId) => {
-            setActiveDatabase(dbId);
-            setActiveDatabaseSearch("");
-          }}
+          onSelectDatabase={(dbId) => guardedNav(() => { setActiveDatabase(dbId); setActiveDatabaseSearch(""); })}
           onEditDatabase={handleEditDatabase}
           onDeleteDatabase={handleDeleteDatabase}
           customization={customization}
@@ -1314,7 +1400,7 @@ export default function Home() {
           currentSpaceSlug={currentSpace?.slug}
           currentSpaceName={currentSpace?.name}
           onToggleFavorite={handleToggleFavorite}
-          onSelectFavorite={handleSelectFavorite}
+          onSelectFavorite={(item) => guardedNav(() => handleSelectFavorite(item))}
         />
         <div className={`flex-1 flex flex-col overflow-hidden${distractionFree ? " df-mode" : ""}`}>
           {activeDatabase && currentSpace ? (
@@ -1669,7 +1755,7 @@ export default function Home() {
                 <SpaceHome
                   spaceSlug={currentSpace.slug}
                   spaceName={currentSpace.name}
-                  isAdmin={!!user?.isAdmin}
+                  dashboardRole={dashboardRole}
                   onOpenDoc={(name, category) => {
                     const target = docs.find((d) => d.name === name && d.category === category);
                     if (target) loadDoc(target);
@@ -1683,7 +1769,7 @@ export default function Home() {
             </div>
 
             {/* TOC panel */}
-            {tocOpen && activeDoc && (
+            {tocOpen && activeDoc && docMetadata && (
               <TableOfContents
                 markdown={lastSavedMarkdown || markdown}
                 onClose={closeToc}
@@ -1741,6 +1827,7 @@ export default function Home() {
         categories={categories}
         onClose={() => { setShowTplFormModal(false); setActiveTpl(null); }}
         onCreate={handleCreateFromTemplate}
+        spaceMembers={spaceMembers}
       />
       <CreateCategoryModal
         isOpen={showNewCategoryModal}
@@ -1768,18 +1855,19 @@ export default function Home() {
         onClose={() => setShowNewTemplateModal(false)}
         onCreate={handleConfirmNewTemplate}
       />
-      <ConfirmModal
+      <DeleteCategoryModal
         isOpen={showDeleteCategoryModal}
-        title="Delete category"
-        message={`Are you sure you want to delete "${deleteCategoryPath}" and all its contents? This action cannot be undone.`}
-        confirmLabel="Delete"
-        variant="danger"
+        categoryPath={deleteCategoryPath}
+        categoryName={deleteCategoryName}
+        docCount={deleteCategoryDocCount}
+        subCount={deleteCategorySubCount}
         onClose={() => setShowDeleteCategoryModal(false)}
-        onConfirm={handleConfirmDeleteCategory}
+        onArchive={handleConfirmArchiveCategory}
+        onDelete={handleConfirmDeleteCategory}
       />
       {/* Delete doc modal with archive option */}
       {showDeleteDocModal && deleteDocTarget && (
-        <div className="modal-overlay" onClick={() => setShowDeleteDocModal(false)}>
+        <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setShowDeleteDocModal(false); }}>
           <div className="modal-container" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">Delete document</h2>
@@ -1913,7 +2001,7 @@ export default function Home() {
 
       {/* Share modal */}
       {showShareModal && activeDoc && currentSpace && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowShareModal(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onMouseDown={(e) => { if (e.target === e.currentTarget) setShowShareModal(false); }}>
           <div className="bg-surface rounded-xl shadow-xl border border-border w-full max-w-md" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-border">
               <h2 className="text-base font-semibold text-text-primary">Share Document</h2>
@@ -2046,7 +2134,7 @@ export default function Home() {
 
       {/* Login notifications modal */}
       {showLoginNotifsModal && loginNotifs.length > 0 && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowLoginNotifsModal(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onMouseDown={(e) => { if (e.target === e.currentTarget) setShowLoginNotifsModal(false); }}>
           <div className="bg-surface rounded-xl shadow-xl border border-border w-full max-w-md" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-border">
               <h2 className="text-base font-semibold text-text-primary">You have {loginNotifs.length} notification{loginNotifs.length > 1 ? "s" : ""}</h2>
@@ -2061,18 +2149,25 @@ export default function Home() {
                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted transition-colors text-left"
                   onClick={() => {
                     setShowLoginNotifsModal(false);
-                    if (n.spaceSlug !== currentSpace?.slug) {
-                      handleSwitchSpace(n.spaceSlug);
-                      setPendingDocLoad({ name: n.docName, category: n.category });
+                    if (n.type === "new_user") {
+                      router.push("/admin");
+                    } else if (n.spaceSlug !== currentSpace?.slug) {
+                      guardedNav(() => { handleSwitchSpace(n.spaceSlug); setPendingDocLoad({ name: n.docName, category: n.category }); });
                     } else {
                       const target = docs.find((d) => d.name === n.docName && d.category === n.category);
-                      if (target) loadDoc(target);
+                      if (target) guardedNav(() => loadDoc(target));
                     }
                   }}
                 >
-                  <span className="w-8 h-8 rounded-lg bg-accent/10 text-accent flex items-center justify-center flex-shrink-0 text-sm font-bold">@</span>
+                  {n.type === "new_user" ? (
+                    <span className="w-8 h-8 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center flex-shrink-0 text-sm font-bold">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
+                    </span>
+                  ) : (
+                    <span className="w-8 h-8 rounded-lg bg-accent/10 text-accent flex items-center justify-center flex-shrink-0 text-sm font-bold">@</span>
+                  )}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-text-primary truncate">{n.message}</p>
+                    <p className="text-sm text-text-primary">{n.message}</p>
                     <p className="text-xs text-text-muted">{new Date(n.createdAt).toLocaleString()}</p>
                   </div>
                 </button>
@@ -2082,6 +2177,16 @@ export default function Home() {
               <button onClick={() => setShowLoginNotifsModal(false)} className="px-4 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:opacity-90">OK</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Reindex toast */}
+      {reindexToastMsg && (
+        <div className="presence-toast">
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+          {reindexToastMsg}
         </div>
       )}
 
@@ -2096,6 +2201,46 @@ export default function Home() {
         </>
       )}
 
+      {/* Unsaved changes modal */}
+      {showUnsavedModal && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) handleUnsavedCancel(); }}
+        >
+          <div
+            className="bg-surface rounded-xl shadow-xl border border-border w-full max-w-sm mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 pt-5 pb-4">
+              <h2 className="text-base font-semibold text-text-primary">Unsaved changes</h2>
+              <p className="text-sm text-text-muted mt-1.5">
+                You&apos;re still editing <strong className="text-text-primary font-medium">{activeDoc?.name}</strong>. What do you want to do with your changes?
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-2 px-6 py-3 border-t border-border">
+              <button
+                className="px-3.5 py-1.5 text-sm text-text-muted hover:text-text-primary"
+                onClick={handleUnsavedCancel}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-3.5 py-1.5 text-sm font-medium bg-muted text-text-secondary rounded-lg hover:bg-[var(--color-muted-hover)]"
+                onClick={handleUnsavedDiscard}
+              >
+                Discard changes
+              </button>
+              <button
+                className="px-3.5 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:opacity-90"
+                onClick={handleUnsavedSave}
+              >
+                Save &amp; continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Search modal */}
       <SearchModal
         isOpen={showSearchModal}
@@ -2108,7 +2253,7 @@ export default function Home() {
         spaceMembers={spaceMembers}
         onOpenDoc={(name, category) => {
           const target = docs.find((d) => d.name === name && d.category === category);
-          if (target) loadDoc(target);
+          if (target) guardedNav(() => loadDoc(target));
         }}
       />
 

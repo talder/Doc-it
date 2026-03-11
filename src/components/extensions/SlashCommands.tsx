@@ -123,10 +123,10 @@ const getSlashCommands = (): SlashCommandItem[] => [
   },
   {
     title: "Collapsible",
-    description: "Create a collapsible section",
+    description: "Collapsible block of content",
     icon: <ChevronDown className="h-4 w-4" />,
     command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).run();
+      editor.chain().focus().deleteRange(range).insertCollapsible().run();
     },
   },
   {

@@ -91,6 +91,21 @@ export default function TemplateFieldModal({
     { value: "boolean",     label: "✓  Boolean",      desc: "True/false checkbox" },
     { value: "url",         label: "↗  URL",          desc: "Web address" },
     { value: "email",       label: "@  Email",        desc: "Email address" },
+    { value: "ip",          label: "⌁  IP Addr",      desc: "IPv4 or IPv6 address" },
+    { value: "mac",         label: "⌬  MAC Addr",     desc: "Hardware MAC address" },
+    { value: "markdown",    label: "Md Markdown",      desc: "Rich markdown editor with toolbar" },
+    { value: "phone",       label: "☎  Phone",          desc: "Phone number with country dial code" },
+    { value: "color",       label: "Clr Color",          desc: "Color picker (hex)" },
+    { value: "currency",    label: "¤  Currency",        desc: "Currency + amount" },
+    { value: "rating",      label: "★  Rating",          desc: "1–5 star rating" },
+    { value: "version",     label: "v  Version",         desc: "Version / semver string" },
+    { value: "duration",    label: "Dur Duration",        desc: "Hours / minutes / seconds" },
+    { value: "iban",        label: "IBAN IBAN",           desc: "International bank account number" },
+    { value: "vat_be",      label: "VAT VAT (BE)",        desc: "Belgian VAT number" },
+    { value: "address",     label: "⌂  Address",          desc: "Street, city, zip, country" },
+    { value: "users",       label: "Usr Users",           desc: "Space member selector (multi)" },
+    { value: "qr",          label: "QR  QR Code",         desc: "QR code generator" },
+    { value: "signature",   label: "✍  Signature",        desc: "Drawing-pad signature" },
   ];
 
   const DATE_FORMATS: { value: TplFieldDateFormat; example: string }[] = [
@@ -101,7 +116,7 @@ export default function TemplateFieldModal({
   ];
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal-container" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <h2 className="modal-title">Template Field</h2>
@@ -257,7 +272,27 @@ export default function TemplateFieldModal({
               </label>
             </div>
           )}
-          {type !== "date" && type !== "dropdown" && type !== "radio" && type !== "multiselect" && type !== "boolean" && (
+          {type === "color" && (
+            <div className="modal-field">
+              <label className="modal-label">Default color</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={defaultValue || "#3b82f6"}
+                  onChange={e => setDefault(e.target.value)}
+                  className="w-8 h-8 rounded cursor-pointer border border-border"
+                />
+                <input
+                  type="text"
+                  value={defaultValue}
+                  onChange={e => setDefault(e.target.value)}
+                  placeholder="#3b82f6"
+                  className="modal-input flex-1"
+                />
+              </div>
+            </div>
+          )}
+          {type !== "date" && type !== "dropdown" && type !== "radio" && type !== "multiselect" && type !== "boolean" && type !== "color" && type !== "currency" && type !== "rating" && type !== "duration" && type !== "address" && type !== "users" && type !== "signature" && (
             <div className="modal-field">
               <label className="modal-label">Default value</label>
               <input

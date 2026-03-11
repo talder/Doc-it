@@ -45,7 +45,7 @@ import { FontSize } from "./extensions/FontSize";
 import { TagLink, setTagClickHandler } from "./extensions/TagLink";
 import { TagSuggestion } from "./extensions/TagSuggestion";
 import { MentionNode, MentionSuggestion } from "./extensions/MentionSuggestion";
-import { CollapsibleList } from "./extensions/CollapsibleList";
+import { CollapsibleBlock } from "./extensions/CollapsibleBlock";
 import { LinkedDocExtension, setLinkedDocClickHandler } from "./extensions/LinkedDocExtension";
 import type { LinkedDocAttrs } from "./extensions/LinkedDocExtension";
 import { AttachmentExtension } from "./extensions/AttachmentExtension";
@@ -59,6 +59,7 @@ import type { DatabaseBlockAttrs } from "./extensions/DatabaseBlockExtension";
 import { Extension } from "@tiptap/core";
 import { Plugin as PmPlugin, PluginKey as PmPluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { columnResizing, tableEditing } from "@tiptap/pm/tables";
 import { isNodeEmpty } from "@tiptap/core";
 import Picker from "@emoji-mart/react";
 // @ts-ignore
@@ -94,7 +95,7 @@ function DatabasePicker({
   const filtered = dbs.filter((db) => db.title.toLowerCase().includes(query.toLowerCase()));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div
         className="bg-surface rounded-xl shadow-xl border border-border w-full max-w-sm"
         onClick={(e) => e.stopPropagation()}
@@ -195,6 +196,27 @@ const CustomTable = Table.extend({
         },
       },
     };
+  },
+  // Override to skip the `isEditable` guard in the base extension — otherwise
+  // columnResizing is never registered when the editor starts in read-only mode.
+  addProseMirrorPlugins() {
+    const isResizable = this.options.resizable;
+    return [
+      ...(isResizable
+        ? [
+            columnResizing({
+              handleWidth: this.options.handleWidth,
+              cellMinWidth: this.options.cellMinWidth,
+              defaultCellMinWidth: this.options.cellMinWidth,
+              View: this.options.View,
+              lastColumnResizable: this.options.lastColumnResizable,
+            }),
+          ]
+        : []),
+      tableEditing({
+        allowTableNodeSelection: this.options.allowTableNodeSelection,
+      }),
+    ];
   },
 }).configure({ resizable: true });
 
@@ -526,8 +548,10 @@ turndown.addRule("resizableImage", {
     const src = el.getAttribute("src") || "";
     const alt = el.getAttribute("alt") || "";
     const w = el.getAttribute("width");
+    const style = el.getAttribute("style");
     if (w) {
-      return `\n<img src="${src}" alt="${alt}" width="${w}" />\n`;
+      const styleAttr = style ? ` style="${style}"` : "";
+      return `\n<img src="${src}" alt="${alt}" width="${w}"${styleAttr} />\n`;
     }
     return `\n![${alt}](${src})\n`;
   },
@@ -946,7 +970,18 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
   const [linkHoverImgErr, setLinkHoverImgErr] = useState(false);
 
   // ── Table toolbar state ───────────────────────────────────────────
-  const [tableToolbar, setTableToolbar] = useState<{ rect: DOMRect; striped: boolean } | null>(null);
+  const [tableToolbar, setTableToolbar] = useState<{ tableRect: DOMRect; striped: boolean; columns: DOMRect[] } | null>(null);
+  const [activeColMenu, setActiveColMenu] = useState<number | null>(null);
+  const [tableOptionsOpen, setTableOptionsOpen] = useState(false);
+  const tableOverlayRef = useRef<HTMLDivElement>(null);
+  const tableColumnCellsRef = useRef<HTMLElement[]>([]);
+
+  // ── Bubble menu z-index refs ──────────────────────────────────────
+  // BubbleMenu's ref resolves to menuEl.current (the outer positioning div).
+  // We must set z-index via JS because the CSS :has() selector is stripped
+  // by lightningcss/Tailwind v4 before it can match these dynamic elements.
+  const bubbleMenuElRef = useRef<HTMLDivElement>(null);
+  const tableCellMenuElRef = useRef<HTMLDivElement>(null);
 
   const editor = useEditor({
     extensions: [
@@ -1010,7 +1045,7 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
       DragHandle,
       ExcalidrawExtension,
       DrawioExtension,
-      CollapsibleList,
+      CollapsibleBlock,
       LinkedDocExtension,
       AttachmentExtension,
       PDFEmbedExtension,
@@ -1345,7 +1380,7 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
     };
   }, [editor]); // re-run when editor becomes available so editorWrapRef is populated
 
-  // ── Table toolbar position tracking ──────────────────────────────────
+  // ── Table toolbar position tracking ────────────────────────────────────
   useEffect(() => {
     if (!editor) return;
     const update = () => {
@@ -1360,14 +1395,41 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
         if (node.nodeType === Node.TEXT_NODE) node = node.parentElement as HTMLElement;
         while (node && node.tagName !== "TABLE") node = node.parentElement as HTMLElement;
         if (!node || node.tagName !== "TABLE") { setTableToolbar(null); return; }
-        const rect = node.getBoundingClientRect();
+        const tableRect = node.getBoundingClientRect();
+        // Collect first-row cells for column tabs
+        const firstRow = node.querySelector("tr:first-child");
+        const cellEls: HTMLElement[] = firstRow
+          ? (Array.from(firstRow.querySelectorAll("th, td")) as HTMLElement[])
+          : [];
+        tableColumnCellsRef.current = cellEls;
+        const columns = cellEls.map((c) => c.getBoundingClientRect());
         const $from = editor.state.doc.resolve(from);
         let striped = false;
         for (let d = $from.depth; d >= 0; d--) {
           const n = $from.node(d);
           if (n.type.name === "table") { striped = !!n.attrs.striped; break; }
         }
-        setTableToolbar({ rect, striped });
+        // Use functional updater: only create a new object when values actually
+        // changed, so React bails out on unchanged transactions (fixes infinite loop).
+        setTableToolbar((prev) => {
+          if (
+            prev &&
+            prev.striped === striped &&
+            prev.tableRect.top === tableRect.top &&
+            prev.tableRect.left === tableRect.left &&
+            prev.tableRect.right === tableRect.right &&
+            prev.tableRect.bottom === tableRect.bottom &&
+            prev.columns.length === columns.length &&
+            prev.columns.every((r, i) =>
+              r.left === columns[i].left &&
+              r.top === columns[i].top &&
+              r.width === columns[i].width
+            )
+          ) {
+            return prev;
+          }
+          return { tableRect, striped, columns };
+        });
       } catch {
         setTableToolbar(null);
       }
@@ -1382,6 +1444,31 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
     };
   }, [editor]);
 
+  // Close menus when cursor leaves the table
+  useEffect(() => {
+    if (!tableToolbar) { setActiveColMenu(null); setTableOptionsOpen(false); }
+  }, [tableToolbar]);
+
+  // Close menus on outside click
+  useEffect(() => {
+    if (activeColMenu === null && !tableOptionsOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (tableOverlayRef.current && !tableOverlayRef.current.contains(e.target as Node)) {
+        setActiveColMenu(null);
+        setTableOptionsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [activeColMenu, tableOptionsOpen]);
+
+  // Set z-index on bubble menu wrappers after editor + menus mount
+  useEffect(() => {
+    if (!editor) return;
+    if (bubbleMenuElRef.current) bubbleMenuElRef.current.style.zIndex = "300";
+    if (tableCellMenuElRef.current) tableCellMenuElRef.current.style.zIndex = "300";
+  }, [editor]);
+
   const setLink = useCallback(() => {
     if (!editor) return;
     const attrs = editor.getAttributes("link");
@@ -1389,6 +1476,16 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
     const previousNewTab = attrs.target === "_blank";
     setUrlModal({ open: true, mode: "link", context: "bubble", initialValue: previous, initialOpenInNewTab: previousNewTab, targetEditor: editor });
   }, [editor, setUrlModal]);
+
+  const focusColumn = useCallback((colIndex: number) => {
+    if (!editor) return;
+    const cell = tableColumnCellsRef.current[colIndex];
+    if (!cell) return;
+    try {
+      const pos = editor.view.posAtDOM(cell, 0);
+      editor.commands.setTextSelection(pos);
+    } catch { /* ignore */ }
+  }, [editor]);
 
   const toggleTableStriped = useCallback(() => {
     if (!editor) return;
@@ -1419,9 +1516,10 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
         </div>
       )}
       {editable && <BubbleMenu
+        ref={bubbleMenuElRef}
         editor={editor}
         pluginKey="textFormatMenu"
-        options={{ placement: "top", offset: 8 }}
+        options={{ placement: "top", offset: 8, strategy: "fixed" }}
         shouldShow={({ editor, state }) => {
           const { from, to } = state.selection;
           if (from === to) return false;
@@ -1547,9 +1645,10 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
 
       {/* Cell background color picker (appears when cursor is inside a table cell) */}
       {editable && <BubbleMenu
+        ref={tableCellMenuElRef}
         editor={editor}
         pluginKey="tableCellMenu"
-        options={{ placement: "bottom-start", offset: 6 }}
+        options={{ placement: "bottom-start", offset: 6, strategy: "fixed" }}
         shouldShow={({ editor, state }) => {
           const { from, to } = state.selection;
           if (from !== to) return false;
@@ -1958,36 +2057,72 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
         }}
       />
 
-      {/* Table toolbar — fixed above focused table, portal to body */}
+      {/* Confluence-style table overlay: column tabs + table options */}
       {editable && tableToolbar && typeof window !== "undefined" && createPortal(
-        <div
-          className="table-toolbar"
-          style={{
-            top: Math.max(4, tableToolbar.rect.top - 42),
-            left: tableToolbar.rect.left,
-            maxWidth: `calc(100vw - ${Math.max(4, tableToolbar.rect.left)}px - 16px)`,
-          }}
-          onMouseDown={(e) => e.preventDefault()}
-        >
-          <button className="table-toolbar-btn" title="Insert column before" onClick={() => editor.chain().focus().addColumnBefore().run()}>← Col</button>
-          <button className="table-toolbar-btn" title="Insert column after" onClick={() => editor.chain().focus().addColumnAfter().run()}>Col →</button>
-          <button className="table-toolbar-btn danger" title="Delete column" onClick={() => editor.chain().focus().deleteColumn().run()}>− Col</button>
-          <div className="table-toolbar-sep" />
-          <button className="table-toolbar-btn" title="Insert row above" onClick={() => editor.chain().focus().addRowBefore().run()}>↑ Row</button>
-          <button className="table-toolbar-btn" title="Insert row below" onClick={() => editor.chain().focus().addRowAfter().run()}>Row ↓</button>
-          <button className="table-toolbar-btn danger" title="Delete row" onClick={() => editor.chain().focus().deleteRow().run()}>− Row</button>
-          <div className="table-toolbar-sep" />
-          <button className="table-toolbar-btn" title="Merge selected cells" onClick={() => editor.chain().focus().mergeCells().run()}>Merge</button>
-          <button className="table-toolbar-btn" title="Split cell" onClick={() => editor.chain().focus().splitCell().run()}>Split</button>
-          <div className="table-toolbar-sep" />
-          <button className="table-toolbar-btn" title="Toggle header row" onClick={() => editor.chain().focus().toggleHeaderRow().run()}>Header</button>
-          <button
-            className={`table-toolbar-btn${tableToolbar.striped ? " active" : ""}`}
-            title="Toggle striped rows"
-            onClick={toggleTableStriped}
-          >Striped</button>
-          <div className="table-toolbar-sep" />
-          <button className="table-toolbar-btn danger" title="Delete table" onClick={() => editor.chain().focus().deleteTable().run()}>Del Table</button>
+        <div ref={tableOverlayRef} onMouseDown={(e) => e.preventDefault()}>
+          {/* Per-column header tabs */}
+          {tableToolbar.columns.map((colRect, i) => (
+            <div
+              key={i}
+              className="table-col-tab"
+              style={{
+                top: Math.max(4, colRect.top - 22),
+                left: colRect.left + colRect.width / 2,
+              }}
+            >
+              <button
+                className="table-col-tab-btn"
+                onClick={() => {
+                  focusColumn(i);
+                  setActiveColMenu(activeColMenu === i ? null : i);
+                  setTableOptionsOpen(false);
+                }}
+              >▾</button>
+              {activeColMenu === i && (
+                <div className="table-col-dropdown">
+                  <button className="table-tab-item" onClick={() => { editor.chain().focus().addColumnBefore().run(); setActiveColMenu(null); }}>← Add column before</button>
+                  <button className="table-tab-item" onClick={() => { editor.chain().focus().addColumnAfter().run(); setActiveColMenu(null); }}>Add column after →</button>
+                  <div className="table-tab-sep" />
+                  <button className="table-tab-item danger" onClick={() => { editor.chain().focus().deleteColumn().run(); setActiveColMenu(null); }}>Delete column</button>
+                </div>
+              )}
+            </div>
+          ))}
+          {/* Table options pill — below the table */}
+          <div
+            className="table-tab"
+            style={{
+              top: Math.min(window.innerHeight - 40, tableToolbar.tableRect.bottom + 4),
+              left: tableToolbar.tableRect.left + tableToolbar.tableRect.width / 2,
+            }}
+          >
+            <button
+              className="table-tab-btn"
+              onClick={() => { setTableOptionsOpen((o) => !o); setActiveColMenu(null); }}
+            >
+              Table options {tableOptionsOpen ? "▴" : "▾"}
+            </button>
+            {tableOptionsOpen && (
+              <div className="table-tab-dropdown">
+                <div className="table-tab-section">Rows</div>
+                <button className="table-tab-item" onClick={() => { editor.chain().focus().addRowBefore().run(); setTableOptionsOpen(false); }}>↑ Add row above</button>
+                <button className="table-tab-item" onClick={() => { editor.chain().focus().addRowAfter().run(); setTableOptionsOpen(false); }}>Add row below ↓</button>
+                <button className="table-tab-item danger" onClick={() => { editor.chain().focus().deleteRow().run(); setTableOptionsOpen(false); }}>Delete row</button>
+                <div className="table-tab-sep" />
+                <div className="table-tab-section">Cells</div>
+                <button className="table-tab-item" onClick={() => { editor.chain().focus().mergeCells().run(); setTableOptionsOpen(false); }}>Merge cells</button>
+                <button className="table-tab-item" onClick={() => { editor.chain().focus().splitCell().run(); setTableOptionsOpen(false); }}>Split cell</button>
+                <div className="table-tab-sep" />
+                <button className="table-tab-item" onClick={() => { editor.chain().focus().toggleHeaderRow().run(); setTableOptionsOpen(false); }}>Toggle header row</button>
+                <button
+                  className={`table-tab-item${tableToolbar.striped ? " check" : ""}`}
+                  onClick={() => { toggleTableStriped(); setTableOptionsOpen(false); }}
+                >{tableToolbar.striped ? "✓ " : "   "}Striped rows</button>
+                <div className="table-tab-sep" />
+                <button className="table-tab-item danger" onClick={() => { editor.chain().focus().deleteTable().run(); setTableOptionsOpen(false); }}>Delete table</button>
+              </div>
+            )}
+          </div>
         </div>,
         document.body
       )}

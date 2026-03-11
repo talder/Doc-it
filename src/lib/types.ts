@@ -55,6 +55,8 @@ export interface User {
   authSource?: "local" | "ad";
   /** sAMAccountName as returned by AD (preserved for display / audit) */
   adUsername?: string;
+  /** AD group DNs (memberOf) cached at login — used for runtime permission checks */
+  adGroups?: string[];
 }
 
 // === Active Directory ===
@@ -158,9 +160,12 @@ export interface ReviewItem {
 // === Templates ===
 
 export type TplFieldType =
-  | "text" | "textarea" | "number" | "url" | "email"
+  | "text" | "textarea" | "markdown" | "number" | "url" | "email"
   | "dropdown" | "radio" | "multiselect"
-  | "date" | "time" | "boolean";
+  | "date" | "time" | "boolean"
+  | "ip" | "mac" | "phone"
+  | "color" | "currency" | "rating" | "version" | "duration"
+  | "iban" | "vat_be" | "address" | "users" | "qr" | "signature";
 export type TplFieldDateFormat = "ISO" | "EU" | "US" | "Long";
 export type TplFieldEmptyBehavior = "empty" | "default" | "keep";
 
@@ -358,6 +363,7 @@ export type AuditEventType =
   | "document.archive"
   | "document.unarchive"
   | "document.move"
+  | "category.archive"
   | "document.rename"
   | "document.status.change"
   | "document.history.view"
@@ -557,6 +563,15 @@ export interface DashboardSection {
 export interface DashboardData {
   sections: DashboardSection[];
   links: DashboardLink[];
+}
+
+export type DashboardRole = "admin" | "viewer" | "none";
+
+export interface DashboardAccessConfig {
+  /** Usernames explicitly granted dashboard view access */
+  allowedUsers: string[];
+  /** AD group DNs whose members may view the dashboard */
+  allowedAdGroups: string[];
 }
 
 // === PKI / Certificate Manager ===

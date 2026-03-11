@@ -6,13 +6,14 @@ import DashboardIcon from "./DashboardIcon";
 import DashboardCard from "./DashboardCard";
 import DashboardSectionModal from "./DashboardSectionModal";
 import DashboardLinkModal from "./DashboardLinkModal";
-import type { DashboardData, DashboardSection, DashboardLink, UserGroup } from "@/lib/types";
+import type { DashboardData, DashboardSection, DashboardLink, DashboardRole, UserGroup } from "@/lib/types";
 
 interface DashboardViewProps {
-  isAdmin: boolean;
+  dashboardRole: DashboardRole;
 }
 
-export default function DashboardView({ isAdmin }: DashboardViewProps) {
+export default function DashboardView({ dashboardRole }: DashboardViewProps) {
+  const isAdmin = dashboardRole === "admin";
   const [data, setData] = useState<DashboardData>({ sections: [], links: [] });
   const [userGroups, setUserGroups] = useState<UserGroup[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,7 +33,7 @@ export default function DashboardView({ isAdmin }: DashboardViewProps) {
     try {
       const [dashRes, groupsRes] = await Promise.all([
         fetch("/api/dashboard"),
-        isAdmin ? fetch("/api/admin/user-groups") : Promise.resolve(null),
+        dashboardRole === "admin" ? fetch("/api/admin/user-groups") : Promise.resolve(null),
       ]);
       if (dashRes.ok) {
         const d: DashboardData = await dashRes.json();
@@ -48,7 +49,7 @@ export default function DashboardView({ isAdmin }: DashboardViewProps) {
       }
     } catch { /* ignore */ }
     setLoading(false);
-  }, [isAdmin]);
+  }, [dashboardRole, isAdmin]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -200,6 +201,7 @@ export default function DashboardView({ isAdmin }: DashboardViewProps) {
 
   // ── Render ────────────────────────────────────────────────────────
   if (loading) return null;
+  if (dashboardRole === "none") return null;
   if (data.sections.length === 0 && !isAdmin) return null;
 
   return (
@@ -360,7 +362,7 @@ export default function DashboardView({ isAdmin }: DashboardViewProps) {
 
       {/* Delete confirmation */}
       {deleteConfirm && (
-        <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}>
+        <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setDeleteConfirm(null); }}>
           <div className="modal-container" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400 }}>
             <div className="modal-header">
               <h2 className="modal-title">

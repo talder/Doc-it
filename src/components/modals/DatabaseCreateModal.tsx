@@ -43,7 +43,7 @@ export default function DatabaseCreateModal({ isOpen, onClose, onCreate, mode = 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-surface rounded-xl shadow-xl border border-border w-full max-w-md" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <h2 className="text-sm font-semibold text-text-primary">{isEdit ? "Edit Database" : "Create Database"}</h2>

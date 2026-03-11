@@ -88,7 +88,7 @@ export default function DashboardLinkModal({
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal-container" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
         <div className="modal-header">
           <h2 className="modal-title">{link ? "Edit Link" : "New Link"}</h2>

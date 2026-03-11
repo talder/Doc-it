@@ -175,7 +175,7 @@ export default function HistoryModal({
   if (!isOpen) return null;
 
   return (
-    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+<div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal-container" style={{ maxWidth: 1400, height: "85vh", display: "flex", flexDirection: "column" }}>
         <div className="modal-header">
           <div className="flex items-center gap-2">

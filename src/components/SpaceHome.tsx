@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { FileText, FilePlus, PenLine, Users, BarChart3, Quote } from "lucide-react";
 import DashboardView from "./dashboard/DashboardView";
+import type { DashboardRole } from "@/lib/types";
 
 interface RecentDoc {
   name: string;
@@ -21,7 +22,7 @@ interface SpaceStats {
 interface SpaceHomeProps {
   spaceSlug: string;
   spaceName: string;
-  isAdmin?: boolean;
+  dashboardRole?: DashboardRole;
   onOpenDoc: (name: string, category: string) => void;
 }
 
@@ -147,7 +148,7 @@ function timeAgo(iso: string) {
   return new Date(iso).toLocaleDateString();
 }
 
-export default function SpaceHome({ spaceSlug, spaceName, isAdmin = false, onOpenDoc }: SpaceHomeProps) {
+export default function SpaceHome({ spaceSlug, spaceName, dashboardRole = "none", onOpenDoc }: SpaceHomeProps) {
   const [recentDocs, setRecentDocs] = useState<RecentDoc[]>([]);
   const [stats, setStats] = useState<SpaceStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -323,9 +324,11 @@ export default function SpaceHome({ spaceSlug, spaceName, isAdmin = false, onOpe
         </div>
 
         {/* Right column: Dashboard */}
+        {dashboardRole !== "none" && (
         <div className="flex-1 min-w-0 lg:overflow-y-auto px-6 py-8">
-          <DashboardView isAdmin={isAdmin} />
+          <DashboardView dashboardRole={dashboardRole} />
         </div>
+        )}
 
       </div>
     </div>

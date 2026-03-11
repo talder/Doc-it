@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Plus, Trash2, Shield, ShieldCheck, Users, Layout, Settings, Key, Copy, Check, ClipboardList, ChevronLeft, ChevronRight, Download, Lock, LockOpen, ChevronDown, ChevronUp, ShieldOff, HardDrive, RefreshCw, PlayCircle, XCircle, RotateCcw, Eye, EyeOff, UsersRound, X, Network } from "lucide-react";
 import PasswordStrengthMeter from "@/components/PasswordStrengthMeter";
 import { isPasswordValid } from "@/lib/password-policy";
-import type { SanitizedUser, Space, SpaceRole, AuditConfig, AuditEntry, UserGroup, AdConfig, AdGroupMapping } from "@/lib/types";
+import type { SanitizedUser, Space, SpaceRole, AuditConfig, AuditEntry, UserGroup, AdConfig, AdGroupMapping, DashboardAccessConfig } from "@/lib/types";
 type Tab = "users" | "spaces" | "service-keys" | "groups" | "settings" | "audit" | "backup";
 
 interface BackupEntry { filename: string; sizeBytes: number; createdAt: string; }
@@ -172,6 +172,12 @@ function AdminContent() {
   const [newGroupDesc, setNewGroupDesc] = useState("");
   const [groupMemberInput, setGroupMemberInput] = useState("");
 
+  // Dashboard access state
+  const [dashAccess, setDashAccess] = useState<DashboardAccessConfig>({ allowedUsers: [], allowedAdGroups: [] });
+  const [dashAccessLoaded, setDashAccessLoaded] = useState(false);
+  const [newDashUser, setNewDashUser] = useState("");
+  const [newDashAdGroup, setNewDashAdGroup] = useState("");
+
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -265,6 +271,14 @@ function AdminContent() {
       const data = await res.json();
       setUserGroups(data.groups ?? []);
       setGroupsLoaded(true);
+    }
+  }, []);
+
+  const fetchDashboardAccess = useCallback(async () => {
+    const res = await fetch("/api/admin/dashboard-access");
+    if (res.ok) {
+      setDashAccess(await res.json());
+      setDashAccessLoaded(true);
     }
   }, []);
 
@@ -599,7 +613,7 @@ function AdminContent() {
             Groups
           </button>
           <button
-            onClick={() => { setTab("settings"); if (!smtpLoaded) fetchSmtp(); fetchKeyInfo(); if (!storageLoaded) fetchStorageConfig(); if (!changelogSettingsLoaded) fetchChangelogSettings(); if (!adLoaded) fetchAdConfig(); }}
+            onClick={() => { setTab("settings"); if (!smtpLoaded) fetchSmtp(); fetchKeyInfo(); if (!storageLoaded) fetchStorageConfig(); if (!changelogSettingsLoaded) fetchChangelogSettings(); if (!adLoaded) fetchAdConfig(); if (!dashAccessLoaded) fetchDashboardAccess(); }}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
               tab === "settings" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
             }`}
@@ -711,15 +725,23 @@ function AdminContent() {
               </div>
             )}
 
+            {/* Table header */}
+            <div className="grid grid-cols-[1fr_auto_auto] items-center px-6 py-2.5 border-b border-border bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              <span>User</span>
+              <span className="w-48 text-left">Spaces</span>
+              <span className="w-28 text-right">Actions</span>
+            </div>
+
             <div className="divide-y divide-gray-100">
               {users.map((u) => {
                 const isAd = u.authSource === "ad";
                 const initials = (u.fullName || u.username).split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
+                const userSpaces = spaces.filter((s) => s.permissions[u.username]);
                 return (
                 <div key={u.username}>
-                  <div className="flex items-center justify-between px-6 py-3">
-                    <div className="flex items-center gap-3">
-                      {/* Avatar with real image + initials fallback */}
+                  <div className="grid grid-cols-[1fr_auto_auto] items-center px-6 py-3">
+                    {/* User info */}
+                    <div className="flex items-center gap-3 min-w-0">
                       <div className={`w-8 h-8 rounded-full relative flex items-center justify-center text-xs font-semibold text-white overflow-hidden flex-shrink-0 ${isAd ? "bg-blue-500" : "bg-violet-500"}`}>
                         <span>{initials}</span>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -730,7 +752,7 @@ function AdminContent() {
                           onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
                         />
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-sm font-medium text-text-primary">
                             {u.fullName || u.username}
@@ -771,10 +793,29 @@ function AdminContent() {
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-1">
+
+                    {/* Spaces column */}
+                    <div className="w-48 flex flex-wrap gap-1">
+                      {u.isAdmin ? (
+                        <span className="px-2 py-0.5 text-xs font-medium bg-purple-50 text-purple-600 rounded-md">All spaces</span>
+                      ) : userSpaces.length === 0 ? (
+                        <span className="px-2 py-0.5 text-xs font-medium bg-red-50 text-red-500 rounded-md">No spaces</span>
+                      ) : (
+                        userSpaces.map((s) => (
+                          <span key={s.slug} className={`px-2 py-0.5 text-xs font-medium rounded-md ${
+                            s.permissions[u.username] === "admin" ? "bg-purple-50 text-purple-600" :
+                            s.permissions[u.username] === "writer" ? "bg-green-50 text-green-600" :
+                            "bg-blue-50 text-blue-600"
+                          }`}>{s.name}</span>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Actions */}
+                    <div className="w-28 flex items-center justify-end gap-1">
                       {/* Space access toggle */}
                       <button
-                        onClick={() => setExpandedUserSpaces(expandedUserSpaces === u.username ? null : u.username)}
+                        onClick={() => { setExpandedUserSpaces(expandedUserSpaces === u.username ? null : u.username); setUserSpacePermUser(""); }}
                         className="p-1.5 rounded-lg hover:bg-muted text-gray-400 hover:text-gray-600 transition-colors"
                         title="Manage space access"
                       >
@@ -831,17 +872,17 @@ function AdminContent() {
                         <span className="text-xs font-medium text-gray-600">Space access for {u.username}</span>
                       </div>
                       {spaces.filter((s) => s.permissions[u.username]).length === 0 ? (
-                        <p className="px-4 py-2 text-xs text-text-muted">Not a member of any space.</p>
+                        <p className="px-4 py-3 text-sm text-text-muted">Not a member of any space.</p>
                       ) : (
                         <div className="divide-y divide-gray-100">
                           {spaces.filter((s) => s.permissions[u.username]).map((s) => (
-                            <div key={s.slug} className="flex items-center justify-between px-4 py-2">
-                              <span className="text-xs text-text-primary">{s.name}</span>
-                              <div className="flex items-center gap-1.5">
+                            <div key={s.slug} className="flex items-center justify-between px-4 py-2.5">
+                              <span className="text-sm text-text-primary">{s.name}</span>
+                              <div className="flex items-center gap-2">
                                 <select
                                   value={s.permissions[u.username]}
                                   onChange={(e) => handleChangeRole(s.slug, u.username, e.target.value as SpaceRole)}
-                                  className="text-xs border border-border rounded px-2 py-0.5"
+                                  className="text-sm border border-border rounded-lg px-3 py-1.5 bg-surface"
                                 >
                                   <option value="reader">Reader</option>
                                   <option value="writer">Writer</option>
@@ -849,10 +890,10 @@ function AdminContent() {
                                 </select>
                                 <button
                                   onClick={() => handleRemovePermission(s.slug, u.username)}
-                                  className="p-0.5 text-gray-400 hover:text-red-500"
+                                  className="p-1 text-gray-400 hover:text-red-500"
                                   title="Remove"
                                 >
-                                  <Trash2 className="w-3 h-3" />
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               </div>
                             </div>
@@ -860,11 +901,11 @@ function AdminContent() {
                         </div>
                       )}
                       {spaces.filter((s) => !s.permissions[u.username]).length > 0 && (
-                        <div className="px-4 py-2 border-t border-border flex items-center gap-2">
+                        <div className="px-4 py-3 border-t border-border flex items-center gap-2">
                           <select
-                            value={userSpacePermUser === u.username ? "" : ""}
+                            value={userSpacePermUser}
                             onChange={(e) => setUserSpacePermUser(e.target.value)}
-                            className="flex-1 text-xs border border-border rounded px-2 py-1"
+                            className="flex-1 text-sm border border-border rounded-lg px-3 py-2 bg-surface"
                           >
                             <option value="">Add to space…</option>
                             {spaces.filter((s) => !s.permissions[u.username]).map((s) => (
@@ -874,7 +915,7 @@ function AdminContent() {
                           <select
                             value={userSpacePermRole}
                             onChange={(e) => setUserSpacePermRole(e.target.value as SpaceRole)}
-                            className="text-xs border border-border rounded px-2 py-1"
+                            className="text-sm border border-border rounded-lg px-3 py-2 bg-surface"
                           >
                             <option value="reader">Reader</option>
                             <option value="writer">Writer</option>
@@ -894,7 +935,7 @@ function AdminContent() {
                               if (res.ok) { flash(`Added ${u.username} to ${space.name}`, "success"); setUserSpacePermUser(""); await fetchSpaces(); }
                               else { const d = await res.json(); flash(d.error || "Failed", "error"); }
                             }}
-                            className="px-2 py-1 text-xs font-medium bg-accent text-white rounded hover:bg-accent-hover"
+                            className="px-4 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover"
                           >
                             Add
                           </button>
@@ -2290,6 +2331,117 @@ function AdminContent() {
               </div>
             </div>
           </div>
+          {/* Dashboard Access */}
+          <div className="bg-surface rounded-xl shadow-sm border border-border mt-6">
+            <div className="px-6 py-4 border-b border-border flex items-center gap-3">
+              <Layout className="w-5 h-5 text-accent shrink-0" />
+              <div className="flex-1">
+                <h2 className="text-lg font-semibold text-text-primary">Dashboard Access</h2>
+                <p className="text-xs text-text-muted mt-0.5">Control who can see the dashboard. Admins always have full edit access.</p>
+              </div>
+            </div>
+            <div className="px-6 py-4 space-y-6">
+              {/* Allowed users */}
+              <div>
+                <h3 className="text-sm font-semibold text-text-primary mb-1">Allowed Users</h3>
+                <p className="text-xs text-text-muted mb-3">These users can view the dashboard (read-only). Admins are always included automatically.</p>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {dashAccess.allowedUsers.map((u, i) => (
+                    <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-full">
+                      {u}
+                      <button onClick={() => setDashAccess({ ...dashAccess, allowedUsers: dashAccess.allowedUsers.filter((_, j) => j !== i) })} className="hover:text-red-600"><X className="w-3 h-3" /></button>
+                    </span>
+                  ))}
+                  {dashAccess.allowedUsers.length === 0 && <span className="text-xs text-text-muted italic">No users added — only admins can see the dashboard</span>}
+                </div>
+                <div className="flex gap-2">
+                  <select
+                    value={newDashUser}
+                    onChange={(e) => setNewDashUser(e.target.value)}
+                    className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Select user…</option>
+                    {allUsers
+                      .filter((u) => !u.isAdmin && !dashAccess.allowedUsers.includes(u.username))
+                      .map((u) => (
+                        <option key={u.username} value={u.username}>{u.username}{u.fullName ? ` (${u.fullName})` : ""}</option>
+                      ))}
+                  </select>
+                  <button
+                    disabled={!newDashUser}
+                    onClick={() => {
+                      if (newDashUser && !dashAccess.allowedUsers.includes(newDashUser)) {
+                        setDashAccess({ ...dashAccess, allowedUsers: [...dashAccess.allowedUsers, newDashUser] });
+                      }
+                      setNewDashUser("");
+                    }}
+                    className="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+
+              {/* AD Groups */}
+              <div>
+                <h3 className="text-sm font-semibold text-text-primary mb-1">AD Groups (Dashboard Viewers)</h3>
+                <p className="text-xs text-text-muted mb-3">Members of these AD groups can view the dashboard. Group membership is synced on AD login.</p>
+                <div className="space-y-1.5 mb-2">
+                  {dashAccess.allowedAdGroups.map((g, i) => (
+                    <div key={i} className="flex items-center gap-2 bg-gray-50 border border-border rounded-lg px-3 py-1.5">
+                      <span className="font-mono text-xs flex-1 truncate">{g}</span>
+                      <button onClick={() => setDashAccess({ ...dashAccess, allowedAdGroups: dashAccess.allowedAdGroups.filter((_, j) => j !== i) })} className="text-red-400 hover:text-red-600"><X className="w-3.5 h-3.5" /></button>
+                    </div>
+                  ))}
+                  {dashAccess.allowedAdGroups.length === 0 && <span className="text-xs text-text-muted italic">No AD groups configured</span>}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newDashAdGroup}
+                    onChange={(e) => setNewDashAdGroup(e.target.value)}
+                    placeholder="CN=DashboardViewers,OU=Groups,DC=example,DC=com"
+                    className="flex-1 px-3 py-1.5 text-sm font-mono border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && newDashAdGroup.trim()) {
+                        setDashAccess({ ...dashAccess, allowedAdGroups: [...dashAccess.allowedAdGroups, newDashAdGroup.trim()] });
+                        setNewDashAdGroup("");
+                      }
+                    }}
+                  />
+                  <button
+                    disabled={!newDashAdGroup.trim()}
+                    onClick={() => {
+                      setDashAccess({ ...dashAccess, allowedAdGroups: [...dashAccess.allowedAdGroups, newDashAdGroup.trim()] });
+                      setNewDashAdGroup("");
+                    }}
+                    className="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+
+              {/* Save */}
+              <div className="pt-2">
+                <button
+                  onClick={async () => {
+                    const res = await fetch("/api/admin/dashboard-access", {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(dashAccess),
+                    });
+                    if (res.ok) flash("Dashboard access saved", "success");
+                    else flash("Failed to save dashboard access", "error");
+                  }}
+                  className="px-4 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors"
+                >
+                  Save Dashboard Access
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* Active Directory */}
           <div className="bg-surface rounded-xl shadow-sm border border-border mt-6">
             <div className="px-6 py-4 border-b border-border flex items-center gap-3">
