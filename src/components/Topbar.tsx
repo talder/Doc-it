@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Search, LogOut, Settings, Sun, Moon, Archive, User, Bell, X, FileText, BookOpen, Check, HardDriveDownload, Home, Trophy, Share2, Trash2, Lock, Clock, BookMarked, ClipboardList, Monitor, Headset, ShieldCheck } from "lucide-react";
+import { ChevronDown, Search, LogOut, Settings, Sun, Moon, Archive, User, Bell, X, FileText, BookOpen, Check, HardDriveDownload, Home, Trophy, Share2, Trash2, Lock, Clock, BookMarked, ClipboardList, Monitor, Headset, ShieldCheck, Star } from "lucide-react";
 import OfflineBundleModal from "@/components/OfflineBundleModal";
 import { useTheme, isLightTheme, type Theme } from "@/components/ThemeProvider";
 import type { Space, SanitizedUser, ReviewItem } from "@/lib/types";
@@ -82,9 +82,10 @@ interface TopbarProps {
   onDismissNotification?: (id: string) => void;
   onClearNotifications?: () => void;
   onNotificationAction?: (n: AppNotification) => void;
+  onSetDefaultSpace?: (slug: string | null) => void;
 }
 
-export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLogout, onOpenArchive, onOpenTrash, onHome, onSearch, reviewItems = [], onNavigateToReview, notifications = [], onDismissNotification, onClearNotifications, onNotificationAction }: TopbarProps) {
+export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLogout, onOpenArchive, onOpenTrash, onHome, onSearch, reviewItems = [], onNavigateToReview, notifications = [], onDismissNotification, onClearNotifications, onNotificationAction, onSetDefaultSpace }: TopbarProps) {
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const [leaderboard, setLeaderboard] = useState<{ actor: string; count: number }[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
@@ -139,13 +140,13 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
         <div className="relative">
           <button
             onClick={() => setSpaceMenuOpen(!spaceMenuOpen)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-muted transition-colors"
+            className="flex items-baseline gap-1 px-3 py-1.5 rounded-lg hover:bg-muted transition-colors"
           >
-            <span className="text-xs font-medium text-text-muted uppercase tracking-wider mr-1">Space:</span>
+            <span className="text-xs font-medium text-text-muted uppercase tracking-wider">Space:</span>
             <span className="text-lg font-bold text-text-primary truncate max-w-[300px]">
               {currentSpace?.name || "Select Space"}
             </span>
-            <ChevronDown className="w-4 h-4 text-text-muted" />
+            <ChevronDown className="w-4 h-4 text-text-muted self-center" />
           </button>
 
           {spaceMenuOpen && (
@@ -154,20 +155,39 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
                 Spaces
               </div>
               {spaces.map((space) => (
-                <button
+                <div
                   key={space.slug}
-                  onClick={() => {
-                    onSwitchSpace(space.slug);
-                    setSpaceMenuOpen(false);
-                  }}
-                  className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors ${
+                  className={`flex items-center gap-1 px-3 py-2 hover:bg-muted transition-colors ${
                     space.slug === currentSpace?.slug
                       ? "bg-accent-light text-accent-text font-medium"
                       : "text-text-secondary"
                   }`}
                 >
-                  {space.name}
-                </button>
+                  <button
+                    className="flex-1 text-left text-sm truncate"
+                    onClick={() => {
+                      onSwitchSpace(space.slug);
+                      setSpaceMenuOpen(false);
+                    }}
+                  >
+                    {space.name}
+                  </button>
+                  <button
+                    className="flex-shrink-0 p-0.5 rounded hover:bg-accent/10 transition-colors"
+                    title={user?.preferences?.defaultSpace === space.slug ? "Remove as default space" : "Set as default space"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const newDefault = user?.preferences?.defaultSpace === space.slug ? null : space.slug;
+                      onSetDefaultSpace?.(newDefault);
+                    }}
+                  >
+                    <Star className={`w-3.5 h-3.5 ${
+                      user?.preferences?.defaultSpace === space.slug
+                        ? "fill-amber-400 text-amber-400"
+                        : "text-text-muted hover:text-amber-400"
+                    }`} />
+                  </button>
+                </div>
               ))}
               {user?.isAdmin && (
                 <>

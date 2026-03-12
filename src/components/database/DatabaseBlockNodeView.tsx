@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { NodeViewWrapper } from "@tiptap/react";
 import { Database as DbIcon, Pencil, Loader2, AlignJustify, CreditCard, Crop, Maximize2, X } from "lucide-react";
@@ -62,9 +62,14 @@ function applySorts(rows: DbRow[], sorts: DbSort[], columns: DbColumn[]): DbRow[
       const col = columns.find((c) => c.id === s.columnId);
       if (!col) continue;
       const av = a.cells[s.columnId], bv = b.cells[s.columnId];
+      const aEmpty = av == null || av === "";
+      const bEmpty = bv == null || bv === "";
+      // Empty/null values always sort last regardless of direction
+      if (aEmpty !== bEmpty) return aEmpty ? 1 : -1;
+      if (aEmpty && bEmpty) continue;
       let cmp = 0;
       if (col.type === "number") cmp = (Number(av) || 0) - (Number(bv) || 0);
-      else cmp = String(av || "").localeCompare(String(bv || ""));
+      else cmp = String(av).localeCompare(String(bv));
       if (cmp !== 0) return s.dir === "desc" ? -cmp : cmp;
     }
     return 0;
@@ -193,6 +198,7 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
       ...(col.defaultValue !== undefined ? { defaultValue: col.defaultValue } : {}),
       ...(col.defaultCurrentDate ? { defaultCurrentDate: col.defaultCurrentDate } : {}),
       ...(col.relationDbId ? { relationDbId: col.relationDbId } : {}),
+      ...(col.relationDisplayColumn ? { relationDisplayColumn: col.relationDisplayColumn } : {}),
     };
     const columns = [...db.columns, newCol];
     const views = db.views.map((v) => ({
@@ -292,12 +298,13 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
     updateAttributes({ displayMode: mode });
   }, [updateAttributes]);
 
-  // ── Computed rows ────────────────────────────────────────────────────────
+  // ── Computed rows (stable ordering) ──────────────────────────────────────
+  const stableOrderRef = useRef<string[]>([]);
+  const lastSortKeyRef = useRef("");
 
   const computedRows = (() => {
     if (!db || !activeView) return [];
     let result = [...db.rows];
-    // Evaluate formula columns
     const formulaCols = db.columns.filter((c) => c.type === "formula" && c.formula);
     if (formulaCols.length > 0) {
       result = result.map((row) => {
@@ -310,8 +317,19 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
     }
     result = applyFilters(result, activeView.filters, activeView.filterLogic || "and", db.columns);
     result = applySearch(result, search, db.columns);
-    result = applySorts(result, activeView.sorts, db.columns);
-    return result;
+
+    const currentRowIds = result.map((r) => r.id).sort().join(",");
+    const sortKey = JSON.stringify(activeView.sorts) + "|" + JSON.stringify(activeView.filters) + "|" + search + "|" + currentRowIds;
+
+    if (sortKey !== lastSortKeyRef.current) {
+      lastSortKeyRef.current = sortKey;
+      result = applySorts(result, activeView.sorts, db.columns);
+      stableOrderRef.current = result.map((r) => r.id);
+      return result;
+    }
+
+    const rowMap = new Map(result.map((r) => [r.id, r]));
+    return stableOrderRef.current.filter((id) => rowMap.has(id)).map((id) => rowMap.get(id)!);
   })();
 
   // ── Render ───────────────────────────────────────────────────────────────

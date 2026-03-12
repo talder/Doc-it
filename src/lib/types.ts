@@ -20,6 +20,7 @@ export interface UserPreferences {
   favorites?: FavoriteItem[];
   spellcheckEnabled?: boolean;
   spellcheckLanguage?: string;
+  defaultSpace?: string;
 }
 
 export interface User {
@@ -247,6 +248,7 @@ export interface DbColumn {
   type: DbColumnType;
   options?: string[];           // select / multiSelect
   relationDbId?: string;        // relation
+  relationDisplayColumn?: string; // which column from related DB to show as label
   formula?: string;             // formula
   width?: number;               // default column width in px
   defaultValue?: unknown;       // default cell value for new rows

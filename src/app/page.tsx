@@ -350,7 +350,11 @@ export default function Home() {
       .then((r) => r.json())
       .then((data) => {
         setSpaces(data);
-        if (data.length > 0 && !currentSpace) setCurrentSpace(data[0]);
+        if (data.length > 0 && !currentSpace) {
+          const defaultSlug = user.preferences?.defaultSpace;
+          const defaultSpace = defaultSlug ? data.find((s: Space) => s.slug === defaultSlug) : null;
+          setCurrentSpace(defaultSpace || data[0]);
+        }
         setLoading(false);
       });
   }, [user, currentSpace]);
@@ -1134,6 +1138,17 @@ export default function Home() {
     });
   };
 
+  // --- Default space ---
+
+  const handleSetDefaultSpace = useCallback((slug: string | null) => {
+    setUser((prev) => prev ? { ...prev, preferences: { ...prev.preferences, defaultSpace: slug ?? undefined } } : prev);
+    fetch("/api/auth/profile", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ preferences: { defaultSpace: slug } }),
+    });
+  }, []);
+
   // --- Page width ---
 
   const handlePageWidthChange = useCallback((w: "narrow" | "wide" | "max") => {
@@ -1361,6 +1376,7 @@ export default function Home() {
           const target = docs.find((d) => d.name === n.docName && d.category === n.category);
           if (target) guardedNav(() => { loadDoc(target); setIsEditing(true); })
         }}
+        onSetDefaultSpace={handleSetDefaultSpace}
       />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
