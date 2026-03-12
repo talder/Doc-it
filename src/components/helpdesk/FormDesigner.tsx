@@ -35,7 +35,7 @@ export default function FormDesigner({ forms, fieldDefs, post }: FormDesignerPro
 
   const addField = async (std?: HdFormField["standardField"], defId?: string) => {
     if (!form) return;
-    const id = crypto.randomUUID();
+    const id = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
     const label = std ? STANDARD_FIELDS.find((s) => s.key === std)!.label : fieldDefs.find((d) => d.id === defId)?.name || "Field";
     const newField: HdFormField = {
       id, standardField: std, fieldDefId: defId,

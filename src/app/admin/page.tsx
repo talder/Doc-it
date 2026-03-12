@@ -2658,7 +2658,7 @@ function AdminContent() {
                   <button
                     disabled={!newMappingGroupDn.trim() || !newMappingSpaceSlug}
                     onClick={() => {
-                      const mapping: AdGroupMapping = { id: crypto.randomUUID(), groupDn: newMappingGroupDn.trim(), spaceSlug: newMappingSpaceSlug, role: newMappingSpaceSlug === "*" ? "admin" : newMappingRole };
+                      const mapping: AdGroupMapping = { id: globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2), groupDn: newMappingGroupDn.trim(), spaceSlug: newMappingSpaceSlug, role: newMappingSpaceSlug === "*" ? "admin" : newMappingRole };
                       setAdConfig({ ...adConfig, groupMappings: [...adConfig.groupMappings, mapping] });
                       setNewMappingGroupDn(""); setNewMappingSpaceSlug(""); setNewMappingRole("reader");
                     }}

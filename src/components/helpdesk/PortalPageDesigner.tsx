@@ -75,7 +75,7 @@ export default function PortalPageDesigner({ pages, post }: PortalPageDesignerPr
 
   const addWidget = async (type: WidgetType) => {
     if (!page) return;
-    const w: PageWidget = { id: crypto.randomUUID(), type, config: defaultConfig(type), order: page.widgets.length, width: "full" };
+    const w: PageWidget = { id: globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2), type, config: defaultConfig(type), order: page.widgets.length, width: "full" };
     await post({ action: "updatePortalPage", id: page.id, widgets: [...page.widgets, w] });
   };
 
