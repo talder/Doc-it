@@ -49,7 +49,7 @@ Rows are shown as cards with a prominent image or summary field.
 | `checkbox` | Boolean |
 | `url` | Clickable link |
 | `email` | Email address |
-| `relation` | Link to a row in another database |
+| `relation` | Link to a row in another database (see [Relations](#relations) below) |
 | `formula` | Computed value |
 | `attachment` | File upload |
 
@@ -66,7 +66,28 @@ Rows are shown as cards with a prominent image or summary field.
 ## Adding & Editing Columns
 
 - Click **+ Add column** in the table header to add a column.
-- Click a column header to rename it, change its type, or delete it.
+- Click a column header to open the column menu: rename it, change its type, set its display column (relation fields), or delete it.
+
+---
+
+## Sorting by Column Header
+
+Click any column header in Table view to sort rows by that column. Clicking cycles through three states:
+1. Unsorted (default, insertion order)
+2. Ascending
+3. Descending
+
+Row numbers always reflect insertion order regardless of the current sort.
+
+---
+
+## Relations
+
+A `relation` column links each row to a row in another database within the same space.
+
+- **Linking a database**: click the column header → **Link to database …** and select the target database.
+- **Display column**: click the column header → **Display column …** to choose which field from the linked database is shown in the cell.
+- **Picking a related row**: click a relation cell to open the **Relation Picker** — a searchable modal that lists all rows in the linked database; already-selected rows appear at the top.
 
 ---
 

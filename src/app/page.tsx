@@ -12,7 +12,6 @@ import DocActionsMenu from "@/components/DocActionsMenu";
 import CreateCategoryModal from "@/components/modals/CreateCategoryModal";
 import CreateDocModal from "@/components/modals/CreateDocModal";
 import RenameCategoryModal from "@/components/modals/RenameCategoryModal";
-import ConfirmModal from "@/components/modals/ConfirmModal";
 import DeleteCategoryModal from "@/components/modals/DeleteCategoryModal";
 import ArchiveModal from "@/components/modals/ArchiveModal";
 import HistoryModal from "@/components/modals/HistoryModal";
@@ -1222,11 +1221,27 @@ export default function Home() {
     setShowDeleteDbModal(true);
   };
 
+  const handleArchiveDatabase = async () => {
+    if (!currentSpace || !deleteDbTarget) return;
+    await fetch(`/api/spaces/${encodeURIComponent(currentSpace.slug)}/databases/${deleteDbTarget.id}/archive`, {
+      method: "POST",
+    });
+    if (activeDatabase === deleteDbTarget.id) {
+      setActiveDatabase(null);
+      setActiveDatabaseSearch("");
+    }
+    await fetchSpaceData();
+  };
+
   const handleConfirmDeleteDatabase = async () => {
     if (!currentSpace || !deleteDbTarget) return;
     await fetch(`/api/spaces/${encodeURIComponent(currentSpace.slug)}/databases/${deleteDbTarget.id}`, {
       method: "DELETE",
     });
+    if (activeDatabase === deleteDbTarget.id) {
+      setActiveDatabase(null);
+      setActiveDatabaseSearch("");
+    }
     await fetchSpaceData();
   };
 
@@ -1836,6 +1851,7 @@ export default function Home() {
         onCreate={handleCreateDoc}
         templates={templates}
         onSelectTemplate={handleSelectTemplate}
+        docs={docs}
       />
       <TemplateFormModal
         isOpen={showTplFormModal}
@@ -1870,6 +1886,7 @@ export default function Home() {
         templateCategories={categories.filter((c) => c.path === "Templates" || c.path.startsWith("Templates/"))}
         onClose={() => setShowNewTemplateModal(false)}
         onCreate={handleConfirmNewTemplate}
+        docs={docs}
       />
       <DeleteCategoryModal
         isOpen={showDeleteCategoryModal}
@@ -1977,6 +1994,7 @@ export default function Home() {
       <DatabaseCreateModal
         isOpen={showSidebarDbCreateModal}
         onClose={() => setShowSidebarDbCreateModal(false)}
+        existingNames={databasesList.map((db) => db.title)}
         onCreate={async (title, templateId) => {
           if (!currentSpace) return;
           try {
@@ -1985,7 +2003,7 @@ export default function Home() {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ title, templateId: templateId || undefined }),
             });
-            fetchSpaceData();
+            await fetchSpaceData();
           } catch {}
           setShowSidebarDbCreateModal(false);
         }}
@@ -1994,6 +2012,7 @@ export default function Home() {
         isOpen={showEditDbModal}
         mode="edit"
         initialTitle={editDbTarget?.title ?? ""}
+        existingNames={databasesList.map((db) => db.title)}
         onClose={() => { setShowEditDbModal(false); setEditDbTarget(null); }}
         onCreate={async (title) => {
           await handleConfirmEditDatabase(title);
@@ -2001,19 +2020,57 @@ export default function Home() {
           setEditDbTarget(null);
         }}
       />
-      <ConfirmModal
-        isOpen={showDeleteDbModal}
-        title="Delete database"
-        message={`Are you sure you want to delete "${deleteDbTarget?.title}"? This action cannot be undone.`}
-        confirmLabel="Delete"
-        variant="danger"
-        onClose={() => { setShowDeleteDbModal(false); setDeleteDbTarget(null); }}
-        onConfirm={async () => {
-          await handleConfirmDeleteDatabase();
-          setShowDeleteDbModal(false);
-          setDeleteDbTarget(null);
-        }}
-      />
+      {/* Delete database modal with archive option */}
+      {showDeleteDbModal && deleteDbTarget && (
+        <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) { setShowDeleteDbModal(false); setDeleteDbTarget(null); } }}>
+          <div className="modal-container" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">Delete database</h2>
+              <button onClick={() => { setShowDeleteDbModal(false); setDeleteDbTarget(null); }} className="modal-close">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="modal-body">
+              <p className="modal-message">
+                What would you like to do with &quot;{deleteDbTarget.title}&quot;?
+              </p>
+              <div className="flex flex-col gap-2 mt-4">
+                <button
+                  className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border hover:bg-muted transition-colors text-left"
+                  onClick={async () => {
+                    setShowDeleteDbModal(false);
+                    await handleArchiveDatabase();
+                    setDeleteDbTarget(null);
+                  }}
+                >
+                  <Archive className="w-5 h-5 text-blue-500" />
+                  <div>
+                    <p className="text-sm font-medium text-text-primary">Archive</p>
+                    <p className="text-xs text-text-muted">Move to archive — can be restored anytime</p>
+                  </div>
+                </button>
+                <button
+                  className="flex items-center gap-3 px-4 py-3 rounded-lg border border-red-200 hover:bg-red-50 transition-colors text-left"
+                  onClick={async () => {
+                    setShowDeleteDbModal(false);
+                    await handleConfirmDeleteDatabase();
+                    setDeleteDbTarget(null);
+                  }}
+                >
+                  <Trash2 className="w-5 h-5 text-red-500" />
+                  <div>
+                    <p className="text-sm font-medium text-red-600">Delete to Recycle Bin</p>
+                    <p className="text-xs text-text-muted">Auto-deleted after retention period</p>
+                  </div>
+                </button>
+              </div>
+              <div className="mt-3 flex justify-end">
+                <button onClick={() => { setShowDeleteDbModal(false); setDeleteDbTarget(null); }} className="modal-btn-cancel">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Share modal */}
       {showShareModal && activeDoc && currentSpace && (

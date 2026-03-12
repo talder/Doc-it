@@ -61,6 +61,7 @@ export default function DatabaseTable({
   const fetchingRelated = useRef<Set<string>>(new Set());
   const colMenuRef = useRef<HTMLDivElement>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
+  const tabNavigating = useRef(false);
 
   // Column ordering
   const orderedCols = (() => {
@@ -94,6 +95,7 @@ export default function DatabaseTable({
   };
 
   const commitEdit = useCallback(() => {
+    if (tabNavigating.current) return;
     if (!editCell) return;
     const col = db.columns.find((c) => c.id === editCell.colId);
     let val: unknown = editValue;
@@ -103,43 +105,49 @@ export default function DatabaseTable({
     setEditCell(null);
   }, [editCell, editValue, db.columns, onUpdateRow]);
 
-  // Tab navigation: commit current cell and move to next/previous
+  // Navigate to next/prev editable cell (shared by all cell types for Tab)
+  const tabToNextCell = useCallback((e: React.KeyboardEvent) => {
+    if (!editCell) return;
+    e.preventDefault();
+    tabNavigating.current = true;
+    requestAnimationFrame(() => { tabNavigating.current = false; });
+    const colIdx = orderedCols.findIndex((c) => c.id === editCell.colId);
+    const rowIdx = rows.findIndex((r) => r.id === editCell.rowId);
+    let nr = rowIdx, nc = colIdx;
+    const step = e.shiftKey ? -1 : 1;
+    nc += step;
+    if (nc >= orderedCols.length) { nc = 0; nr++; }
+    else if (nc < 0) { nc = orderedCols.length - 1; nr--; }
+    // Skip read-only and non-inline-editable columns
+    while (nr >= 0 && nr < rows.length && (orderedCols[nc]?.type === "createdBy" || orderedCols[nc]?.type === "relation")) {
+      nc += step;
+      if (nc >= orderedCols.length) { nc = 0; nr++; }
+      else if (nc < 0) { nc = orderedCols.length - 1; nr--; }
+    }
+    if (nr >= 0 && nr < rows.length) {
+      const nextCol = orderedCols[nc];
+      const nextRow = rows[nr];
+      setEditCell({ rowId: nextRow.id, colId: nextCol.id });
+      setEditValue(nextRow.cells[nextCol.id] != null ? String(nextRow.cells[nextCol.id]) : "");
+    } else {
+      setEditCell(null);
+    }
+  }, [editCell, orderedCols, rows]);
+
+  // Keyboard handler for text/number/date inputs
   const handleCellKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === "Enter") { commitEdit(); return; }
     if (e.key === "Escape") { setEditCell(null); return; }
     if (e.key === "Tab" && editCell) {
-      e.preventDefault();
-      // Save current cell
+      // Save current cell value then navigate
       const col = db.columns.find((c) => c.id === editCell.colId);
       let val: unknown = editValue;
       if (col?.type === "number") val = editValue === "" ? null : Number(editValue);
       else if (col?.type === "checkbox") val = editValue === "true";
       onUpdateRow(editCell.rowId, { [editCell.colId]: val });
-      // Find next/prev editable cell
-      const colIdx = orderedCols.findIndex((c) => c.id === editCell.colId);
-      const rowIdx = rows.findIndex((r) => r.id === editCell.rowId);
-      let nr = rowIdx, nc = colIdx;
-      const step = e.shiftKey ? -1 : 1;
-      nc += step;
-      // Wrap across rows
-      if (nc >= orderedCols.length) { nc = 0; nr++; }
-      else if (nc < 0) { nc = orderedCols.length - 1; nr--; }
-      // Skip read-only columns (createdBy)
-      while (nr >= 0 && nr < rows.length && orderedCols[nc]?.type === "createdBy") {
-        nc += step;
-        if (nc >= orderedCols.length) { nc = 0; nr++; }
-        else if (nc < 0) { nc = orderedCols.length - 1; nr--; }
-      }
-      if (nr >= 0 && nr < rows.length) {
-        const nextCol = orderedCols[nc];
-        const nextRow = rows[nr];
-        setEditCell({ rowId: nextRow.id, colId: nextCol.id });
-        setEditValue(nextRow.cells[nextCol.id] != null ? String(nextRow.cells[nextCol.id]) : "");
-      } else {
-        setEditCell(null);
-      }
+      tabToNextCell(e);
     }
-  }, [editCell, editValue, db.columns, onUpdateRow, orderedCols, rows, commitEdit]);
+  }, [editCell, editValue, db.columns, onUpdateRow, commitEdit, tabToNextCell]);
 
   const allSelected = rows.length > 0 && selectedRows.size === rows.length;
   const someSelected = selectedRows.size > 0 && selectedRows.size < rows.length;
@@ -245,11 +253,16 @@ export default function DatabaseTable({
     if (col.type === "checkbox") {
       return (
         <input
+          ref={(el) => { if (isEditing && el) el.focus(); }}
           type="checkbox"
           checked={!!value}
           disabled={!canWrite}
           className="db-cell-checkbox"
           onChange={(e) => onUpdateRow(row.id, { [col.id]: e.target.checked })}
+          onKeyDown={(e) => {
+            if (e.key === "Tab") tabToNextCell(e);
+            else if (e.key === "Escape") setEditCell(null);
+          }}
         />
       );
     }
@@ -261,7 +274,11 @@ export default function DatabaseTable({
           className="db-cell-input"
           value={String(value || "")}
           onChange={(e) => { onUpdateRow(row.id, { [col.id]: e.target.value }); setEditCell(null); }}
-          onBlur={() => setEditCell(null)}
+          onBlur={() => { if (!tabNavigating.current) setEditCell(null); }}
+          onKeyDown={(e) => {
+            if (e.key === "Tab") tabToNextCell(e);
+            else if (e.key === "Escape") setEditCell(null);
+          }}
         >
           <option value="">—</option>
           {(col.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
@@ -277,7 +294,7 @@ export default function DatabaseTable({
     if (col.type === "multiSelect" && isEditing) {
       const vals = Array.isArray(value) ? (value as string[]) : [];
       return (
-        <div className="db-multiselect-dropdown" onClick={(e) => e.stopPropagation()}>
+        <div className="db-multiselect-dropdown" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Tab") tabToNextCell(e); else if (e.key === "Escape") setEditCell(null); }}>
           {(col.options || []).map((o) => (
             <label key={o} className="db-multiselect-option">
               <input
@@ -315,7 +332,7 @@ export default function DatabaseTable({
       const vals = Array.isArray(value) ? (value as string[]) : [];
       if (isEditing) {
         return (
-          <div className="db-multiselect-dropdown" onClick={(e) => e.stopPropagation()}>
+          <div className="db-multiselect-dropdown" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Tab") tabToNextCell(e); else if (e.key === "Escape") setEditCell(null); }}>
             {members.map((m) => (
               <label key={m.username} className="db-multiselect-option">
                 <input

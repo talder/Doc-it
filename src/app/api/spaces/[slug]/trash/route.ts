@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import { requireSpaceRole } from "@/lib/permissions";
 import { ensureDir, readJsonConfig, getTrashDir, getCategoryDir } from "@/lib/config";
+import { getDatabaseDir } from "@/lib/database";
 import { auditLog } from "@/lib/audit";
 import { invalidateSpaceCache } from "@/lib/space-cache";
 
@@ -18,6 +19,8 @@ interface TrashEntry {
   deletedBy: string;
   deletedAt: string;
   isTemplate?: boolean;
+  itemType?: "document" | "database";
+  dbId?: string;
 }
 
 interface TrashManifest {
@@ -119,7 +122,25 @@ export async function POST(request: NextRequest, { params }: Params) {
   const trashFile = path.join(trashDir, item.id);
 
   if (action === "restore") {
-    // Move file back to original location
+    if (item.itemType === "database" && item.dbId) {
+      // Restore database to .databases/ dir
+      const dbDir = getDatabaseDir(slug);
+      await ensureDir(dbDir);
+      const destPath = path.join(dbDir, `${item.dbId}.db.json`);
+      try {
+        const content = await fs.readFile(trashFile, "utf-8");
+        await fs.writeFile(destPath, content, "utf-8");
+        await fs.unlink(trashFile);
+      } catch {
+        return NextResponse.json({ error: "Failed to restore" }, { status: 500 });
+      }
+      manifest.items.splice(idx, 1);
+      await writeManifest(slug, manifest);
+      invalidateSpaceCache(slug);
+      auditLog(request, { event: "database.unarchive", outcome: "success", actor: user.username, spaceSlug: slug, resource: item.dbId, resourceType: "database", details: { action: "restore-from-trash" } });
+      return NextResponse.json({ success: true });
+    }
+    // Move document file back to original location
     const docsDir = getCategoryDir(slug, item.category);
     await ensureDir(docsDir);
     const destPath = path.join(docsDir, item.filename);
@@ -127,7 +148,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       const content = await fs.readFile(trashFile, "utf-8");
       await fs.writeFile(destPath, content, "utf-8");
       await fs.unlink(trashFile);
-    } catch (err) {
+    } catch {
       return NextResponse.json({ error: "Failed to restore" }, { status: 500 });
     }
     manifest.items.splice(idx, 1);
@@ -142,7 +163,10 @@ export async function POST(request: NextRequest, { params }: Params) {
     try { await fs.unlink(trashFile); } catch {}
     manifest.items.splice(idx, 1);
     await writeManifest(slug, manifest);
-    auditLog(request, { event: "document.delete", outcome: "success", actor: user.username, spaceSlug: slug, resource: `${item.category}/${item.name}`, resourceType: "document", details: { action: "permanent-delete" } });
+    const eventType = item.itemType === "database" ? "database.delete" : "document.delete";
+    const resourceType = item.itemType === "database" ? "database" : "document";
+    const resource = item.itemType === "database" ? (item.dbId ?? item.name) : `${item.category}/${item.name}`;
+    auditLog(request, { event: eventType, outcome: "success", actor: user.username, spaceSlug: slug, resource, resourceType, details: { action: "permanent-delete" } });
     return NextResponse.json({ success: true });
   }
 

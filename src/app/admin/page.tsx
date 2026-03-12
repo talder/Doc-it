@@ -10,7 +10,7 @@ type Tab = "users" | "spaces" | "service-keys" | "groups" | "settings" | "audit"
 
 interface BackupEntry { filename: string; sizeBytes: number; createdAt: string; }
 interface BackupTargetForm { id: string; type: "local" | "cifs" | "sftp"; label: string; path: string; host: string; port: number; share: string; remotePath: string; username: string; password: string; privateKey: string; }
-const EMPTY_TARGET = (): BackupTargetForm => ({ id: crypto.randomUUID(), type: "local", label: "", path: "", host: "", port: 22, share: "", remotePath: "", username: "", password: "", privateKey: "" });
+const EMPTY_TARGET = (): BackupTargetForm => ({ id: globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2), type: "local", label: "", path: "", host: "", port: 22, share: "", remotePath: "", username: "", password: "", privateKey: "" });
 
 interface ServiceKeyRecord {
   id: string;

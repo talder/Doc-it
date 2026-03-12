@@ -60,9 +60,12 @@ Three applications have been the primary functional inspiration behind Doc-it �
 
 ### Databases
 - **Inline databases** — embed structured tables directly inside documents via `/database`
-- **Custom schemas** — define columns with types: text, number, date, checkbox, select, multi-select, URL
+- **Custom schemas** — define columns with types: text, number, date, checkbox, select, multi-select, URL, relation
 - **Views** — switch between Table, Board (Kanban), and Gallery views per database
-- **Filtering & sorting** — filter rows and sort by any column
+- **Relation picker** — searchable modal for linking rows across databases; configurable display column per relation field
+- **Column header sorting** — click any column header to cycle unsorted → ascending → descending
+- **Stable row numbers** — row numbers reflect insertion order, not display position
+- **Filtering & sorting** — filter rows and sort by any column via toolbar controls
 - **Per-space storage** — each database is stored as JSON within its space, versioned with the space
 
 ### Journal
@@ -125,16 +128,24 @@ Three applications have been the primary functional inspiration behind Doc-it �
 - **Public portal listing** — browse published portal pages at `/portals` with links to `/portals/[slug]`
 - **Portal user authentication** — separate auth system for portal users with session management
 
+### Dashboard
+- **Link-card dashboard** — Dashy-style home dashboard with collapsible sections grouping link cards
+- **Sections** — named sections with optional icon and colour
+- **Links** — each card has a title, URL, description, icon (favicon or custom), colour, and open-in-new-tab toggle
+- **Group visibility** — restrict individual link cards to specific user groups
+
 ### Users & Auth
 - **Session-based authentication** with cookie sessions and idle timeout (NIS2)
+- **Active Directory / LDAP** — optional AD/LDAP authentication (plain LDAP or LDAPS); shadow user provisioning with automatic space role sync from AD group mappings
 - **TOTP multi-factor authentication** — time-based one-time passwords with QR code setup, backup codes, and admin-forced enrollment
 - **bcrypt password hashing** — automatic migration from legacy SHA-256 hashes; configurable bcrypt rounds
 - **Password policy** — password history enforcement to prevent reuse
 - **Account lockout** — brute-force protection with configurable lockout thresholds
 - **User self-registration** — new users register and see a pending access screen until an admin assigns them to a space
+- **User Groups** — admin-managed groups of users for dashboard link visibility and permission targeting
 - **User profiles** — change full name, email, password, avatar, editor preferences (line spacing, font size, TOC, accent colour)
 - **API Keys** — personal user keys (`dk_u_`) and admin-managed service keys (`dk_s_`) with per-space permissions, expiry dates, and a one-time secret reveal
-- **Admin panel** — manage users, spaces, permissions, SMTP settings, service API keys, backups, and audit logs
+- **Admin panel** — manage users, spaces, groups, permissions, SMTP settings, Active Directory, service API keys, backups, and audit logs
 - **SMTP email** — configurable email notifications (e.g. admin notified on new registration)
 
 ### NIS2 Audit Logging
@@ -148,11 +159,11 @@ Three applications have been the primary functional inspiration behind Doc-it �
 
 ### Backup & Recovery
 - **Encrypted backups** — AES-256-GCM encrypted `.tar.gz.enc` archives of all data directories (config, docs, logs, archive, history)
-- **Backup targets** — local path (covers pre-mounted NFS shares) and CIFS/SMB remote shares via `smbclient`
+- **Backup targets** — local path (covers pre-mounted NFS shares), CIFS/SMB via `smbclient`, and SFTP via `ssh2` (password or private key)
 - **Scheduling** — manual or automated backups with configurable time and day-of-week
 - **Retention policy** — configurable retention count; old backups pruned automatically
 - **Restore** — decrypt and restore from any backup archive via the admin panel
-- **Encryption key rotation** — rotate the field-encryption key with automatic re-encryption of all TOTP secrets, CIFS passwords, and backup archives
+- **Encryption key rotation** — rotate the field-encryption key with automatic re-encryption of all TOTP secrets, CIFS/SFTP credentials, and backup archives
 
 ### Theming & Personalisation
 - **17 themes** — Light, Solarized Light, Dracula Light, Catppuccin Latte, Paper, High Contrast, Dark, Dracula, Nord, Solarized Dark, GitHub Dark, Catppuccin Mocha, Twilight, Midnight Rose, and High Contrast Dark
@@ -301,12 +312,16 @@ src/
     assets.ts        # Asset management module
     changelog.ts     # Change log module
     journal.ts       # Journal module (encrypted user journals)
-    audit.ts         # NIS2 audit logging (encrypted, syslog)
+    audit.ts         # NIS2 audit logging (encrypted, syslog, write queue)
     backup.ts        # Backup & restore (AES-256-GCM encrypted archives)
     crypto.ts        # Field encryption & key management
     key-rotation.ts  # Encryption key rotation
     permissions.ts   # Space role-based access control
     email.ts         # Nodemailer SMTP utilities
+    ad.ts            # Active Directory / LDAP authentication
+    dashboard.ts     # Link-card dashboard (sections and links)
+    user-groups.ts   # Admin-managed user groups
+    space-cache.ts   # 60-second in-process space data cache
     types.ts         # TypeScript type definitions
 ```
 
@@ -327,6 +342,9 @@ Key configuration entries (stored as JSON values):
 - `changelog-settings.json` — changelog retention period (default 5 years)
 - `audit.json` — audit configuration
 - `backup.json` — backup configuration and targets
+- `ad.json` — Active Directory / LDAP authentication settings
+- `dashboard.json` — dashboard sections and links
+- `user-groups.json` — user groups
 
 Avatars are stored in `config/avatars/`.
 
@@ -345,6 +363,13 @@ The path must be absolute. The change takes effect immediately — no restart re
 If the file is absent or `storageRoot` is omitted, doc-it falls back to the application directory (fully backward-compatible).
 
 The storage path can also be configured in **Admin → Settings → Storage Location**.
+
+### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `SECRET_FIELD_KEY` | (auto-generated) | AES-256-GCM key for field-level encryption. Auto-generated on first boot and stored in `config/docit.db`. |
+| `SECURE_COOKIES` | `true` in production | Set to `false` to disable the `Secure` flag on session cookies. Useful for HTTP-only lab/reverse-proxy deployments. |
 
 ## License
 

@@ -84,7 +84,14 @@ You can also set or inspect the storage root via **Admin → Settings → Storag
 
 ## Environment Variables
 
-No environment variables are required for basic operation. doc-it uses `docit.config.json` (above) instead of environment variables for storage path configuration.
+No environment variables are required for basic operation.
+
+| Variable | Default | Description |
+|---|---|---|
+| `SECRET_FIELD_KEY` | (auto-generated) | AES-256-GCM encryption key for field-level data (TOTP secrets, journal entries, backup archives, CIFS/SFTP credentials). Auto-generated on first boot and stored in `config/docit.db`. Override to pin a static key (useful for restoring backups across instances). |
+| `SECURE_COOKIES` | `true` in production | Set to `false` to disable the `Secure` flag on HTTP-only session cookies. Useful when running behind a reverse proxy that terminates TLS but forwards HTTP internally, or in local lab environments. |
+
+doc-it uses `docit.config.json` (above) for storage path configuration rather than environment variables.
 
 ---
 

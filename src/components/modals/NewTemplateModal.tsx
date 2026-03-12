@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { X, LayoutTemplate, ChevronDown } from "lucide-react";
-import type { Category } from "@/lib/types";
+import type { Category, DocFile } from "@/lib/types";
 
 interface NewTemplateModalProps {
   isOpen: boolean;
@@ -10,6 +10,7 @@ interface NewTemplateModalProps {
   templateCategories: Category[];
   onClose: () => void;
   onCreate: (name: string, category: string) => void;
+  docs?: DocFile[];
 }
 
 export default function NewTemplateModal({
@@ -18,12 +19,14 @@ export default function NewTemplateModal({
   templateCategories,
   onClose,
   onCreate,
+  docs = [],
 }: NewTemplateModalProps) {
   const [name, setName] = useState("");
   const [category, setCategory] = useState(defaultCategory || "Templates");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const isDuplicate = !!(name.trim()) && docs.some((d) => d.category === category && d.name.toLowerCase() === name.trim().toLowerCase() && d.isTemplate);
 
   useEffect(() => {
     if (isOpen) {
@@ -48,7 +51,7 @@ export default function NewTemplateModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || isDuplicate) return;
     onCreate(name.trim(), category);
     onClose();
   };
@@ -112,16 +115,19 @@ export default function NewTemplateModal({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Enter template name…"
-              className="modal-input"
+              className={`modal-input${isDuplicate ? " border-red-400" : ""}`}
               required
             />
+            {isDuplicate && (
+              <p className="text-xs text-red-400 mt-1">A template with this name already exists in this category</p>
+            )}
           </div>
 
           <div className="modal-actions">
             <button type="button" onClick={onClose} className="modal-btn-cancel">
               Cancel
             </button>
-            <button type="submit" disabled={!name.trim()} className="modal-btn-primary">
+            <button type="submit" disabled={!name.trim() || isDuplicate} className="modal-btn-primary">
               Create template
             </button>
           </div>

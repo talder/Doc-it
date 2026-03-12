@@ -17,11 +17,13 @@ interface DatabaseCreateModalProps {
   onCreate: (title: string, templateId: string) => void;
   mode?: "create" | "edit";
   initialTitle?: string;
+  existingNames?: string[];
 }
 
-export default function DatabaseCreateModal({ isOpen, onClose, onCreate, mode = "create", initialTitle = "" }: DatabaseCreateModalProps) {
+export default function DatabaseCreateModal({ isOpen, onClose, onCreate, mode = "create", initialTitle = "", existingNames = [] }: DatabaseCreateModalProps) {
   const [title, setTitle] = useState(initialTitle);
   const [selectedTemplate, setSelectedTemplate] = useState("");
+  const isDuplicate = !!(title.trim()) && existingNames.some((n) => n.toLowerCase() === title.trim().toLowerCase()) && title.trim().toLowerCase() !== initialTitle.toLowerCase();
 
   useEffect(() => {
     if (isOpen) {
@@ -34,9 +36,9 @@ export default function DatabaseCreateModal({ isOpen, onClose, onCreate, mode = 
 
   const isEdit = mode === "edit";
 
-  const handleCreate = () => {
-    if (!title.trim()) return;
-    onCreate(title.trim(), selectedTemplate);
+  const handleCreate = async () => {
+    if (!title.trim() || isDuplicate) return;
+    await onCreate(title.trim(), selectedTemplate);
     setTitle("");
     setSelectedTemplate("");
     onClose();
@@ -56,12 +58,15 @@ export default function DatabaseCreateModal({ isOpen, onClose, onCreate, mode = 
             <label className="block text-xs font-medium text-text-muted mb-1.5">Database Name</label>
             <input
               autoFocus
-              className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-input-bg text-text-primary outline-none focus:border-accent"
+              className={`w-full px-3 py-2 text-sm rounded-lg border bg-input-bg text-text-primary outline-none focus:border-accent${isDuplicate ? " border-red-400" : " border-border"}`}
               placeholder="My Database"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); if (e.key === "Escape") onClose(); }}
             />
+            {isDuplicate && (
+              <p className="text-xs text-red-400 mt-1">A database with this name already exists</p>
+            )}
           </div>
           {!isEdit && (
           <div>
@@ -97,7 +102,7 @@ export default function DatabaseCreateModal({ isOpen, onClose, onCreate, mode = 
           </button>
           <button
             className="px-3 py-1.5 text-xs font-semibold rounded-md bg-accent text-white hover:bg-accent-hover disabled:opacity-40"
-            disabled={!title.trim()}
+            disabled={!title.trim() || isDuplicate}
             onClick={handleCreate}
           >
             {isEdit ? "Save" : "Create"}

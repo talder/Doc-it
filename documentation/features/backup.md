@@ -45,6 +45,18 @@ Copy the backup file directly to a Windows / Samba share using `smbclient`. Conf
 - Username and password (password is encrypted at rest)
 - Domain (optional)
 
+### SFTP
+Copy the backup file to a remote server over SSH using `ssh2`. Configure:
+
+| Field | Description |
+|---|---|
+| Host | SFTP server hostname or IP |
+| Port | Default `22` |
+| Username | SSH username |
+| Password | SSH password (stored encrypted at rest; mutually exclusive with private key) |
+| Private key | PEM private key (stored encrypted at rest; mutually exclusive with password) |
+| Remote path | Destination directory on the server (e.g., `/backups/docit/`) |
+
 ---
 
 ## Running a Backup Manually
@@ -76,4 +88,4 @@ All backup archives are encrypted at rest using the same AES-256-GCM key used fo
 
 ## Storage
 
-Backup configuration is stored in the SQLite KV store under the key `backup.json`. Backup run state (last run timestamp) is stored under `backup-state.json`.
+Backup configuration is stored in the SQLite KV store under the key `backup.json`. Backup run state (last run timestamp) is stored under `backup-state.json`. CIFS and SFTP credentials are stored AES-256-GCM encrypted within the backup configuration.

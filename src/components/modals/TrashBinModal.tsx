@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, RotateCcw, Trash2, FileText } from "lucide-react";
+import { X, RotateCcw, Trash2, FileText, Database } from "lucide-react";
 
 interface TrashItem {
   id: string;
@@ -11,6 +11,8 @@ interface TrashItem {
   deletedBy: string;
   deletedAt: string;
   isTemplate?: boolean;
+  itemType?: "document" | "database";
+  dbId?: string;
 }
 
 interface TrashBinModalProps {
@@ -103,14 +105,19 @@ export default function TrashBinModal({ isOpen, spaceSlug, onClose, onRestored }
                   key={item.id}
                   className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted transition-colors"
                 >
-                  <FileText className="w-4 h-4 text-text-muted flex-shrink-0" />
+                  {item.itemType === "database" ? (
+                    <Database className="w-4 h-4 flex-shrink-0" style={{ color: "#14b8a6" }} />
+                  ) : (
+                    <FileText className="w-4 h-4 text-text-muted flex-shrink-0" />
+                  )}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-text-primary truncate">
                       {item.name}
                       {item.isTemplate && <span className="text-[10px] text-text-muted ml-1">(template)</span>}
+                      {item.itemType === "database" && <span className="text-[10px] text-text-muted ml-1">(database)</span>}
                     </p>
                     <p className="text-xs text-text-muted truncate">
-                      {item.category} · deleted by {item.deletedBy} · {timeAgo(item.deletedAt)}
+                      {item.itemType === "database" ? "" : `${item.category} · `}deleted by {item.deletedBy} · {timeAgo(item.deletedAt)}
                     </p>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">

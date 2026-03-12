@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { X, Folder, ChevronDown, LayoutTemplate } from "lucide-react";
-import type { Category, TemplateInfo } from "@/lib/types";
+import type { Category, DocFile, TemplateInfo } from "@/lib/types";
 
 interface CreateDocModalProps {
   isOpen: boolean;
@@ -12,6 +12,7 @@ interface CreateDocModalProps {
   onCreate: (name: string, category: string) => void;
   templates?: TemplateInfo[];
   onSelectTemplate?: (template: TemplateInfo) => void;
+  docs?: DocFile[];
 }
 
 export default function CreateDocModal({
@@ -22,6 +23,7 @@ export default function CreateDocModal({
   onCreate,
   templates,
   onSelectTemplate,
+  docs = [],
 }: CreateDocModalProps) {
   const [mode, setMode] = useState<"blank" | "template">("blank");
   const [name, setName] = useState("");
@@ -29,6 +31,7 @@ export default function CreateDocModal({
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const isDuplicate = !!(name.trim()) && docs.some((d) => d.category === category && d.name.toLowerCase() === name.trim().toLowerCase() && !d.isTemplate);
 
   const hasTemplates = templates && templates.length > 0;
 
@@ -55,7 +58,7 @@ export default function CreateDocModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || isDuplicate) return;
     onCreate(name.trim(), category);
     onClose();
   };
@@ -158,16 +161,19 @@ export default function CreateDocModal({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Enter document name..."
-              className="modal-input"
+              className={`modal-input${isDuplicate ? " border-red-400" : ""}`}
               required
             />
+            {isDuplicate && (
+              <p className="text-xs text-red-400 mt-1">A document with this name already exists in this category</p>
+            )}
           </div>
 
           <div className="modal-actions">
             <button type="button" onClick={onClose} className="modal-btn-cancel">
               Cancel
             </button>
-            <button type="submit" disabled={!name.trim()} className="modal-btn-primary">
+            <button type="submit" disabled={!name.trim() || isDuplicate} className="modal-btn-primary">
               Create document
             </button>
           </div>

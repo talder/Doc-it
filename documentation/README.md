@@ -26,6 +26,8 @@
   - [Asset Management](features/asset-management.md)
   - [Helpdesk & Ticketing](features/helpdesk.md)
   - [Backup & Recovery](features/backup.md)
+  - [Active Directory / LDAP](features/active-directory.md)
+  - [Dashboard](features/dashboard.md)
 - **API Reference**
   - [Authentication](api/authentication.md)
   - [Spaces](api/spaces.md)
@@ -38,6 +40,7 @@
 - **Admin Guide**
   - [Users](admin/users.md)
   - [Spaces](admin/spaces.md)
+  - [User Groups](admin/user-groups.md)
   - [Service Keys](admin/service-keys.md)
   - [Settings](admin/settings.md)
   - [Audit](admin/audit.md)
@@ -89,7 +92,10 @@ Select your space from the top bar, click **New Document** in the sidebar, choos
 | **Change Log** | Immutable operational change register for tracking infrastructure changes. |
 | **Asset Registry** | IT asset management with hierarchical containers, custom fields, and status tracking. |
 | **Helpdesk** | Ticketing system with groups, SLA policies, automation rules, custom forms, and a self-service portal. |
-| **Backup** | Automated AES-256-GCM encrypted backups with local and CIFS/SMB targets. |
+| **Backup** | Automated AES-256-GCM encrypted backups with local, CIFS/SMB, and SFTP targets. |
+| **Active Directory** | Optional LDAP/LDAPS authentication with shadow user provisioning and AD group → space role mappings. |
+| **Dashboard** | Dashy-style home page with link card sections; per-card group visibility controls. |
+| **User Group** | Admin-managed groups of users for permission targeting (e.g. dashboard link visibility). |
 
 ---
 

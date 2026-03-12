@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSpaceRole } from "@/lib/permissions";
 import { listDatabases, writeDatabase, generateId } from "@/lib/database";
+import { invalidateSpaceCache } from "@/lib/space-cache";
 import type { Database, DbColumn, DbView } from "@/lib/types";
 
 type Params = { params: Promise<{ slug: string }> };
@@ -77,6 +78,7 @@ export async function POST(request: NextRequest, { params }: Params) {
   };
 
   await writeDatabase(slug, dbId, db);
+  invalidateSpaceCache(slug);
   return NextResponse.json(db, { status: 201 });
 }
 

@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import { requireSpaceRole } from "@/lib/permissions";
 import { getArchiveSpaceDir } from "@/lib/config";
+import { listArchivedDatabases } from "@/lib/database";
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -49,6 +50,12 @@ export async function GET(_req: NextRequest, { params }: Params) {
     await requireSpaceRole(slug, "reader");
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 403 });
+  }
+
+  const type = _req.nextUrl.searchParams.get("type");
+  if (type === "databases") {
+    const dbs = await listArchivedDatabases(slug);
+    return NextResponse.json(dbs.map(({ rows, ...rest }) => ({ ...rest, rowCount: rows.length })));
   }
 
   const archiveDir = getArchiveSpaceDir(slug);
