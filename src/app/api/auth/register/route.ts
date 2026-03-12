@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUsers, writeUsers, hashPassword, createSession, getSessionCookieName } from "@/lib/auth";
+import { getUsers, writeUsers, hashPassword, createSession, getSessionCookieName, useSecureCookies } from "@/lib/auth";
 import { notifyAdminsOfNewUser } from "@/lib/notifications";
 import { auditLog } from "@/lib/audit";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     const response = NextResponse.json({ success: true, username });
     response.cookies.set(getSessionCookieName(), sessionId, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
+      secure: useSecureCookies(request),
       sameSite: "lax",
       path: "/",
       maxAge: 60 * 60 * 24 * 30,

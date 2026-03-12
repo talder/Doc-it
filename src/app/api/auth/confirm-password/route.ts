@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser, verifyPassword } from "@/lib/auth";
+import { getCurrentUser, verifyPassword, useSecureCookies } from "@/lib/auth";
 import { getAdConfig, authenticateAdUser } from "@/lib/ad";
 import { auditLog } from "@/lib/audit";
 
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
   const response = NextResponse.json({ confirmed: true });
   response.cookies.set(AUDIT_AUTH_COOKIE, payload, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
+    secure: useSecureCookies(request),
     sameSite: "lax",
     path: "/",
     maxAge: VALIDITY_SECONDS,

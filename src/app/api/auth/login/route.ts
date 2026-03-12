@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserByUsername, getUsers, writeUsers, hashPassword, verifyPassword, createSession, getSessionCookieName } from "@/lib/auth";
+import { getUserByUsername, getUsers, writeUsers, hashPassword, verifyPassword, createSession, getSessionCookieName, useSecureCookies } from "@/lib/auth";
 import { auditLog } from "@/lib/audit";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { notifySecurityEvent } from "@/lib/incident";
@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
         const pending = signMfaPending(adUser.username, expiresAt);
         const rSetup = NextResponse.json({ requiresMFASetup: true });
         rSetup.cookies.set("docit-mfa-setup-pending", pending, {
-          httpOnly: true, secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
+          httpOnly: true, secure: useSecureCookies(request),
           sameSite: "lax", path: "/", maxAge: 10 * 60,
         });
         return rSetup;
@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
         const pending = signMfaPending(adUser.username, expiresAt);
         const r2fa = NextResponse.json({ requires2FA: true });
         r2fa.cookies.set("docit-2fa-pending", pending, {
-          httpOnly: true, secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
+          httpOnly: true, secure: useSecureCookies(request),
           sameSite: "lax", path: "/", maxAge: 5 * 60,
         });
         return r2fa;
@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
       const sessionId = await createSession(adUser.username);
       const response = NextResponse.json({ success: true, username: adUser.username });
       response.cookies.set(getSessionCookieName(), sessionId, {
-        httpOnly: true, secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
+        httpOnly: true, secure: useSecureCookies(request),
         sameSite: "lax", path: "/", maxAge: 60 * 60 * 8,
       });
       auditLog(request, {
@@ -242,7 +242,7 @@ export async function POST(request: NextRequest) {
       const pending = signMfaPending(username, expiresAt);
       const rSetup = NextResponse.json({ requiresMFASetup: true });
       rSetup.cookies.set("docit-mfa-setup-pending", pending, {
-        httpOnly: true, secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
+        httpOnly: true, secure: useSecureCookies(request),
         sameSite: "lax", path: "/", maxAge: 10 * 60,
       });
       return rSetup;
@@ -254,7 +254,7 @@ export async function POST(request: NextRequest) {
       const pending = signMfaPending(username, expiresAt);
       const r2fa = NextResponse.json({ requires2FA: true });
       r2fa.cookies.set("docit-2fa-pending", pending, {
-        httpOnly: true, secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
+        httpOnly: true, secure: useSecureCookies(request),
         sameSite: "lax", path: "/", maxAge: 5 * 60,
       });
       return r2fa;
@@ -267,7 +267,7 @@ export async function POST(request: NextRequest) {
       mustChangePassword: user.mustChangePassword === true,
     });
     response.cookies.set(getSessionCookieName(), sessionId, {
-      httpOnly: true, secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
+      httpOnly: true, secure: useSecureCookies(request),
       sameSite: "lax", path: "/", maxAge: 60 * 60 * 8,
     });
     auditLog(request, { event: "auth.login", outcome: "success", actor: username, sessionType: "session" });

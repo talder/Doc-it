@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser, getUsers, writeUsers, createSession, getSessionCookieName, invalidateUserSessions } from "@/lib/auth";
+import { getCurrentUser, getUsers, writeUsers, createSession, getSessionCookieName, invalidateUserSessions, useSecureCookies } from "@/lib/auth";
 import { auditLog } from "@/lib/audit";
 import { encryptField } from "@/lib/crypto";
 import { createHash, randomBytes } from "crypto";
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
   const resp = NextResponse.json({ success: true, backupCodes: plain });
   resp.cookies.set(getSessionCookieName(), newSessionId, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
+    secure: useSecureCookies(request),
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 8,

@@ -179,6 +179,21 @@ export function getSessionCookieName(): string {
 }
 
 /**
+ * Determine whether cookies should use the `Secure` flag.
+ * Auto-detects from the request protocol / X-Forwarded-Proto header,
+ * with an explicit SECURE_COOKIES env-var override.
+ */
+export function useSecureCookies(request: Request): boolean {
+  if (process.env.SECURE_COOKIES === "false") return false;
+  if (process.env.SECURE_COOKIES === "true") return true;
+  if (process.env.NODE_ENV !== "production") return false;
+  // In production, detect from reverse-proxy headers or request URL
+  const proto = request.headers.get("x-forwarded-proto");
+  if (proto) return proto.split(",")[0].trim() === "https";
+  try { return new URL(request.url).protocol === "https:"; } catch { return true; }
+}
+
+/**
  * Invalidate all sessions for a user, optionally preserving one session ID
  * (e.g. the session that was just re-issued after a password change).
  */

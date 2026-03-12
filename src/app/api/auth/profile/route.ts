@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser, getUsers, writeUsers, hashPassword, verifyPassword, isPasswordInHistory, sanitizeUser, createSession, getSessionCookieName, invalidateUserSessions } from "@/lib/auth";
+import { getCurrentUser, getUsers, writeUsers, hashPassword, verifyPassword, isPasswordInHistory, sanitizeUser, createSession, getSessionCookieName, invalidateUserSessions, useSecureCookies } from "@/lib/auth";
 import { isPasswordValid, validatePassword } from "@/lib/password-policy";
 import { auditLog } from "@/lib/audit";
 
@@ -104,7 +104,7 @@ export async function PUT(request: NextRequest) {
       const resp = NextResponse.json(sanitizeUser(users[idx]));
       resp.cookies.set(getSessionCookieName(), newSessionId, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
+        secure: useSecureCookies(request),
         sameSite: "lax",
         path: "/",
         maxAge: 60 * 60 * 8,

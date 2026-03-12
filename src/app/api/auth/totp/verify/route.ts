@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserByUsername, getUsers, writeUsers, createSession, getSessionCookieName } from "@/lib/auth";
+import { getUserByUsername, getUsers, writeUsers, createSession, getSessionCookieName, useSecureCookies } from "@/lib/auth";
 import { auditLog } from "@/lib/audit";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { notifySecurityEvent } from "@/lib/incident";
@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
     // Set session cookie (8-hour TTL, matches server-side expiresAt)
     response.cookies.set(getSessionCookieName(), sessionId, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
+      secure: useSecureCookies(request),
       sameSite: "lax",
       path: "/",
       maxAge: 60 * 60 * 8,
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
     // Clear pending 2FA cookie
     response.cookies.set(PENDING_COOKIE, "", {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
+      secure: useSecureCookies(request),
       sameSite: "lax",
       path: "/",
       maxAge: 0,

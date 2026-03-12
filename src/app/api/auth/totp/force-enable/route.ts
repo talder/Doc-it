@@ -8,7 +8,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { verifyMfaPending } from "@/app/api/auth/login/route";
-import { getUserByUsername, getUsers, writeUsers, createSession, getSessionCookieName } from "@/lib/auth";
+import { getUserByUsername, getUsers, writeUsers, createSession, getSessionCookieName, useSecureCookies } from "@/lib/auth";
 import { auditLog } from "@/lib/audit";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { encryptField } from "@/lib/crypto";
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
 
   response.cookies.set(getSessionCookieName(), sessionId, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
+    secure: useSecureCookies(request),
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 8,
@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
   // Clear the MFA setup pending cookie
   response.cookies.set("docit-mfa-setup-pending", "", {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production" && process.env.SECURE_COOKIES !== "false",
+    secure: useSecureCookies(request),
     sameSite: "lax",
     path: "/",
     maxAge: 0,
