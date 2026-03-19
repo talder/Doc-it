@@ -1571,7 +1571,11 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
         ref={bubbleMenuElRef}
         editor={editor}
         pluginKey="textFormatMenu"
-        options={{ placement: "top", offset: 8, strategy: "fixed" }}
+        options={{
+          placement: "top", offset: 8, strategy: "fixed",
+          onShow: () => { if (bubbleMenuElRef.current) bubbleMenuElRef.current.style.opacity = "0"; },
+          onUpdate: () => { if (bubbleMenuElRef.current) bubbleMenuElRef.current.style.opacity = "1"; },
+        }}
         shouldShow={({ editor, state }) => {
           if (!editor.isEditable) return false;
           const { from, to } = state.selection;
@@ -1726,7 +1730,11 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
         ref={tableCellMenuElRef}
         editor={editor}
         pluginKey="tableCellMenu"
-        options={{ placement: "bottom-start", offset: 6, strategy: "fixed" }}
+        options={{
+          placement: "bottom-start", offset: 6, strategy: "fixed",
+          onShow: () => { if (tableCellMenuElRef.current) tableCellMenuElRef.current.style.opacity = "0"; },
+          onUpdate: () => { if (tableCellMenuElRef.current) tableCellMenuElRef.current.style.opacity = "1"; },
+        }}
         shouldShow={({ editor, state }) => {
           if (!editor.isEditable) return false;
           const { from, to } = state.selection;
