@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { CopyToastProvider } from "@/components/CopyToast";
 import CrashReporter from "@/components/CrashReporter";
+import SessionGuard from "@/components/SessionGuard";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -25,6 +26,7 @@ export default function RootLayout({
         <ThemeProvider>
           <CopyToastProvider>
             <CrashReporter />
+            <SessionGuard />
             {children}
           </CopyToastProvider>
         </ThemeProvider>
