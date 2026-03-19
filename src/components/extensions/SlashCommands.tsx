@@ -221,7 +221,7 @@ const getSlashCommands = (): SlashCommandItem[] => [
   },
   {
     title: "PDF",
-    description: "Upload and embed a PDF",
+    description: "Upload and embed one or more PDFs",
     icon: <FileText className="h-4 w-4" />,
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).run();

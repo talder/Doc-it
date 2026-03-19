@@ -58,7 +58,7 @@ import { EmojiShortcodeExtension } from "./extensions/EmojiShortcodeExtension";
 import { DatabaseBlockExtension } from "./extensions/DatabaseBlockExtension";
 import type { DatabaseBlockAttrs } from "./extensions/DatabaseBlockExtension";
 import { Extension } from "@tiptap/core";
-import { Plugin as PmPlugin, PluginKey as PmPluginKey } from "@tiptap/pm/state";
+import { Plugin as PmPlugin, PluginKey as PmPluginKey, NodeSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { columnResizing, tableEditing } from "@tiptap/pm/tables";
 import { isNodeEmpty } from "@tiptap/core";
@@ -1567,14 +1567,16 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
           <span>You are editing a template — use <kbd>/</kbd> to insert Template Fields</span>
         </div>
       )}
-      {editable && <BubbleMenu
+      <BubbleMenu
         ref={bubbleMenuElRef}
         editor={editor}
         pluginKey="textFormatMenu"
         options={{ placement: "top", offset: 8, strategy: "fixed" }}
         shouldShow={({ editor, state }) => {
+          if (!editor.isEditable) return false;
           const { from, to } = state.selection;
           if (from === to) return false;
+          if (state.selection instanceof NodeSelection) return false;
           if (editor.isActive("codeBlock")) return false;
           return true;
         }}
@@ -1717,15 +1719,16 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
           <Eraser className="w-4 h-4" />
           </button>
         </div>
-      </BubbleMenu>}
+      </BubbleMenu>
 
       {/* Cell background color picker (appears when cursor is inside a table cell) */}
-      {editable && <BubbleMenu
+      <BubbleMenu
         ref={tableCellMenuElRef}
         editor={editor}
         pluginKey="tableCellMenu"
         options={{ placement: "bottom-start", offset: 6, strategy: "fixed" }}
         shouldShow={({ editor, state }) => {
+          if (!editor.isEditable) return false;
           const { from, to } = state.selection;
           if (from !== to) return false;
           return editor.isActive("tableCell") || editor.isActive("tableHeader");
@@ -1745,7 +1748,7 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
             />
           ))}
         </div>
-      </BubbleMenu>}
+      </BubbleMenu>
 
       <div style={PAGE_WIDTH_MAX[pageWidth] ? { maxWidth: PAGE_WIDTH_MAX[pageWidth], marginLeft: "auto", marginRight: "auto" } : {}}>
         <EditorContent editor={editor} className="tiptap-editor" />
@@ -1768,9 +1771,45 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
         type="file"
         className="hidden"
         accept=".pdf,application/pdf"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) handleFileUpload(file, true);
+        multiple
+        onChange={async (e) => {
+          const files = e.target.files;
+          if (!files || files.length === 0 || !spaceSlug) { e.target.value = ""; return; }
+          const target = pendingSlashEditor || editor;
+          for (const file of Array.from(files)) {
+            if (file.size > MAX_UPLOAD_BYTES) {
+              alert(`The file "${file.name}" exceeds the 50 MB upload limit and cannot be uploaded.`);
+              continue;
+            }
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("category", category || "General");
+            try {
+              const res = await fetch(
+                `/api/spaces/${encodeURIComponent(spaceSlug)}/attachments`,
+                { method: "POST", body: formData }
+              );
+              if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                alert((err as { error?: string }).error || `Upload of "${file.name}" failed.`);
+                continue;
+              }
+              const data = await res.json();
+              target?.chain().insertContent([
+                { type: "pdfEmbed", attrs: {
+                  filename: data.filename,
+                  originalName: data.originalName,
+                  category: data.category,
+                  spaceSlug,
+                  url: data.url,
+                }},
+                { type: "paragraph" },
+              ]).run();
+            } catch {
+              alert(`Upload of "${file.name}" failed.`);
+            }
+          }
+          setPendingSlashEditor(null);
           e.target.value = "";
         }}
       />

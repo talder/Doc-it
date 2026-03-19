@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { SlashCommandItem } from "./SlashCommands";
 
 interface SlashCommandsListProps {
@@ -13,6 +13,7 @@ export const SlashCommandsList = forwardRef<
   SlashCommandsListProps
 >(({ items, command }, ref) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const gridRef = useRef<HTMLDivElement>(null);
 
   const selectItem = (index: number) => {
     const item = items[index];
@@ -20,6 +21,13 @@ export const SlashCommandsList = forwardRef<
   };
 
   useEffect(() => setSelectedIndex(0), [items]);
+
+  // Scroll selected item into view on keyboard navigation
+  useEffect(() => {
+    if (!gridRef.current) return;
+    const btn = gridRef.current.children[selectedIndex] as HTMLElement | undefined;
+    btn?.scrollIntoView({ block: "nearest" });
+  }, [selectedIndex]);
 
   useImperativeHandle(ref, () => ({
     onKeyDown: (event: KeyboardEvent) => {
@@ -62,7 +70,7 @@ export const SlashCommandsList = forwardRef<
   return (
     <div className="bg-surface border border-border rounded-lg shadow-lg p-2 min-w-[340px] max-w-[420px]">
       {items.length ? (
-        <div className="grid grid-cols-2 gap-1">
+        <div ref={gridRef} className="grid grid-cols-2 gap-1 max-h-[220px] overflow-y-auto overscroll-contain">
           {items.map((item, index) => (
             <button
               key={index}
