@@ -869,6 +869,7 @@ body {
   border: 1px solid var(--color-border);
   border-radius: 8px;
   box-shadow: 0 4px 16px var(--color-shadow);
+  animation: bubble-menu-appear 0.12s ease;
 }
 
 .table-color-swatch {
@@ -1018,6 +1019,12 @@ body {
   border: 1px solid var(--color-border);
   border-radius: 8px;
   box-shadow: 0 4px 16px var(--color-shadow);
+  animation: bubble-menu-appear 0.12s ease;
+}
+
+@keyframes bubble-menu-appear {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 .bubble-btn {
