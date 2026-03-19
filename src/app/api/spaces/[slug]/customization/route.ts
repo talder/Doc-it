@@ -71,6 +71,17 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     }
   }
 
+  // Merge tag colors
+  if (body.tagColors && typeof body.tagColors === "object") {
+    for (const [key, val] of Object.entries(body.tagColors)) {
+      if (val) {
+        current.tagColors[key] = val as string;
+      } else {
+        delete current.tagColors[key];
+      }
+    }
+  }
+
   await writeCustomization(slug, current);
   return NextResponse.json(current);
 }

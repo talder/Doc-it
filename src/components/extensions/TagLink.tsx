@@ -11,12 +11,29 @@ export function setTagClickHandler(handler: ((tag: string) => void) | null) {
   onTagClickHandler = handler;
 }
 
+// Module-level tag color map, set from Editor component
+let tagColorMap: Record<string, string> = {};
+
+export function setTagColorMap(colors: Record<string, string>) {
+  tagColorMap = colors;
+}
+
+function contrastText(hex: string): string {
+  const c = hex.replace("#", "");
+  const r = parseInt(c.substring(0, 2), 16);
+  const g = parseInt(c.substring(2, 4), 16);
+  const b = parseInt(c.substring(4, 6), 16);
+  return r * 0.299 + g * 0.587 + b * 0.114 > 150 ? "#000" : "#fff";
+}
+
 function TagLinkView({ node }: any) {
+  const color = tagColorMap[node.attrs.tag];
   return (
     <NodeViewWrapper
       as="span"
       className="tag-link"
       data-tag={node.attrs.tag}
+      style={color ? { background: color, color: contrastText(color) } : undefined}
     >
       #{node.attrs.tag}
     </NodeViewWrapper>

@@ -55,6 +55,7 @@ interface SidebarProps {
   onSetCategoryIcon?: (catPath: string, emoji: string) => void;
   onSetCategoryColor?: (catPath: string, color: string) => void;
   docStatusMap?: DocStatusMap;
+  onOpenTagManager?: () => void;
   // Favorites
   favorites?: FavoriteItem[];
   currentSpaceSlug?: string;
@@ -101,6 +102,7 @@ export default function Sidebar({
   currentSpaceName,
   onToggleFavorite,
   onSelectFavorite,
+  onOpenTagManager,
 }: SidebarProps) {
   const importInputRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<SidebarMode>("documents");
@@ -243,6 +245,8 @@ export default function Sidebar({
             selectedTag={selectedTag}
             onReindex={onReindexTags}
             isReindexing={isReindexing}
+            tagColors={customization?.tagColors}
+            onOpenTagManager={onOpenTagManager}
           />
         ) : mode === "templates" ? (
           <div className="px-1">
@@ -292,6 +296,8 @@ export default function Sidebar({
                 selectedTag={selectedTag}
                 onReindex={onReindexTags}
                 isReindexing={isReindexing}
+                tagColors={customization?.tagColors}
+                onOpenTagManager={onOpenTagManager}
               />
             )}
 

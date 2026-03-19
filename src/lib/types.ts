@@ -210,6 +210,7 @@ export interface SpaceCustomization {
   docColors: Record<string, string>;      // "category/docName" -> hex color
   categoryIcons: Record<string, string>;  // "categoryPath" -> emoji
   categoryColors: Record<string, string>; // "categoryPath" -> hex color
+  tagColors: Record<string, string>;      // "tagName" -> hex color
 }
 
 // === Document Metadata (frontmatter) ===

@@ -220,9 +220,10 @@ export async function readCustomization(spaceSlug: string): Promise<import("./ty
       docColors: parsed.docColors || {},
       categoryIcons: parsed.categoryIcons || {},
       categoryColors: parsed.categoryColors || {},
+      tagColors: parsed.tagColors || {},
     };
   } catch {
-    return { docIcons: {}, docColors: {}, categoryIcons: {}, categoryColors: {} };
+    return { docIcons: {}, docColors: {}, categoryIcons: {}, categoryColors: {}, tagColors: {} };
   }
 }
 
