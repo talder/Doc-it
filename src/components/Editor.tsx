@@ -136,6 +136,7 @@ function DatabasePicker({
 
 const lowlight = createLowlight(common);
 lowlight.register("powershell", powershell);
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
 
 
 // ── Table cell color palette ─────────────────────────────────────────────
@@ -1291,6 +1292,10 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
   const handleFileUpload = useCallback(
     async (file: File, isPdf: boolean) => {
       if (!spaceSlug) return;
+      if (file.size > MAX_UPLOAD_BYTES) {
+        alert(`The file "${file.name}" exceeds the 50 MB upload limit and cannot be uploaded.`);
+        return;
+      }
       const formData = new FormData();
       formData.append("file", file);
       formData.append("category", category || "General");
@@ -1298,7 +1303,11 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
         `/api/spaces/${encodeURIComponent(spaceSlug)}/attachments`,
         { method: "POST", body: formData }
       );
-      if (!res.ok) return;
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert((err as { error?: string }).error || "Upload failed. Please try again.");
+        return;
+      }
       const data = await res.json();
       const target = pendingSlashEditor || editor;
       if (isPdf) {
@@ -1329,6 +1338,10 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
   const handleImageUpload = useCallback(
     async (file: File): Promise<string | null> => {
       if (!spaceSlug) return null;
+      if (file.size > MAX_UPLOAD_BYTES) {
+        alert(`The file "${file.name}" exceeds the 50 MB upload limit and cannot be uploaded.`);
+        return null;
+      }
       const formData = new FormData();
       formData.append("file", file);
       formData.append("category", category || "General");
@@ -1336,7 +1349,11 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
         `/api/spaces/${encodeURIComponent(spaceSlug)}/attachments`,
         { method: "POST", body: formData }
       );
-      if (!res.ok) return null;
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert((err as { error?: string }).error || "Upload failed. Please try again.");
+        return null;
+      }
       const data = await res.json();
       return data.url as string;
     },

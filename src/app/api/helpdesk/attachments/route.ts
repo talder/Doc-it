@@ -16,6 +16,15 @@ export async function POST(request: NextRequest) {
   const file = formData.get("file") as File | null;
   if (!file) return NextResponse.json({ error: "No file provided" }, { status: 400 });
 
+  // 50 MB upload limit
+  const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return NextResponse.json(
+      { error: "File exceeds the 50 MB upload limit" },
+      { status: 413 },
+    );
+  }
+
   const buffer = Buffer.from(await file.arrayBuffer());
   const ext = path.extname(file.name);
   const baseName = path.basename(file.name, ext).replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 60);
