@@ -2,11 +2,11 @@
 
 import { Suspense, useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Plus, Trash2, Shield, ShieldCheck, Users, Layout, Settings, Key, Copy, Check, ClipboardList, ChevronLeft, ChevronRight, Download, Lock, LockOpen, ChevronDown, ChevronUp, ShieldOff, HardDrive, RefreshCw, PlayCircle, XCircle, RotateCcw, Eye, EyeOff, UsersRound, X, Network } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Shield, ShieldCheck, Users, Layout, Settings, Key, Copy, Check, ClipboardList, ChevronLeft, ChevronRight, Download, Lock, LockOpen, ChevronDown, ChevronUp, ShieldOff, HardDrive, RefreshCw, PlayCircle, XCircle, RotateCcw, Eye, EyeOff, UsersRound, X, Network, AlertTriangle } from "lucide-react";
 import PasswordStrengthMeter from "@/components/PasswordStrengthMeter";
 import { isPasswordValid } from "@/lib/password-policy";
-import type { SanitizedUser, Space, SpaceRole, AuditConfig, AuditEntry, UserGroup, AdConfig, AdGroupMapping, DashboardAccessConfig } from "@/lib/types";
-type Tab = "users" | "spaces" | "service-keys" | "groups" | "settings" | "audit" | "backup";
+import type { SanitizedUser, Space, SpaceRole, AuditConfig, AuditEntry, UserGroup, AdConfig, AdGroupMapping, DashboardAccessConfig, CrashEntry } from "@/lib/types";
+type Tab = "users" | "spaces" | "service-keys" | "groups" | "settings" | "audit" | "backup" | "crash-logs";
 
 interface BackupEntry { filename: string; sizeBytes: number; createdAt: string; }
 interface BackupTargetForm { id: string; type: "local" | "cifs" | "sftp"; label: string; path: string; host: string; port: number; share: string; remotePath: string; username: string; password: string; privateKey: string; }
@@ -178,6 +178,15 @@ function AdminContent() {
   const [newDashUser, setNewDashUser] = useState("");
   const [newDashAdGroup, setNewDashAdGroup] = useState("");
 
+  // Crash logs state
+  const [crashEntries, setCrashEntries] = useState<CrashEntry[]>([]);
+  const [crashTotal, setCrashTotal] = useState(0);
+  const [crashPage, setCrashPage] = useState(1);
+  const [crashLoading, setCrashLoading] = useState(false);
+  const [crashLoaded, setCrashLoaded] = useState(false);
+  const [crashFilters, setCrashFilters] = useState({ dateFrom: "", dateTo: "", source: "", level: "", text: "" });
+  const [crashExpandedId, setCrashExpandedId] = useState<string | null>(null);
+
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -281,6 +290,24 @@ function AdminContent() {
       setDashAccessLoaded(true);
     }
   }, []);
+
+  const fetchCrashLogs = useCallback(async (filters: typeof crashFilters, page: number) => {
+    setCrashLoading(true);
+    const params = new URLSearchParams({ page: String(page), pageSize: "50" });
+    if (filters.dateFrom) params.set("dateFrom", filters.dateFrom);
+    if (filters.dateTo) params.set("dateTo", filters.dateTo);
+    if (filters.source) params.set("source", filters.source);
+    if (filters.level) params.set("level", filters.level);
+    if (filters.text) params.set("text", filters.text);
+    const res = await fetch(`/api/crash-logs?${params}`);
+    if (res.ok) {
+      const data = await res.json();
+      setCrashEntries(data.entries ?? []);
+      setCrashTotal(data.total ?? 0);
+    }
+    setCrashLoading(false);
+    setCrashLoaded(true);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchAuditConfig = useCallback(async () => {
     const res = await fetch("/api/settings/audit");
@@ -645,6 +672,15 @@ function AdminContent() {
           >
             <HardDrive className="w-4 h-4" />
             Backup
+          </button>
+          <button
+            onClick={() => { setTab("crash-logs"); if (!crashLoaded) fetchCrashLogs(crashFilters, 1); }}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+              tab === "crash-logs" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
+            }`}
+          >
+            <AlertTriangle className="w-4 h-4" />
+            Crash Logs
           </button>
         </div>
 
@@ -2732,6 +2768,168 @@ function AdminContent() {
             </div>
           </div>
         </>)}
+
+        {/* Crash Logs Tab */}
+        {tab === "crash-logs" && (
+          <div className="space-y-4">
+            {/* Filters */}
+            <div className="bg-surface rounded-xl shadow-sm border border-border">
+              <div className="px-6 py-4 border-b border-border flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-orange-500" />
+                <h2 className="text-lg font-semibold text-text-primary">Crash Logs</h2>
+                <span className="ml-auto text-xs text-text-muted">{crashTotal} total</span>
+              </div>
+              <div className="px-6 py-4">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">From</label>
+                    <input
+                      type="date"
+                      value={crashFilters.dateFrom}
+                      onChange={(e) => setCrashFilters({ ...crashFilters, dateFrom: e.target.value })}
+                      className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-[var(--color-input-bg)] text-text-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">To</label>
+                    <input
+                      type="date"
+                      value={crashFilters.dateTo}
+                      onChange={(e) => setCrashFilters({ ...crashFilters, dateTo: e.target.value })}
+                      className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-[var(--color-input-bg)] text-text-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Source</label>
+                    <select
+                      value={crashFilters.source}
+                      onChange={(e) => setCrashFilters({ ...crashFilters, source: e.target.value })}
+                      className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-[var(--color-input-bg)] text-text-primary"
+                    >
+                      <option value="">All</option>
+                      <option value="server">Server</option>
+                      <option value="client">Client</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Level</label>
+                    <select
+                      value={crashFilters.level}
+                      onChange={(e) => setCrashFilters({ ...crashFilters, level: e.target.value })}
+                      className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-[var(--color-input-bg)] text-text-primary"
+                    >
+                      <option value="">All</option>
+                      <option value="fatal">Fatal</option>
+                      <option value="error">Error</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Search</label>
+                    <input
+                      type="text"
+                      value={crashFilters.text}
+                      onChange={(e) => setCrashFilters({ ...crashFilters, text: e.target.value })}
+                      placeholder="message, stack, url…"
+                      className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-[var(--color-input-bg)] text-text-primary"
+                    />
+                  </div>
+                </div>
+                <button
+                  onClick={() => { setCrashPage(1); fetchCrashLogs(crashFilters, 1); }}
+                  className="px-4 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors"
+                >
+                  {crashLoading ? "Loading…" : "Search"}
+                </button>
+              </div>
+            </div>
+
+            {/* Results */}
+            {crashEntries.length === 0 && crashLoaded && (
+              <div className="bg-surface rounded-xl shadow-sm border border-border px-6 py-8 text-center text-sm text-text-muted">
+                No crash logs found.
+              </div>
+            )}
+
+            {crashEntries.length > 0 && (
+              <div className="bg-surface rounded-xl shadow-sm border border-border divide-y divide-border">
+                {crashEntries.map((entry) => (
+                  <div key={entry.id} className="px-6 py-3">
+                    <button
+                      onClick={() => setCrashExpandedId(crashExpandedId === entry.id ? null : entry.id)}
+                      className="w-full text-left flex items-start gap-3"
+                    >
+                      <span className={`mt-0.5 inline-block w-2 h-2 rounded-full flex-shrink-0 ${
+                        entry.level === "fatal" ? "bg-red-500" : "bg-orange-400"
+                      }`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
+                            entry.level === "fatal"
+                              ? "bg-red-100 text-red-700"
+                              : "bg-orange-100 text-orange-700"
+                          }`}>{entry.level.toUpperCase()}</span>
+                          <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
+                            entry.source === "server"
+                              ? "bg-purple-100 text-purple-700"
+                              : "bg-blue-100 text-blue-700"
+                          }`}>{entry.source}</span>
+                          <span className="text-xs text-text-muted">{new Date(entry.timestamp).toLocaleString()}</span>
+                        </div>
+                        <p className="text-sm text-text-primary mt-1 truncate">{entry.message}</p>
+                      </div>
+                      <ChevronDown className={`w-4 h-4 text-text-muted flex-shrink-0 mt-1 transition-transform ${
+                        crashExpandedId === entry.id ? "rotate-180" : ""
+                      }`} />
+                    </button>
+
+                    {crashExpandedId === entry.id && (
+                      <div className="mt-3 ml-5 space-y-2">
+                        {entry.url && (
+                          <div className="text-xs"><span className="font-medium text-text-muted">URL:</span> <span className="text-text-primary">{entry.url}</span></div>
+                        )}
+                        {entry.method && (
+                          <div className="text-xs"><span className="font-medium text-text-muted">Method:</span> <span className="text-text-primary">{entry.method}</span></div>
+                        )}
+                        {entry.userAgent && (
+                          <div className="text-xs"><span className="font-medium text-text-muted">User Agent:</span> <span className="text-text-primary break-all">{entry.userAgent}</span></div>
+                        )}
+                        {entry.details && (
+                          <div className="text-xs"><span className="font-medium text-text-muted">Details:</span> <span className="text-text-primary font-mono">{JSON.stringify(entry.details)}</span></div>
+                        )}
+                        {entry.stack && (
+                          <pre className="text-xs bg-gray-50 border border-border rounded-lg p-3 overflow-x-auto whitespace-pre-wrap text-text-secondary font-mono">{entry.stack}</pre>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Pagination */}
+            {crashTotal > 50 && (
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-text-muted">Page {crashPage} of {Math.ceil(crashTotal / 50)}</span>
+                <div className="flex gap-2">
+                  <button
+                    disabled={crashPage <= 1}
+                    onClick={() => { const p = crashPage - 1; setCrashPage(p); fetchCrashLogs(crashFilters, p); }}
+                    className="px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-muted disabled:opacity-50 transition-colors"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    disabled={crashPage >= Math.ceil(crashTotal / 50)}
+                    onClick={() => { const p = crashPage + 1; setCrashPage(p); fetchCrashLogs(crashFilters, p); }}
+                    className="px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-muted disabled:opacity-50 transition-colors"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

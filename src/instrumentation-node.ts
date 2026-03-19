@@ -14,6 +14,7 @@ import { getBackupConfig, runBackup, getBackupState } from "./lib/backup";
 import { checkAndMarkExpiryAlerts } from "./lib/certificates";
 import { sendMail } from "./lib/email";
 import { getUsers } from "./lib/auth";
+import { writeCrashEntry, cleanupOldCrashLogs } from "./lib/crash-log";
 
 if (process.env.NODE_ENV === "development") {
   process.stdout.setMaxListeners(30);
@@ -157,3 +158,41 @@ setTimeout(async () => {
     lastCertCheckAt = 0;
   } catch { /* ignore */ }
 }, 30_000);
+
+// ── Crash logging — process-level handlers ───────────────────────────────────
+
+process.on("uncaughtException", (err) => {
+  writeCrashEntry({
+    source: "server",
+    level: "fatal",
+    message: err?.message ?? String(err),
+    stack: err?.stack,
+    details: { type: "uncaughtException" },
+  });
+  // Let Node.js proceed with default behaviour (log + exit)
+});
+
+process.on("unhandledRejection", (reason) => {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  writeCrashEntry({
+    source: "server",
+    level: "error",
+    message: err.message ?? String(reason),
+    stack: err.stack,
+    details: { type: "unhandledRejection" },
+  });
+});
+
+// ── Crash log retention cleanup (once per day) ───────────────────────────────
+
+let lastCrashCleanupDate = "";
+
+setInterval(async () => {
+  const today = new Date().toISOString().slice(0, 10);
+  if (today === lastCrashCleanupDate) return;
+  lastCrashCleanupDate = today;
+  try {
+    const removed = await cleanupOldCrashLogs();
+    if (removed > 0) console.log(`[crash-log] Cleaned up ${removed} old crash log file(s)`);
+  } catch { /* ignore */ }
+}, INTERVAL_MS);

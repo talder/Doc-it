@@ -748,3 +748,21 @@ export interface PkiStore {
 export interface PkiCertNode extends PkiCertificate {
   children: PkiCertNode[];
 }
+
+// === Crash Logging ===
+
+export type CrashSource = "server" | "client";
+export type CrashLevel = "error" | "fatal";
+
+export interface CrashEntry {
+  id: string;
+  timestamp: string;
+  source: CrashSource;
+  level: CrashLevel;
+  message: string;
+  stack?: string;
+  url?: string;
+  method?: string;
+  userAgent?: string;
+  details?: Record<string, unknown>;
+}
