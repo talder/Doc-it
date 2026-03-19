@@ -43,7 +43,7 @@ import { DragHandle } from "./extensions/DragHandle";
 import { ExcalidrawExtension } from "./extensions/ExcalidrawExtension";
 import { DrawioExtension } from "./extensions/DrawioExtension";
 import { FontSize } from "./extensions/FontSize";
-import { TagLink, setTagClickHandler } from "./extensions/TagLink";
+import { TagLink, setTagClickHandler, setTagColorMap } from "./extensions/TagLink";
 import { TagSuggestion } from "./extensions/TagSuggestion";
 import { MentionNode, MentionSuggestion } from "./extensions/MentionSuggestion";
 import { CollapsibleBlock } from "./extensions/CollapsibleBlock";
@@ -872,9 +872,10 @@ interface EditorProps {
   spellcheckEnabled?: boolean;
   spellcheckLanguage?: string;
   spaceMembers?: { username: string; fullName?: string }[];
+  tagColors?: Record<string, string>;
 }
 
-export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, category, onTagClick, editable = true, lineSpacing = "compact", isTemplate = false, pageWidth = "narrow", onPageWidthChange, spellcheckEnabled = false, spellcheckLanguage = "en", spaceMembers = [] }: EditorProps) {
+export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, category, onTagClick, editable = true, lineSpacing = "compact", isTemplate = false, pageWidth = "narrow", onPageWidthChange, spellcheckEnabled = false, spellcheckLanguage = "en", spaceMembers = [], tagColors = {} }: EditorProps) {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLoadingRef = useRef(false);
   const pendingSaveFnRef = useRef<null | (() => void)>(null);
@@ -1160,6 +1161,11 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
     setTagClickHandler(onTagClick || null);
     return () => setTagClickHandler(null);
   }, [onTagClick]);
+
+  // Wire up tag color map for inline chip colors
+  useEffect(() => {
+    setTagColorMap(tagColors);
+  }, [tagColors]);
 
   // ── Slash custom-event handlers ( /attachment, /pdf, /linked-doc ) ──────────────
   useEffect(() => {

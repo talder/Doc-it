@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, ChevronDown, Hash, RefreshCw, FileText } from "lucide-react";
+import { ChevronRight, ChevronDown, Hash, RefreshCw, FileText, Settings } from "lucide-react";
 import { buildTagTree, getChildTags } from "@/lib/tags";
 import type { TagInfo, TagsIndex, DocFile } from "@/lib/types";
 import { useState } from "react";
@@ -14,6 +14,8 @@ interface TagsListProps {
   selectedTag: string | null;
   onReindex?: () => void;
   isReindexing?: boolean;
+  tagColors?: Record<string, string>;
+  onOpenTagManager?: () => void;
 }
 
 function TagRenderer({
@@ -26,6 +28,7 @@ function TagRenderer({
   onTagSelect,
   onSelectDoc,
   selectedTag,
+  tagColors,
 }: {
   tag: TagInfo;
   tagsIndex: TagsIndex;
@@ -36,7 +39,9 @@ function TagRenderer({
   onTagSelect: (name: string) => void;
   onSelectDoc: (doc: DocFile) => void;
   selectedTag: string | null;
+  tagColors?: Record<string, string>;
 }) {
+  const color = tagColors?.[tag.name];
   const children = getChildTags(tagsIndex, tag.name);
   const hasChildren = children.length > 0;
   const isCollapsed = collapsedTags.has(tag.name);
@@ -74,7 +79,11 @@ function TagRenderer({
             isSelected ? "text-accent-text font-medium" : "text-text-secondary"
           }`}
         >
-          <Hash className="w-3.5 h-3.5 flex-shrink-0" />
+          {color ? (
+            <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: color }} />
+          ) : (
+            <Hash className="w-3.5 h-3.5 flex-shrink-0" />
+          )}
           <span className="truncate">{tag.displayName}</span>
           <span className="text-xs text-text-muted ml-auto">{tag.totalCount}</span>
         </button>
@@ -114,6 +123,7 @@ function TagRenderer({
               onTagSelect={onTagSelect}
               onSelectDoc={onSelectDoc}
               selectedTag={selectedTag}
+              tagColors={tagColors}
             />
           ))}
         </div>
@@ -122,7 +132,7 @@ function TagRenderer({
   );
 }
 
-export default function TagsList({ tagsIndex, docs, activeDoc, onTagSelect, onSelectDoc, selectedTag, onReindex, isReindexing }: TagsListProps) {
+export default function TagsList({ tagsIndex, docs, activeDoc, onTagSelect, onSelectDoc, selectedTag, onReindex, isReindexing, tagColors, onOpenTagManager }: TagsListProps) {
   const [collapsedTags, setCollapsedTags] = useState<Set<string>>(new Set());
   const [sectionCollapsed, setSectionCollapsed] = useState(true);
 
@@ -163,6 +173,15 @@ export default function TagsList({ tagsIndex, docs, activeDoc, onTagSelect, onSe
           Tags
         </button>
         <div className="flex items-center gap-2">
+          {onOpenTagManager && (
+            <button
+              onClick={onOpenTagManager}
+              className="text-xs text-text-muted hover:text-accent transition-colors"
+              title="Manage tags"
+            >
+              <Settings className="w-3 h-3" />
+            </button>
+          )}
           {onReindex && (
             <button
               onClick={onReindex}
@@ -198,6 +217,7 @@ export default function TagsList({ tagsIndex, docs, activeDoc, onTagSelect, onSe
               onTagSelect={onTagSelect}
               onSelectDoc={onSelectDoc}
               selectedTag={selectedTag}
+              tagColors={tagColors}
             />
           ))}
         </div>

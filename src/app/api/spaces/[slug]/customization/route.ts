@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSpaceRole } from "@/lib/permissions";
 import { readCustomization, writeCustomization } from "@/lib/config";
+import { invalidateSpaceCache } from "@/lib/space-cache";
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -71,6 +72,18 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     }
   }
 
+  // Merge tag colors
+  if (body.tagColors && typeof body.tagColors === "object") {
+    for (const [key, val] of Object.entries(body.tagColors)) {
+      if (val) {
+        current.tagColors[key] = val as string;
+      } else {
+        delete current.tagColors[key];
+      }
+    }
+  }
+
   await writeCustomization(slug, current);
+  invalidateSpaceCache(slug);
   return NextResponse.json(current);
 }

@@ -21,6 +21,7 @@ import RenameDocModal from "@/components/modals/RenameDocModal";
 import NewTemplateModal from "@/components/modals/NewTemplateModal";
 import DatabaseCreateModal from "@/components/modals/DatabaseCreateModal";
 import TrashBinModal from "@/components/modals/TrashBinModal";
+import TagManagerModal from "@/components/modals/TagManagerModal";
 import DatabaseView from "@/components/database/DatabaseView";
 import type { Space, SanitizedUser, Category, DocFile, TagsIndex, TemplateInfo, DocStatusEntry, DocStatusMap, ReviewItem, SpaceCustomization, DocMetadata, DocClassification, FavoriteItem, DashboardRole } from "@/lib/types";
 import DocStatsFooter from "@/components/DocStatsFooter";
@@ -34,6 +35,15 @@ import { copyToClipboard } from "@/lib/clipboard";
 import { showCopyToast } from "@/components/CopyToast";
 
 const Editor = dynamic(() => import("@/components/Editor"), { ssr: false });
+
+/** Return black or white text depending on background luminance */
+function tagContrastText(hex: string): string {
+  const c = hex.replace("#", "");
+  const r = parseInt(c.substring(0, 2), 16);
+  const g = parseInt(c.substring(2, 4), 16);
+  const b = parseInt(c.substring(4, 6), 16);
+  return r * 0.299 + g * 0.587 + b * 0.114 > 150 ? "#000" : "#fff";
+}
 
 function TagAdder({ tagsIndex, existingTags, onAdd }: {
   tagsIndex: TagsIndex;
@@ -172,7 +182,10 @@ export default function Home() {
   const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
 
   // Customization (doc icons, category colors)
-  const [customization, setCustomization] = useState<SpaceCustomization>({ docIcons: {}, docColors: {}, categoryIcons: {}, categoryColors: {} });
+  const [customization, setCustomization] = useState<SpaceCustomization>({ docIcons: {}, docColors: {}, categoryIcons: {}, categoryColors: {}, tagColors: {} });
+
+  // Tag manager modal
+  const [showTagManager, setShowTagManager] = useState(false);
 
   // Likes / thumbs up
   const [docLikeCount, setDocLikeCount] = useState(0);
@@ -378,7 +391,7 @@ export default function Home() {
     setTagsIndex(d.tags && typeof d.tags === "object" && !Array.isArray(d.tags) ? d.tags : {});
     setTemplates(Array.isArray(d.templates) ? d.templates : []);
     setSpaceMembers(Array.isArray(d.members) ? d.members : []);
-    setCustomization(d.customization?.docIcons ? d.customization : { docIcons: {}, docColors: {}, categoryIcons: {}, categoryColors: {} });
+    setCustomization(d.customization?.docIcons ? d.customization : { docIcons: {}, docColors: {}, categoryIcons: {}, categoryColors: {}, tagColors: {} });
     setDatabasesList(Array.isArray(d.databases) ? d.databases : []);
     setDocStatusMap(d.statuses && typeof d.statuses === "object" ? d.statuses : {});
   }, [currentSpace]);
@@ -1435,6 +1448,7 @@ export default function Home() {
           currentSpaceName={currentSpace?.name}
           onToggleFavorite={handleToggleFavorite}
           onSelectFavorite={(item) => guardedNav(() => handleSelectFavorite(item))}
+          onOpenTagManager={() => setShowTagManager(true)}
         />
         <div className={`flex-1 flex flex-col overflow-hidden${distractionFree ? " df-mode" : ""}`}>
           {activeDatabase && currentSpace ? (
@@ -1490,23 +1504,31 @@ export default function Home() {
               {/* Tag chips */}
               {activeDoc && !activeDoc.isTemplate && docMetadata?.tags && docMetadata.tags.length > 0 && (
                 <div className="doc-tag-chips">
-                  {docMetadata.tags.map((tag) => (
-                    <span key={tag} className="doc-tag-chip">
-                      {tag}
-                      {canWrite && (
-                        <button
-                          className="doc-tag-chip-remove"
-                          onClick={() => {
-                            const next = { ...docMetadata, tags: docMetadata.tags!.filter((t) => t !== tag) };
-                            handleUpdateMetadata(next);
-                          }}
-                          title={`Remove tag "${tag}"`}
-                        >
-                          ×
-                        </button>
-                      )}
-                    </span>
-                  ))}
+                  {docMetadata.tags.map((tag) => {
+                    const tagColor = customization.tagColors?.[tag];
+                    return (
+                      <span
+                        key={tag}
+                        className="doc-tag-chip"
+                        style={tagColor ? { background: tagColor, color: tagContrastText(tagColor) } : undefined}
+                      >
+                        {tag}
+                        {canWrite && (
+                          <button
+                            className="doc-tag-chip-remove"
+                            style={tagColor ? { color: tagContrastText(tagColor) } : undefined}
+                            onClick={() => {
+                              const next = { ...docMetadata, tags: docMetadata.tags!.filter((t) => t !== tag) };
+                              handleUpdateMetadata(next);
+                            }}
+                            title={`Remove tag "${tag}"`}
+                          >
+                            ×
+                          </button>
+                        )}
+                      </span>
+                    );
+                  })}
                 </div>
               )}
               {activeDoc && !activeDoc.isTemplate && canWrite && (
@@ -1784,6 +1806,7 @@ export default function Home() {
                   spellcheckEnabled={user?.preferences?.spellcheckEnabled ?? false}
                   spellcheckLanguage={user?.preferences?.spellcheckLanguage ?? "en"}
                   spaceMembers={spaceMembers}
+                  tagColors={customization.tagColors}
                 />
               ) : currentSpace ? (
                 <SpaceHome
@@ -1963,6 +1986,14 @@ export default function Home() {
           </div>
         </div>
       )}
+      <TagManagerModal
+        isOpen={showTagManager}
+        tagsIndex={tagsIndex}
+        tagColors={customization.tagColors}
+        spaceSlug={currentSpace?.slug || ""}
+        onClose={() => setShowTagManager(false)}
+        onRefresh={fetchSpaceData}
+      />
       <TrashBinModal
         isOpen={showTrashModal}
         spaceSlug={currentSpace?.slug || null}
