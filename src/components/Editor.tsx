@@ -1055,6 +1055,34 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
       MentionSuggestion,
       DatabaseBlockExtension,
       Extension.create({
+        name: "tabHandler",
+        addKeyboardShortcuts() {
+          return {
+            Tab: () => {
+              // In a list → indent
+              if (this.editor.can().sinkListItem("listItem")) {
+                return this.editor.commands.sinkListItem("listItem");
+              }
+              if (this.editor.can().sinkListItem("taskItem")) {
+                return this.editor.commands.sinkListItem("taskItem");
+              }
+              // Otherwise insert a tab character
+              return this.editor.commands.insertContent("\t");
+            },
+            "Shift-Tab": () => {
+              // In a list → outdent
+              if (this.editor.can().liftListItem("listItem")) {
+                return this.editor.commands.liftListItem("listItem");
+              }
+              if (this.editor.can().liftListItem("taskItem")) {
+                return this.editor.commands.liftListItem("taskItem");
+              }
+              return true; // consume the event
+            },
+          };
+        },
+      }),
+      Extension.create({
         name: "inlinePlaceholder",
         addProseMirrorPlugins() {
           const placeholderText = "Type / for commands";
