@@ -222,12 +222,19 @@ else
   $SUDO git $GIT_SSL clone "$REPO" "$INSTALL_DIR"
 fi
 
-# ── 4. Service user ────────────────────────────────────────────
+# ── 4. Service user & permissions ──────────────────────────────
 if $SERVICE; then
   if ! id "$SERVICE_USER" &>/dev/null; then
     info "Creating service user: $SERVICE_USER ..."
     $SUDO useradd -r -s /bin/false -d "$INSTALL_DIR" "$SERVICE_USER"
   fi
+  # Pre-create runtime data directories so the service user can
+  # write to the SQLite database, documents, logs, etc. from the
+  # very first request.  These are gitignored and only exist at runtime.
+  info "Setting file permissions for service user: $SERVICE_USER ..."
+  for dir in config docs logs archive history backups trash; do
+    $SUDO mkdir -p "$INSTALL_DIR/$dir"
+  done
   $SUDO chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 else
   $SUDO chown -R "$(whoami)" "$INSTALL_DIR"
