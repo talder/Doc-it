@@ -2,6 +2,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: false,
+  experimental: {
+    proxyClientMaxBodySize: '50mb',
+  },
   serverExternalPackages: ["canvas", "better-sqlite3", "ldapts", "ssh2"],
   turbopack: {
     root: __dirname,
