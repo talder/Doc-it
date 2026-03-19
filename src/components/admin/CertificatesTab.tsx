@@ -1059,11 +1059,11 @@ export default function CertificatesTab() {
                         if (!tpl) return null;
                         return (
                           <div className="flex gap-1 flex-shrink-0">
-                            <button onClick={() => setCsrForm(applyTemplateToCsr(tpl, "extensions", csrForm))}
+                            <button onClick={() => { setCsrForm(applyTemplateToCsr(tpl, "extensions", csrForm)); flash("Extensions applied from template", "success"); }}
                               className="px-2 py-1 text-xs border border-border rounded hover:bg-muted whitespace-nowrap">Apply extensions</button>
-                            <button onClick={() => setCsrForm(applyTemplateToCsr(tpl, "subject", csrForm))}
+                            <button onClick={() => { setCsrForm(applyTemplateToCsr(tpl, "subject", csrForm)); flash("Subject applied from template", "success"); }}
                               className="px-2 py-1 text-xs border border-border rounded hover:bg-muted whitespace-nowrap">Apply subject</button>
-                            <button onClick={() => setCsrForm(applyTemplateToCsr(tpl, "all", csrForm))}
+                            <button onClick={() => { setCsrForm(applyTemplateToCsr(tpl, "all", csrForm)); flash("Template applied", "success"); }}
                               className="px-2 py-1 text-xs bg-accent text-white rounded hover:bg-accent-hover whitespace-nowrap">Apply all</button>
                           </div>
                         );
