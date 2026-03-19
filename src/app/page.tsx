@@ -30,6 +30,8 @@ import SpaceHome from "@/components/SpaceHome";
 import SearchModal from "@/components/SearchModal";
 import { usePresence } from "@/hooks/usePresence";
 import { useDocWatcher } from "@/hooks/useDocWatcher";
+import { copyToClipboard } from "@/lib/clipboard";
+import { showCopyToast } from "@/components/CopyToast";
 
 const Editor = dynamic(() => import("@/components/Editor"), { ssr: false });
 
@@ -1029,13 +1031,14 @@ export default function Home() {
     setDistractionFree(true);
   };
 
-  const handleCopyMarkdown = () => {
+  const handleCopyMarkdown = async () => {
     if (lastSavedMarkdown) {
       const cls = docMetadata?.classification;
       if (cls === "confidential" || cls === "restricted") {
         if (!window.confirm(`This document is classified as "${cls}". Are you sure you want to copy its content to the clipboard?`)) return;
       }
-      navigator.clipboard.writeText(lastSavedMarkdown);
+      const ok = await copyToClipboard(lastSavedMarkdown);
+      if (ok) showCopyToast("Markdown copied!");
     }
   };
 
@@ -2185,8 +2188,8 @@ export default function Home() {
                     />
                     <button
                       className="p-1 rounded hover:bg-surface text-text-muted"
-                      onClick={() => {
-                        navigator.clipboard.writeText(shareLink);
+                      onClick={async () => {
+                        await copyToClipboard(shareLink);
                         setShareCopied(true);
                         setTimeout(() => setShareCopied(false), 2000);
                       }}

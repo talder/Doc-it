@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { X, HardDriveDownload, RefreshCw, Copy, Check, CheckCircle, ShieldCheck } from "lucide-react";
+import { copyToClipboard } from "@/lib/clipboard";
 
 // ~200 common, easy-to-remember English words (4-7 letters)
 const WORD_LIST = [
@@ -86,8 +87,8 @@ export default function OfflineBundleModal({ onClose }: Props) {
     setError(null);
   }, []);
 
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(passphrase);
+  const handleCopy = useCallback(async () => {
+    await copyToClipboard(passphrase);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
   }, [passphrase]);

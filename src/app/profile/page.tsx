@@ -7,6 +7,7 @@ import PasswordStrengthMeter from "@/components/PasswordStrengthMeter";
 import { isPasswordValid } from "@/lib/password-policy";
 import { useTheme } from "@/components/ThemeProvider";
 import { ACCENT_PRESETS } from "@/lib/accent-presets";
+import { copyToClipboard } from "@/lib/clipboard";
 
 interface ApiKeyRecord {
   id: string;
@@ -130,8 +131,8 @@ export default function ProfilePage() {
     else flash("Failed to revoke key", "error");
   };
 
-  const copySecret = (id: string, secret: string) => {
-    navigator.clipboard.writeText(secret);
+  const copySecret = async (id: string, secret: string) => {
+    await copyToClipboard(secret);
     setCopiedKeyId(id);
     setTimeout(() => setCopiedKeyId(null), 2000);
   };

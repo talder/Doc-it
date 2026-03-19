@@ -6,6 +6,7 @@ import { ArrowLeft, Plus, Trash2, Shield, ShieldCheck, Users, Layout, Settings, 
 import PasswordStrengthMeter from "@/components/PasswordStrengthMeter";
 import { isPasswordValid } from "@/lib/password-policy";
 import type { SanitizedUser, Space, SpaceRole, AuditConfig, AuditEntry, UserGroup, AdConfig, AdGroupMapping, DashboardAccessConfig, CrashEntry } from "@/lib/types";
+import { copyToClipboard } from "@/lib/clipboard";
 type Tab = "users" | "spaces" | "service-keys" | "groups" | "settings" | "audit" | "backup" | "crash-logs";
 
 interface BackupEntry { filename: string; sizeBytes: number; createdAt: string; }
@@ -381,8 +382,8 @@ function AdminContent() {
     else flash("Failed to revoke service key", "error");
   };
 
-  const copySvcSecret = (id: string, secret: string) => {
-    navigator.clipboard.writeText(secret);
+  const copySvcSecret = async (id: string, secret: string) => {
+    await copyToClipboard(secret);
     setCopiedSvcId(id);
     setTimeout(() => setCopiedSvcId(null), 2000);
   };
@@ -2282,7 +2283,7 @@ function AdminContent() {
                       className="flex-1 px-3 py-1.5 text-sm font-mono border border-border rounded-lg bg-gray-50 select-all"
                     />
                     <button
-                      onClick={() => { navigator.clipboard.writeText(keyRevealed); flash("Key copied to clipboard", "success"); }}
+                      onClick={async () => { await copyToClipboard(keyRevealed); flash("Key copied to clipboard", "success"); }}
                       className="p-1.5 rounded hover:bg-muted text-text-muted" title="Copy"
                     ><Copy className="w-4 h-4" /></button>
                     <button
@@ -2321,7 +2322,7 @@ function AdminContent() {
                     <div className="flex items-center gap-2">
                       <input type="text" readOnly value={keyRotationResult.newKey} className="flex-1 px-3 py-1.5 text-sm font-mono border border-amber-300 rounded-lg bg-white select-all" />
                       <button
-                        onClick={() => { navigator.clipboard.writeText(keyRotationResult.newKey); flash("New key copied", "success"); }}
+                        onClick={async () => { await copyToClipboard(keyRotationResult.newKey); flash("New key copied", "success"); }}
                         className="p-1.5 rounded hover:bg-amber-100 text-amber-700" title="Copy"
                       ><Copy className="w-4 h-4" /></button>
                     </div>

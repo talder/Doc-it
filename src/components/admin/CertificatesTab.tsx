@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ShieldCheck, KeyRound, FileCode2, ScrollText, LayoutTemplate, RefreshCw, Plus, Trash2, Download, ShieldAlert, RotateCcw, Upload, Eye, EyeOff, Shield, Network, Globe, User, Code2, Mail, FileText, ChevronRight, ChevronDown, FolderInput, FilePlus, Pencil, Copy, Check, X } from "lucide-react";
+import { copyToClipboard } from "@/lib/clipboard";
 import type {
   PkiCertNode,
   PkiCertificate,
@@ -598,7 +599,7 @@ export default function CertificatesTab() {
   };
 
   const copyCsr = async (csr: PkiCsr) => {
-    await navigator.clipboard.writeText(csr.pem);
+    await copyToClipboard(csr.pem);
     setCopiedCsrId(csr.id);
     setTimeout(() => setCopiedCsrId(null), 2000);
   };
@@ -995,7 +996,7 @@ export default function CertificatesTab() {
                                 onClick={async () => {
                                   const pem = keyPemCache[k.id];
                                   if (!pem) return;
-                                  await navigator.clipboard.writeText(pem);
+                                  await copyToClipboard(pem);
                                   setCopiedKeyId(k.id);
                                   setTimeout(() => setCopiedKeyId(null), 2000);
                                 }}
