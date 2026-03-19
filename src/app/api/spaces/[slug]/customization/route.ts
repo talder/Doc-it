@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSpaceRole } from "@/lib/permissions";
 import { readCustomization, writeCustomization } from "@/lib/config";
+import { invalidateSpaceCache } from "@/lib/space-cache";
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -83,5 +84,6 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   }
 
   await writeCustomization(slug, current);
+  invalidateSpaceCache(slug);
   return NextResponse.json(current);
 }
