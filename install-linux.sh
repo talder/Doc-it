@@ -252,8 +252,9 @@ if $SERVICE; then
   info "Configuring systemd service: $SERVICE_NAME ..."
   $SUDO mkdir -p "$LOG_DIR"
   $SUDO chown "$SERVICE_USER:$SERVICE_USER" "$LOG_DIR"
-  NODE_BIN="$(command -v node)"
-  NPM_BIN="$(command -v npm)"
+  NODE_BIN="$(command -v node || which node 2>/dev/null || echo /usr/bin/node)"
+  NPM_BIN="$(command -v npm || which npm 2>/dev/null || echo /usr/bin/npm)"
+  [[ -x "$NPM_BIN" ]] || die "npm not found — cannot create systemd service"
   $SUDO tee "$SERVICE_FILE" > /dev/null <<UNIT
 [Unit]
 Description=doc-it Documentation Platform
