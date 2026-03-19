@@ -9,6 +9,7 @@ import {
   Table, ImageIcon, ChevronDown, Lightbulb, Pencil, GitBranch,
   Minus, AlignLeft, AlignCenter, AlignRight, Link, Paperclip,
   FileText, CalendarDays, Clock, Sigma, FileImage, LayoutTemplate, Database, Palette,
+  Columns2, Columns3,
 } from "lucide-react";
 import { SlashCommandsList } from "./SlashCommandsList";
 import { PluginKey } from "@tiptap/pm/state";
@@ -278,6 +279,23 @@ const getSlashCommands = (): SlashCommandItem[] => [
         detail: { editor },
         bubbles: true,
       }));
+    },
+  },
+  // ── Layout ────────────────────────────────────────────────────────────────────
+  {
+    title: "2 Columns",
+    description: "Side-by-side two-column layout",
+    icon: <Columns2 className="h-4 w-4" />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).insertColumnLayout(2).run();
+    },
+  },
+  {
+    title: "3 Columns",
+    description: "Three-column layout",
+    icon: <Columns3 className="h-4 w-4" />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).insertColumnLayout(3).run();
     },
   },
   // ── Date / Time ──────────────────────────────────────────────────────────────

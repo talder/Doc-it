@@ -3175,6 +3175,138 @@ select.modal-input {
   background: var(--color-muted);
 }
 
+/* === Column Layout === */
+.column-layout {
+  position: relative;
+  margin: 1rem 0;
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+  padding: 4px 0;
+}
+
+.column-layout:hover {
+  border-color: var(--color-accent);
+}
+
+.column-layout-inner {
+  position: relative;
+  display: flex;
+  min-height: 60px;
+}
+
+/* NodeViewContent renders the ProseMirror children – make it a flex row */
+.column-layout-content {
+  display: flex;
+  width: 100%;
+  min-height: 60px;
+}
+
+/* Each columnBlock child fills its share of the row */
+.column-layout-content > .column-block {
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 12px;
+}
+
+.column-layout-content > .column-block + .column-block {
+  border-left: 1px solid var(--color-border);
+}
+
+/* Dynamic widths via CSS custom properties set on the wrapper */
+.column-layout-content > .column-block:nth-child(1) {
+  flex: var(--col-w1, 1) 1 0%;
+}
+.column-layout-content > .column-block:nth-child(2) {
+  flex: var(--col-w2, 1) 1 0%;
+}
+.column-layout-content > .column-block:nth-child(3) {
+  flex: var(--col-w3, 1) 1 0%;
+}
+
+/* Resize handle between columns */
+.column-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  transform: translateX(-50%);
+  cursor: col-resize;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+.column-resize-handle::after {
+  content: "";
+  width: 3px;
+  height: 32px;
+  border-radius: 2px;
+  background: var(--color-border);
+  transition: background 0.12s, height 0.12s;
+}
+
+.column-resize-handle:hover::after,
+.column-resize-handle.active::after {
+  background: var(--color-accent);
+  height: 48px;
+}
+
+/* Floating toolbar (top-right) */
+.column-layout-toolbar {
+  position: absolute;
+  top: -32px;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 4px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px var(--color-shadow);
+  z-index: 20;
+  user-select: none;
+}
+
+.column-toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  transition: background 0.12s, color 0.12s;
+}
+
+.column-toolbar-btn:hover {
+  background: var(--color-muted);
+  color: var(--color-text-primary);
+}
+
+.column-toolbar-btn-danger:hover {
+  background: #fee2e2;
+  color: #ef4444;
+}
+
+/* Read-mode: hide dashed border and toolbar affordances */
+.read-mode .column-layout {
+  border-color: transparent;
+}
+
+.read-mode .column-layout:hover {
+  border-color: transparent;
+}
+
+.read-mode .column-resize-handle {
+  display: none;
+}
+
 /* === Collapsible Block === */
 .collapsible-block {
   border: 1px solid var(--color-border);

@@ -57,6 +57,7 @@ import { TemplatePlaceholderExtension } from "./extensions/TemplatePlaceholderEx
 import { EmojiShortcodeExtension } from "./extensions/EmojiShortcodeExtension";
 import { DatabaseBlockExtension } from "./extensions/DatabaseBlockExtension";
 import type { DatabaseBlockAttrs } from "./extensions/DatabaseBlockExtension";
+import { ColumnLayout, ColumnBlock } from "./extensions/ColumnLayoutExtension";
 import { Extension } from "@tiptap/core";
 import { Plugin as PmPlugin, PluginKey as PmPluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
@@ -318,6 +319,20 @@ const markedCalloutExtension: MarkedExtension = {
         } catch { return null; }
       }) ?? out;
 
+      // column layout
+      out = replaceComment(out, /<!--\s*columns:([A-Za-z0-9+/=]+)\s*-->/, (m) => {
+        try {
+          const a = JSON.parse(atob(m[1]));
+          const cols = a.columns || 2;
+          const widths = a.widths || "50,50";
+          const colHtml = (a.content || []).map((md: string) => {
+            const inner = marked.parse(md, { async: false }) as string;
+            return `<div data-type="columnBlock" class="column-block">${inner || "<p></p>"}</div>`;
+          }).join("");
+          return `<div data-type="columnLayout" data-columns="${cols}" data-widths="${widths}" class="column-layout">${colHtml}</div>`;
+        } catch { return null; }
+      }) ?? out;
+
       return out;
     },
   },
@@ -527,6 +542,25 @@ turndown.addRule("databaseBlock", {
       spaceSlug: el.getAttribute("data-space-slug")  || "",
     };
     return `\n<!-- database:${btoa(JSON.stringify(attrs))} -->\n\n`;
+  },
+});
+
+// Column layout serialization — columnBlock emits a separator so
+// the parent columnLayout can split columns apart.
+const COLUMN_SEP = "\n<!--COL_SEP-->\n";
+turndown.addRule("columnBlock", {
+  filter: (node) => node.nodeName === "DIV" && node.getAttribute("data-type") === "columnBlock",
+  replacement: (content) => COLUMN_SEP + content,
+});
+turndown.addRule("columnLayout", {
+  filter: (node) => node.nodeName === "DIV" && node.getAttribute("data-type") === "columnLayout",
+  replacement: (content, node) => {
+    const el = node as HTMLElement;
+    const columns = parseInt(el.getAttribute("data-columns") || "2", 10);
+    const widths = el.getAttribute("data-widths") || "50,50";
+    const parts = content.split(COLUMN_SEP).filter(Boolean);
+    const payload = { columns, widths, content: parts.map((s: string) => s.trim()) };
+    return `\n<!-- columns:${btoa(JSON.stringify(payload))} -->\n\n`;
   },
 });
 // Preserve template placeholder spans
@@ -1056,6 +1090,8 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
       MentionNode,
       MentionSuggestion,
       DatabaseBlockExtension,
+      ColumnLayout,
+      ColumnBlock,
       Extension.create({
         name: "tabHandler",
         addKeyboardShortcuts() {
