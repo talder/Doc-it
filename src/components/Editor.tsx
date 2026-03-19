@@ -31,6 +31,7 @@ import {
   Highlighter, Eraser, Palette, Type,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
   ExternalLink, Copy, Pencil, Trash2, Globe, Loader2,
+  Heading1, Heading2, Heading3,
 } from "lucide-react";
 
 import Mathematics from "@tiptap/extension-mathematics";
@@ -1556,6 +1557,30 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
         }}
       >
         <div className="bubble-menu">
+          <button
+            onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+            className={`bubble-btn${editor.isActive("heading", { level: 1 }) ? " active" : ""}`}
+            title="Heading 1"
+          >
+            <Heading1 className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+            className={`bubble-btn${editor.isActive("heading", { level: 2 }) ? " active" : ""}`}
+            title="Heading 2"
+          >
+            <Heading2 className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+            className={`bubble-btn${editor.isActive("heading", { level: 3 }) ? " active" : ""}`}
+            title="Heading 3"
+          >
+            <Heading3 className="w-4 h-4" />
+          </button>
+
+          <div className="bubble-sep" />
+
           <button
             onClick={() => editor.chain().focus().toggleBold().run()}
             className={`bubble-btn${editor.isActive("bold") ? " active" : ""}`}
