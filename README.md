@@ -157,6 +157,14 @@ Three applications have been the primary functional inspiration behind Doc-it �
 - **Admin Audit tab** — calendar heatmap showing event volume, event explorer with filtering, and one-click CSV/JSON export
 - **Audit settings API** — configure retention period and syslog target without restarting the service
 
+### Crash Logging
+- **Server-side crash capture** — `uncaughtException` and `unhandledRejection` handlers log fatal errors automatically
+- **Client-side crash capture** — React error boundary (`global-error.tsx`) and global `window.onerror` / `unhandledrejection` listeners report browser errors to the server
+- **JSONL crash log files** — one file per day under `logs/crash-YYYY-MM-DD.jsonl`, retained for 90 days (configurable)
+- **Email notifications** — admin receives an email for every crash (if SMTP is configured)
+- **Admin Crash Logs tab** — filterable, paginated crash log explorer with expandable stack traces; filter by date, source (server/client), level (error/fatal), and free text
+- **Rate-limited client reporting** — unauthenticated `POST /api/crash-logs/report` endpoint with IP-based rate limiting (20/min)
+
 ### Backup & Recovery
 - **Encrypted backups** — AES-256-GCM encrypted `.tar.gz.enc` archives of all data directories (config, docs, logs, archive, history)
 - **Backup targets** — local path (covers pre-mounted NFS shares), CIFS/SMB via `smbclient`, and SFTP via `ssh2` (password or private key)
@@ -278,7 +286,7 @@ docs/                # Document storage (docs/{space}/{category}/{doc}.md)
 archive/             # Archived documents
 history/             # Revision snapshots
 backups/             # Encrypted backup archives (.tar.gz.enc)
-logs/                # Audit log files (audit-YYYY-MM-DD.jsonl)
+logs/                # Audit logs (audit-YYYY-MM-DD.jsonl) & crash logs (crash-YYYY-MM-DD.jsonl)
 src/
   app/
     api/             # API routes (auth, spaces, docs, settings, assets,
@@ -313,6 +321,7 @@ src/
     changelog.ts     # Change log module
     journal.ts       # Journal module (encrypted user journals)
     audit.ts         # NIS2 audit logging (encrypted, syslog, write queue)
+    crash-log.ts     # Crash logging (server + client, JSONL, email alerts)
     backup.ts        # Backup & restore (AES-256-GCM encrypted archives)
     crypto.ts        # Field encryption & key management
     key-rotation.ts  # Encryption key rotation

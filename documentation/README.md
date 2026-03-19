@@ -26,6 +26,7 @@
   - [Asset Management](features/asset-management.md)
   - [Helpdesk & Ticketing](features/helpdesk.md)
   - [Backup & Recovery](features/backup.md)
+  - [Crash Logging](features/crash-logging.md)
   - [Active Directory / LDAP](features/active-directory.md)
   - [Dashboard](features/dashboard.md)
 - **API Reference**
@@ -44,6 +45,7 @@
   - [Service Keys](admin/service-keys.md)
   - [Settings](admin/settings.md)
   - [Audit](admin/audit.md)
+  - [Crash Logs](admin/crash-logs.md)
 - **Security**
   - [NIS2 Compliance](security/nis2-compliance.md)
   - [API Keys](security/api-keys.md)
@@ -93,6 +95,7 @@ Select your space from the top bar, click **New Document** in the sidebar, choos
 | **Asset Registry** | IT asset management with hierarchical containers, custom fields, and status tracking. |
 | **Helpdesk** | Ticketing system with groups, SLA policies, automation rules, custom forms, and a self-service portal. |
 | **Backup** | Automated AES-256-GCM encrypted backups with local, CIFS/SMB, and SFTP targets. |
+| **Crash Log** | Automatic server + client crash capture with JSONL storage, admin UI, and email alerts. |
 | **Active Directory** | Optional LDAP/LDAPS authentication with shadow user provisioning and AD group → space role mappings. |
 | **Dashboard** | Dashy-style home page with link card sections; per-card group visibility controls. |
 | **User Group** | Admin-managed groups of users for permission targeting (e.g. dashboard link visibility). |
