@@ -3,6 +3,7 @@
 import { NodeViewContent, NodeViewWrapper } from "@tiptap/react";
 import { Copy, Check, Code2 } from "lucide-react";
 import { useState, useMemo, useCallback, useEffect } from "react";
+import { copyToClipboard } from "@/lib/clipboard";
 
 const LANGUAGES: { value: string; label: string }[] = [
   { value: "plaintext", label: "Plain Text" },
@@ -68,7 +69,7 @@ export const CodeBlockNodeView = ({ node, updateAttributes, editor }: any) => {
   }, [code]);
 
   const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(code);
+    await copyToClipboard(code);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }, [code]);

@@ -16,6 +16,7 @@ import {
   Check,
   Send,
 } from "lucide-react";
+import { copyToClipboard } from "@/lib/clipboard";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -387,8 +388,8 @@ function DocsTab() {
       return n;
     });
 
-  const copyPath = (id: string, text: string) => {
-    navigator.clipboard.writeText(text);
+  const copyPath = async (id: string, text: string) => {
+    await copyToClipboard(text);
     setCopiedPath(id);
     setTimeout(() => setCopiedPath(null), 1500);
   };

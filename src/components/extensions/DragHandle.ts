@@ -3,6 +3,8 @@
 import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey, NodeSelection } from "@tiptap/pm/state";
 import { EditorView } from "@tiptap/pm/view";
+import { copyToClipboard } from "@/lib/clipboard";
+import { showCopyToastDOM } from "@/components/CopyToast";
 
 const dragHandleKey = new PluginKey("dragHandle");
 
@@ -133,7 +135,9 @@ function createBlockMenu(
 
   // Copy to clipboard
   addItem(menu, MI.copy, "Copy to clipboard", () => {
-    navigator.clipboard.writeText(node.textContent);
+    copyToClipboard(node.textContent).then((ok) => {
+      if (ok) showCopyToastDOM("Copied!");
+    });
     cleanup();
   });
 
