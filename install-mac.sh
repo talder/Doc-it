@@ -227,17 +227,28 @@ npm install $( $NO_SSL && echo "--strict-ssl=false" || echo "" )
 info "Building production bundle..."
 npm run build
 
-# ── 6. Service (launchd) ───────────────────────────────────────
+# ── 6. Service (launchd) ───────────────────────────────────
 if $SERVICE; then
   info "Configuring launchd service: $SERVICE_LABEL ..."
-  NPM_PATH="$(command -v npm)"
-  NODE_PATH="$(command -v node)"
+  NPM_PATH="$(command -v npm || which npm 2>/dev/null || echo /usr/local/bin/npm)"
+  NODE_PATH="$(command -v node || which node 2>/dev/null || echo /usr/local/bin/node)"
+  SERVICE_RUN_USER="$(whoami)"
+  SERVICE_RUN_GROUP="$(id -gn)"
+
+  # Pre-create runtime data directories with correct ownership
+  for dir in config docs logs archive history backups trash; do
+    mkdir -p "$INSTALL_DIR/$dir"
+  done
+
   sudo mkdir -p "$LOG_DIR"
+  sudo chown "$SERVICE_RUN_USER" "$LOG_DIR"
   sudo tee "$SERVICE_PLIST" > /dev/null <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key>             <string>${SERVICE_LABEL}</string>
+  <key>UserName</key>          <string>${SERVICE_RUN_USER}</string>
+  <key>GroupName</key>         <string>${SERVICE_RUN_GROUP}</string>
   <key>ProgramArguments</key>  <array>
     <string>${NPM_PATH}</string><string>start</string>
   </array>
@@ -255,7 +266,7 @@ if $SERVICE; then
 PLIST
   sudo launchctl unload "$SERVICE_PLIST" 2>/dev/null || true
   sudo launchctl load -w "$SERVICE_PLIST"
-  info "Service started. Logs: $LOG_DIR"
+  info "Service started (running as $SERVICE_RUN_USER). Logs: $LOG_DIR"
 fi
 
 # ── Done ───────────────────────────────────────────────────────

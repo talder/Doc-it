@@ -214,6 +214,72 @@ The super-admin can never be deleted and always retains full access to all featu
 
 ---
 
+## File Permissions & Service User
+
+When installed as a system service (`--service`), doc-it runs under a **dedicated service user** that needs read/write access to the install directory and all runtime data directories.
+
+### How it works per platform
+
+**Linux** — The installer creates a `doc-it` system user and group. All files under the install directory (default `/opt/doc-it`) are owned by `doc-it:doc-it`. The systemd unit runs the process as this user.
+
+**macOS** — The launchd service runs as the user who ran the installer (typically your normal macOS user account). The install directory is owned by that user.
+
+**Windows** — The NSSM service runs as `SYSTEM`, which has full access. No special permission setup is needed.
+
+### Writable directories
+
+The following directories must be writable by the service user. The installer pre-creates them automatically, but if you set up manually or move the install directory you must ensure correct ownership:
+
+```
+<install-dir>/
+├── config/       # SQLite database (docit.db), avatars
+├── docs/         # Markdown documents, databases, attachments
+├── logs/         # Audit logs, crash logs
+├── archive/      # Archived documents
+├── history/      # Document revision history
+├── backups/      # Encrypted backup archives
+├── trash/        # Soft-deleted documents
+└── .next/        # Next.js build cache (written during build + runtime)
+```
+
+### Troubleshooting permission errors
+
+If doc-it starts but returns errors when logging in, creating documents, or saving settings, the service user likely cannot write to the data directories.
+
+**Linux — fix ownership:**
+```bash
+sudo chown -R doc-it:doc-it /opt/doc-it
+```
+
+**macOS — fix ownership** (replace `youruser` with the user that runs the service):
+```bash
+sudo chown -R youruser /opt/doc-it
+```
+
+**Verify the service user:**
+```bash
+# Linux — check which user the service runs as
+ps -eo user,comm | grep node
+
+# Linux — check directory ownership
+ls -la /opt/doc-it/
+```
+
+After fixing permissions, restart the service:
+```bash
+# Linux
+sudo systemctl restart doc-it
+
+# macOS
+sudo launchctl stop com.talder.docit && sudo launchctl start com.talder.docit
+```
+
+### Manual installation note
+
+If you install manually (without `--service`), doc-it runs as the current user and writes to the current working directory. Ensure the user running `npm start` has write access to the project directory.
+
+---
+
 ## Data Storage
 
 All data is stored on disk in several top-level directories (created automatically on first run):
