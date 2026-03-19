@@ -1573,8 +1573,20 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
         pluginKey="textFormatMenu"
         options={{
           placement: "top", offset: 8, strategy: "fixed",
-          onShow: () => { if (bubbleMenuElRef.current) bubbleMenuElRef.current.style.opacity = "0"; },
-          onUpdate: () => { if (bubbleMenuElRef.current) bubbleMenuElRef.current.style.opacity = "1"; },
+          onShow: () => {
+            const el = bubbleMenuElRef.current;
+            if (!el) return;
+            el.style.opacity = "0";
+            // Element was just appended to DOM by show(). The preceding
+            // computePosition ran while the element was detached, so its
+            // coordinates are wrong. Re-compute on the next frame (element
+            // now has layout) then reveal on the frame after.
+            requestAnimationFrame(() => {
+              if (!editor || editor.isDestroyed) return;
+              editor.view.dispatch(editor.state.tr.setMeta("textFormatMenu", "updatePosition"));
+              requestAnimationFrame(() => { if (el.parentNode) el.style.opacity = "1"; });
+            });
+          },
         }}
         shouldShow={({ editor, state }) => {
           if (!editor.isEditable) return false;
@@ -1732,8 +1744,16 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
         pluginKey="tableCellMenu"
         options={{
           placement: "bottom-start", offset: 6, strategy: "fixed",
-          onShow: () => { if (tableCellMenuElRef.current) tableCellMenuElRef.current.style.opacity = "0"; },
-          onUpdate: () => { if (tableCellMenuElRef.current) tableCellMenuElRef.current.style.opacity = "1"; },
+          onShow: () => {
+            const el = tableCellMenuElRef.current;
+            if (!el) return;
+            el.style.opacity = "0";
+            requestAnimationFrame(() => {
+              if (!editor || editor.isDestroyed) return;
+              editor.view.dispatch(editor.state.tr.setMeta("tableCellMenu", "updatePosition"));
+              requestAnimationFrame(() => { if (el.parentNode) el.style.opacity = "1"; });
+            });
+          },
         }}
         shouldShow={({ editor, state }) => {
           if (!editor.isEditable) return false;
