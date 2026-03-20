@@ -19,10 +19,12 @@ export interface BundleMeta {
 
 export function buildReaderHtml(
   encryptedPayloadBase64: string,
+  attachmentMeta: Record<string, { name: string; enc: string; size: number }>,
   meta: BundleMeta,
 ): string {
   const metaJson = JSON.stringify(meta);
   const payloadJson = JSON.stringify(encryptedPayloadBase64);
+  const attsJson = JSON.stringify(attachmentMeta);
   const genDate = new Date(meta.generatedAt).toLocaleString("en-GB", {
     dateStyle: "long",
     timeStyle: "short",
@@ -225,6 +227,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 <script>
 var ENC = ${payloadJson};
 var META = ${metaJson};
+var ATTS = ${attsJson};
+var _key = null;
 var state = { payload: null, space: null, doc: null, db: null };
 var enc = new TextEncoder(), dec = new TextDecoder();
 
@@ -269,6 +273,7 @@ function doDecrypt(pw,btn,errEl){
       );
     })
     .then(function(key){
+      _key = key;
       return crypto.subtle.decrypt({name:'AES-GCM',iv:iv},key,withTag);
     })
     .then(function(plain){
@@ -290,6 +295,36 @@ document.addEventListener('DOMContentLoaded',function(){
     if(e.key==='Enter') unlock();
   });
 });
+
+// ── on-demand attachment decryption ───────────────────────────────────
+function decryptDownload(attId, btn) {
+  if (!_key || !ATTS[attId]) return;
+  var orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Decrypting\u2026';
+  var att = ATTS[attId];
+  var raw = atob(att.enc);
+  var buf = new Uint8Array(raw.length);
+  for (var i = 0; i < raw.length; i++) buf[i] = raw.charCodeAt(i);
+  // Per-attachment wire format: iv(12) | authTag(16) | ciphertext
+  var iv = buf.slice(0, 12), tag = buf.slice(12, 28), ct = buf.slice(28);
+  var withTag = new Uint8Array(ct.length + 16);
+  withTag.set(ct); withTag.set(tag, ct.length);
+  crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, _key, withTag)
+    .then(function(plain) {
+      var blob = new Blob([plain]);
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = att.name; a.click();
+      setTimeout(function() { URL.revokeObjectURL(url); }, 15000);
+      btn.disabled = false;
+      btn.textContent = '\u2913 Download';
+    })
+    .catch(function() {
+      btn.disabled = false;
+      btn.textContent = orig;
+    });
+}
 
 // ── app init ──────────────────────────────────────────────────────────────────
 function initApp(){

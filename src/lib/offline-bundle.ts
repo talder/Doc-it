@@ -94,10 +94,14 @@ export async function generateOfflineBundle(
   let totalDocs = 0;
   let totalDbs = 0;
 
+  // Collect all attachments/PDFs here so they can be encrypted separately
+  // (keeps the main payload small → fast unlock in the browser)
+  const attachments = new Map<string, { name: string; data: Buffer }>();
+
   for (const space of spaces) {
     const spaceDir = getSpaceDir(space.slug);
     const categories = await scanCategories(spaceDir);
-    const documents = await scanAndRenderDocs(space.slug, spaceDir);
+    const documents = await scanAndRenderDocs(space.slug, spaceDir, "", [], attachments);
     const databases = await loadDatabases(space.slug);
 
     totalDocs += documents.length;
@@ -119,7 +123,7 @@ export async function generateOfflineBundle(
     spaces: offlineSpaces,
   };
 
-  const encryptedPayload = encryptPayload(JSON.stringify(payload), passphrase);
+  const enc = encryptBundle(JSON.stringify(payload), attachments, passphrase);
 
   const dateStr = now.toISOString().slice(0, 10);
   const htmlFilename = `doc-it-offline-${user.username}-${dateStr}.html`;
@@ -134,7 +138,7 @@ export async function generateOfflineBundle(
     filename: htmlFilename,
   };
 
-  const htmlContent = buildReaderHtml(encryptedPayload, meta);
+  const htmlContent = buildReaderHtml(enc.mainEnc, enc.attachmentMeta, meta);
   const readmeContent = buildReadme(meta);
 
   const zipBuffer = createZip([
@@ -193,6 +197,7 @@ async function scanAndRenderDocs(
   dir: string,
   categoryPath = "",
   acc: OfflineDoc[] = [],
+  attachments: Map<string, { name: string; data: Buffer }> = new Map(),
 ): Promise<OfflineDoc[]> {
   let entries;
   try {
@@ -211,7 +216,7 @@ async function scanAndRenderDocs(
         const { body, metadata } = parseFrontmatter(raw);
         let html = await marked(body);
         html = await embedImages(html, spaceSlug, categoryPath);
-        html = await resolveSpecialNodes(html, spaceSlug, categoryPath);
+        html = await resolveSpecialNodes(html, spaceSlug, categoryPath, attachments);
         acc.push({
           name: docName,
           category: categoryPath,
@@ -227,7 +232,7 @@ async function scanAndRenderDocs(
       }
     } else if (entry.isDirectory() && !EXCLUDED.has(entry.name)) {
       const subPath = categoryPath ? `${categoryPath}/${entry.name}` : entry.name;
-      await scanAndRenderDocs(spaceSlug, path.join(dir, entry.name), subPath, acc);
+      await scanAndRenderDocs(spaceSlug, path.join(dir, entry.name), subPath, acc, attachments);
     }
   }
   return acc;
@@ -257,6 +262,7 @@ async function resolveSpecialNodes(
   html: string,
   spaceSlug: string,
   category: string,
+  attachments: Map<string, { name: string; data: Buffer }>,
 ): Promise<string> {
   let m: RegExpExecArray | null;
 
@@ -308,16 +314,15 @@ async function resolveSpecialNodes(
       const displayName = attrs.originalName || attrs.filename;
       const sizeStr = attrs.size ? ` &middot; ${_formatSize(attrs.size)}` : "";
 
-      let href = "";
+      let dlBtn: string;
       try {
         const data = await fs.readFile(filePath);
-        const mime = mimeFromExt(attrs.filename, attrs.mimeType);
-        href = `data:${mime};base64,${data.toString("base64")}`;
-      } catch { /* file missing */ }
-
-      const dlBtn = href
-        ? `<a class="ob-att-dl" href="${href}" download="${_escAttr(displayName)}">&#11123; Download</a>`
-        : `<span class="ob-att-na">File unavailable offline</span>`;
+        const attId = `att-${crypto.randomBytes(8).toString("hex")}`;
+        attachments.set(attId, { name: displayName, data });
+        dlBtn = `<button class="ob-att-dl" onclick="decryptDownload('${attId}',this)">&#11123; Download</button>`;
+      } catch {
+        dlBtn = `<span class="ob-att-na">File unavailable offline</span>`;
+      }
 
       replacement =
         `<div class="ob-attachment">` +
@@ -348,33 +353,21 @@ async function resolveSpecialNodes(
       const filePath = path.join(getAttachmentsDir(slug, cat), attrs.filename);
       const displayName = attrs.originalName || attrs.filename;
 
-      let dataUri = "";
+      let dlBtn: string;
       try {
         const data = await fs.readFile(filePath);
-        dataUri = `data:application/pdf;base64,${data.toString("base64")}`;
-      } catch { /* file missing */ }
-
-      if (dataUri) {
-        replacement =
-          `<div class="ob-pdf">` +
-          `<div class="ob-pdf-header">` +
-          `<span class="ob-pdf-icon">&#128196;</span>` +
-          `<span class="ob-pdf-name">${_escHtml(displayName)}</span>` +
-          `<a class="ob-att-dl" href="${dataUri}" download="${_escAttr(displayName)}">&#11123; Download PDF</a>` +
-          `</div>` +
-          `<object class="ob-pdf-viewer" data="${dataUri}" type="application/pdf">` +
-          `<div class="ob-pdf-fallback">PDF preview unavailable &mdash; ` +
-          `<a href="${dataUri}" download="${_escAttr(displayName)}">download instead</a>.</div>` +
-          `</object>` +
-          `</div>`;
-      } else {
-        replacement =
-          `<div class="ob-pdf">` +
-          `<span class="ob-pdf-icon">&#128196;</span>` +
-          `<span class="ob-pdf-name">${_escHtml(displayName)}</span>` +
-          `<span class="ob-att-na"> &mdash; File unavailable offline</span>` +
-          `</div>`;
+        const attId = `att-${crypto.randomBytes(8).toString("hex")}`;
+        attachments.set(attId, { name: displayName, data });
+        dlBtn = `<button class="ob-att-dl" onclick="decryptDownload('${attId}',this)">&#11123; Download PDF</button>`;
+      } catch {
+        dlBtn = `<span class="ob-att-na">File unavailable offline</span>`;
       }
+      replacement =
+        `<div class="ob-pdf">` +
+        `<span class="ob-pdf-icon">&#128196;</span>` +
+        `<span class="ob-pdf-name">${_escHtml(displayName)}</span>` +
+        dlBtn +
+        `</div>`;
     } catch {
       replacement = `<div class="ob-pdf"><span>PDF embed</span></div>`;
     }
@@ -535,18 +528,47 @@ async function loadDatabases(spaceSlug: string): Promise<OfflineDb[]> {
 
 // ── Encryption (AES-256-GCM / PBKDF2) ────────────────────────────────────────
 //
-// Wire format: salt(16) | iv(12) | authTag(16) | ciphertext
-// Web Crypto API expects: ciphertext | authTag  → we store separately so the
-// client can reconstruct the correct order before calling subtle.decrypt().
+// Main payload wire format : salt(16) | iv(12) | authTag(16) | ciphertext
+// Per-attachment format    : iv(12)   | authTag(16) | ciphertext
+//   (no salt — attachments share the key derived from the main payload)
+//
+// Web Crypto API expects ciphertext+authTag concatenated; we split them on the
+// server so the client can reassemble correctly before calling subtle.decrypt().
 
-function encryptPayload(json: string, passphrase: string): string {
+interface EncryptedBundle {
+  mainEnc: string;
+  attachmentMeta: Record<string, { name: string; enc: string; size: number }>;
+}
+
+function encryptBundle(
+  mainJson: string,
+  rawAttachments: Map<string, { name: string; data: Buffer }>,
+  passphrase: string,
+): EncryptedBundle {
+  // Derive key once — shared between main payload and all attachments
   const salt = crypto.randomBytes(16);
-  const iv = crypto.randomBytes(12);
   const key = crypto.pbkdf2Sync(passphrase, salt, 100_000, 32, "sha256");
-  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
-  const ciphertext = Buffer.concat([cipher.update(Buffer.from(json, "utf-8")), cipher.final()]);
-  const authTag = cipher.getAuthTag(); // 16 bytes
-  return Buffer.concat([salt, iv, authTag, ciphertext]).toString("base64");
+
+  // Encrypt main payload (documents, databases, small images only)
+  const mainIv = crypto.randomBytes(12);
+  const mainCipher = crypto.createCipheriv("aes-256-gcm", key, mainIv);
+  const mainCt = Buffer.concat([mainCipher.update(Buffer.from(mainJson, "utf-8")), mainCipher.final()]);
+  const mainEnc = Buffer.concat([salt, mainIv, mainCipher.getAuthTag(), mainCt]).toString("base64");
+
+  // Encrypt each attachment individually — browser decrypts on demand
+  const attachmentMeta: Record<string, { name: string; enc: string; size: number }> = {};
+  for (const [id, att] of rawAttachments) {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+    const ct = Buffer.concat([cipher.update(att.data), cipher.final()]);
+    attachmentMeta[id] = {
+      name: att.name,
+      enc: Buffer.concat([iv, cipher.getAuthTag(), ct]).toString("base64"),
+      size: att.data.length,
+    };
+  }
+
+  return { mainEnc, attachmentMeta };
 }
 
 // ── README.txt ────────────────────────────────────────────────────────────────
