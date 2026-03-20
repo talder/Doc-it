@@ -134,7 +134,7 @@ function LinkedDocNodeView({
               {anchorFound ? (
                 <Link2 className="w-3 h-3 text-red-500" />
               ) : (
-                <Link2Off className="w-3 h-3 text-red-400 opacity-70" title="Section not found" />
+                <Link2Off className="w-3 h-3 text-red-400 opacity-70" />
               )}
               <span className="text-[10px] font-normal opacity-80">§ {anchor}</span>
             </span>
@@ -169,7 +169,7 @@ function LinkedDocNodeView({
                   {anchorFound ? (
                     <Link2 className="w-3 h-3 text-red-500" />
                   ) : (
-                    <Link2Off className="w-3 h-3 text-red-400 opacity-70" title="Section not found" />
+                    <Link2Off className="w-3 h-3 text-red-400 opacity-70" />
                   )}
                   <span className="text-[10px] text-red-500 font-medium">§ {anchor}</span>
                 </span>
