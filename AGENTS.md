@@ -36,9 +36,13 @@ Doc-it is a self-hosted documentation platform built as a single **Next.js 16 Ap
 
 ### Module Responsibilities (`src/lib/`)
 
-- `config.ts` — SQLite singleton, KV read/write, directory helpers
+- `config.ts` — SQLite singleton, KV read/write, directory helpers, blob table init, `getDb()` export, `getBlobstoreDir()`
+- `blobstore.ts` — global content-addressed attachment store (`config/blobstore/{sha256}`); SHA-256 dedup, PDF text extraction via pdfjs-dist, `attachment_refs` + `blobs` table operations, aggressive migration
+- `shutdown.ts` — in-memory pub/sub for SIGTERM graceful shutdown signalling (used by `/api/system/events`)
+- `notification-bus.ts` — in-memory pub/sub that broadcasts new notifications to SSE clients immediately without polling
 - `auth.ts` — bcrypt hashing, sessions, current user resolution
 - `permissions.ts` — space RBAC (`requireSpaceRole`)
+- `notifications.ts` — in-app notifications (JSON files per user) + email delivery + real-time SSE push via `notification-bus`
 - `helpdesk.ts` / `helpdesk-portal.ts` — ticketing system and portal user auth (separate from main auth)
 - `audit.ts` — NIS2 audit logging with encryption and syslog forwarding
 - `crypto.ts` — AES-256-GCM field encryption and key rotation
@@ -61,8 +65,8 @@ Security headers (CSP, HSTS, X-Frame-Options, etc.) are configured in `next.conf
 
 ## Data Directories (gitignored)
 
-- `config/` — SQLite DB, avatars
-- `docs/` — document storage
+- `config/` — SQLite DB, avatars, `blobstore/` (content-addressed attachments)
+- `docs/` — document storage; `attachments/` subdirs are legacy (migrate to blobstore)
 - `archive/` — archived documents
 - `history/` — revision snapshots
 - `logs/` — audit logs

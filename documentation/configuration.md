@@ -95,6 +95,36 @@ doc-it uses `docit.config.json` (above) for storage path configuration rather th
 
 ---
 
+## Attachment Blobstore & Deduplication
+
+All uploaded attachments are stored in a global content-addressed blobstore at `config/blobstore/{sha256}`. Identical files are stored once regardless of how many spaces or documents reference them.
+
+Two SQLite tables track references:
+- `blobs` — one row per unique file (SHA-256, size, MIME, extracted PDF text)
+- `attachment_refs` — one row per upload (reference ID → blob + document metadata)
+
+### Migrating legacy attachments
+
+Existing installations store files under `docs/{space}/{category}/attachments/`. Migrate them into the blobstore as an admin:
+
+```bash
+# Start (requires admin session cookie or API key)
+curl -X POST https://your-docit/api/admin/blobstore/migrate \
+  -H "Cookie: docit-session=..."
+
+# Poll progress / completion
+curl "https://your-docit/api/admin/blobstore/migrate?jobId=<id>" \
+  -H "Cookie: docit-session=..."
+```
+
+Migration is **aggressive** — original files are deleted after successful registration. Existing document attachment URLs keep working because the old filename is re-used as the reference ID. No documents need editing.
+
+### PDF full-text search
+
+PDFs with a text layer have their content extracted on upload (up to 50 pages, capped at 500 KB). Extracted text is stored in `blobs.text_content` and searched by the global search API, returning results with `matchType: "attachment"` and a snippet. Scanned / image-only PDFs are not OCR-processed in this version.
+
+---
+
 ## Reverse Proxy (Production)
 
 When running behind nginx or a similar reverse proxy, ensure:

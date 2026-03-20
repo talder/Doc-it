@@ -32,7 +32,7 @@ Three applications have been the primary functional inspiration behind Doc-it �
 - **Spaces** — isolated documentation workspaces with role-based access (admin / writer / reader)
 - **Categories** — nested folder structure within each space
 - **Tags** — hierarchical `#tag` system with `#parent/child` support, inline tag linking, and tag-based filtering
-- **Global Search** — `Cmd+K` / `Ctrl+K` search across documents, content, tags, changelog entries, assets, and helpdesk tickets with filters (category, tag, author, classification, date range), recent search history, and result snippets
+- **Global Search** — `Cmd+K` / `Ctrl+K` search across documents, content, tags, changelog entries, assets, PDF attachment content, and helpdesk tickets with filters (category, tag, author, classification, date range), recent search history, and result snippets
 
 ### Editor
 - **Rich text editing** powered by TipTap (ProseMirror) with bubble menu toolbar
@@ -51,12 +51,14 @@ Three applications have been the primary functional inspiration behind Doc-it �
 - **Read / Edit mode** — toggle editing with pencil/check button
 - **Autosave** — saves automatically while editing
 - **Revision history** — file-based snapshots with diff/compare view and revert
-- **Review workflow** — submit a document for review; reviewers are notified and can approve or request changes
+- **Review workflow** — submit a document for review; assigned reviewers receive an email notification and can approve or request changes
 - **Document classification** — label documents as Public, Internal, Confidential, or Restricted
 - **Archive** — archive and restore documents
 - **Move** — relocate documents between categories
 - **Templates** — create reusable document templates with fillable fields; apply templates when creating new documents
 - **Markdown storage** — all documents stored as `.md` files on disk
+- **Global blobstore** — all uploaded attachments deduplicated by SHA-256 hash; identical files stored once in `config/blobstore/`. Duplicate uploads show an inline dialog to choose the canonical filename (applied system-wide). PDFs with a text layer are indexed for full-text search.
+- **Offline reader bundle** — export a self-contained, passphrase-protected HTML reader. PDFs and attachments are individually encrypted and decrypted on-demand in the browser, keeping unlock time under 1 second regardless of bundle size.
 
 ### Databases
 - **Inline databases** — embed structured tables directly inside documents via `/database`
@@ -146,7 +148,9 @@ Three applications have been the primary functional inspiration behind Doc-it �
 - **User profiles** — change full name, email, password, avatar, editor preferences (line spacing, font size, TOC, accent colour)
 - **API Keys** — personal user keys (`dk_u_`) and admin-managed service keys (`dk_s_`) with per-space permissions, expiry dates, and a one-time secret reveal
 - **Admin panel** — manage users, spaces, groups, permissions, SMTP settings, Active Directory, service API keys, backups, and audit logs
-- **SMTP email** — configurable email notifications (e.g. admin notified on new registration)
+- **SMTP email** — configurable email notifications: new user registration (admins), review assignment, mentions, security incidents, helpdesk ticket events
+- **Real-time notifications** — topbar bell updates instantly via SSE; no page refresh required
+- **Graceful shutdown** — when the service stops, connected browser tabs receive a warning and any open document is autosaved before the server exits
 
 ### NIS2 Audit Logging
 - **34 event types** covering authentication, document changes, user management, space operations, API key lifecycle, and settings changes
@@ -193,7 +197,7 @@ Three applications have been the primary functional inspiration behind Doc-it �
 - **Drawing**: Excalidraw + Draw.io
 - **Email**: Nodemailer
 - **Database**: SQLite via better-sqlite3 (WAL mode) — config data stored in a key-value table
-- **Storage**: Markdown documents on disk; configuration data in SQLite (`config/docit.db`)
+- **Storage**: Markdown documents on disk; configuration in SQLite (`config/docit.db`); attachments in `config/blobstore/` (SHA-256 content-addressed)
 - **Encryption**: AES-256-GCM for audit logs, journal entries, backup archives, and TOTP secrets
 - **Auth**: bcrypt password hashing, TOTP MFA via otpauth
 
@@ -260,7 +264,7 @@ bash install-linux.sh --upgrade
 powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Upgrade
 ```
 
-The upgrade path stops any running service, runs `git pull --rebase`, reinstalls dependencies, rebuilds, and restarts the service.
+The upgrade path stops the running service, fetches and hard-resets to the latest commit, fixes file ownership, rebuilds as the service user, and restarts.
 
 ### Manual Install
 
@@ -279,9 +283,10 @@ Requires Node.js 24+ and npm 10+.
 ## Project Structure
 
 ```
-config/              # SQLite database (docit.db) + avatars
-  docit.db           # SQLite KV store for all config data (WAL mode)
+config/              # SQLite database, avatars, blobstore
+  docit.db           # SQLite KV + blob/attachment_refs tables (WAL mode)
   avatars/           # User avatar images
+  blobstore/         # Content-addressed attachments ({sha256} files)
 docs/                # Document storage (docs/{space}/{category}/{doc}.md)
 archive/             # Archived documents
 history/             # Revision snapshots
@@ -314,7 +319,11 @@ src/
     SearchModal.tsx  # Global search (Cmd+K)
   lib/
     auth.ts          # Authentication (bcrypt, sessions, TOTP)
-    config.ts        # SQLite-backed config read/write
+    config.ts        # SQLite-backed config read/write, blob table init
+    blobstore.ts     # Global content-addressed blobstore (dedup, PDF text, migration)
+    shutdown.ts      # SIGTERM pub/sub for graceful-shutdown signalling
+    notification-bus.ts # In-memory pub/sub for real-time notification push
+    notifications.ts # In-app + email notifications with SSE push
     helpdesk.ts      # Helpdesk module (tickets, groups, SLA, rules, forms, portal pages)
     helpdesk-portal.ts # Portal user auth (separate from main auth)
     assets.ts        # Asset management module

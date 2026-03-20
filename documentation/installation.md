@@ -179,10 +179,13 @@ powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Upgrade
 
 The upgrade path:
 1. Stops the running service (if installed)
-2. Runs `git pull --rebase origin main`
-3. Runs `npm install`
-4. Runs `npm run build`
-5. Restarts the service
+2. Runs `git fetch origin main && git reset --hard origin/main` — local changes are discarded; never modify files in the install directory manually
+3. Runs `npm install` as the `doc-it` service user
+4. Runs `npm run build` as the `doc-it` service user
+5. Runs `chown -R doc-it:doc-it` to fix any root-owned files from a previous build
+6. Restarts the service
+
+> **Important:** Any local changes to files in the install directory are discarded on upgrade. User data (`config/`, `docs/`, `history/`, `logs/`) is never touched by the upgrade process.
 
 No database migrations are required. Back up `config/`, `docs/`, `logs/`, and `history/` before upgrading if you want a rollback point.
 
@@ -287,14 +290,16 @@ All data is stored on disk in several top-level directories (created automatical
 ```
 config/
 ├── docit.db              # SQLite KV store (WAL mode) — users, spaces,
-│                         #   settings, service keys, helpdesk, assets, etc.
-└── avatars/              # User avatar images
+│                         #   settings, service keys, helpdesk, assets,
+│                         #   blob registry, attachment references
+├── avatars/              # User avatar images
+└── blobstore/            # Content-addressed attachments ({sha256} files)
 docs/
 └── <space-slug>/
     ├── <category>/
     │   ├── document.md   # Markdown documents
     │   ├── template.mdt  # Template documents
-    │   └── attachments/  # Uploaded file attachments
+    │   └── attachments/  # Legacy attachment location (migrated to blobstore)
     ├── .databases/
     │   └── <id>.db.json  # Database schema + rows (one file per database)
     ├── .doc-status.json  # Document workflow statuses
