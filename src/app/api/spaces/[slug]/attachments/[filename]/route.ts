@@ -51,7 +51,7 @@ export async function GET(request: NextRequest, { params }: Params) {
       const buffer = await readBlobBytes(ref.sha256);
       const contentType = blob?.mime || MIME_MAP[path.extname(ref.original_name).toLowerCase()] || "application/octet-stream";
       const displayName = ref.original_name || filename;
-      return new NextResponse(buffer, {
+      return new NextResponse(new Uint8Array(buffer), {
         headers: {
           "Content-Type": contentType,
           "Content-Disposition": download
