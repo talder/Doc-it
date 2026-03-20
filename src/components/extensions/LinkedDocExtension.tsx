@@ -4,13 +4,13 @@ import { Node, mergeAttributes } from "@tiptap/core";
 import { ReactNodeViewRenderer, NodeViewWrapper } from "@tiptap/react";
 import { useState, useEffect } from "react";
 import { Marked } from "marked";
-import { FileText, ExternalLink } from "lucide-react";
+import { FileText, ExternalLink, Link2, Link2Off } from "lucide-react";
 
 // ─── Navigation handler (same module-level pattern as TagLink) ─────────────────
-let linkedDocClickHandler: ((docName: string, docCategory: string, spaceSlug: string) => void) | null = null;
+let linkedDocClickHandler: ((docName: string, docCategory: string, spaceSlug: string, anchor?: string) => void) | null = null;
 
 export function setLinkedDocClickHandler(
-  handler: ((docName: string, docCategory: string, spaceSlug: string) => void) | null
+  handler: ((docName: string, docCategory: string, spaceSlug: string, anchor?: string) => void) | null
 ) {
   linkedDocClickHandler = handler;
 }
@@ -26,6 +26,7 @@ export interface LinkedDocAttrs {
   docCategory: string;
   viewMode: ViewMode;
   spaceSlug: string;
+  anchor?: string; // optional heading text to scroll to
 }
 
 // ─── Node View ────────────────────────────────────────────────────────────────
@@ -36,7 +37,7 @@ function LinkedDocNodeView({
   node: { attrs: LinkedDocAttrs };
   updateAttributes: (attrs: Partial<LinkedDocAttrs>) => void;
 }) {
-  const { docName, docCategory, viewMode, spaceSlug } = node.attrs;
+  const { docName, docCategory, viewMode, spaceSlug, anchor } = node.attrs;
   const [docContent, setDocContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,10 +61,18 @@ function LinkedDocNodeView({
     return text.length > max ? text.slice(0, max) + "…" : text;
   };
 
+  // Check if the anchor heading actually exists in the loaded content
+  const anchorFound = !anchor || !docContent
+    ? true // unknown until content loads
+    : docContent.split("\n").some((line) => {
+        const m = line.match(/^#{1,6}\s+(.+)$/);
+        return m && m[1].trim().toLowerCase() === anchor.toLowerCase();
+      });
+
   const handleNavigate = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    linkedDocClickHandler?.(docName, docCategory, spaceSlug);
+    linkedDocClickHandler?.(docName, docCategory, spaceSlug, anchor);
   };
 
   const ViewSwitcher = () => (
@@ -120,6 +129,16 @@ function LinkedDocNodeView({
         >
           <FileText className="w-3.5 h-3.5" />
           {docName}
+          {anchor && (
+            <span className="inline-flex items-center gap-0.5">
+              {anchorFound ? (
+                <Link2 className="w-3 h-3 text-red-500" />
+              ) : (
+                <Link2Off className="w-3 h-3 text-red-400 opacity-70" title="Section not found" />
+              )}
+              <span className="text-[10px] font-normal opacity-80">§ {anchor}</span>
+            </span>
+          )}
           <ExternalLink className="w-3 h-3 opacity-60" />
         </button>
         <ViewSwitcher />
@@ -143,6 +162,16 @@ function LinkedDocNodeView({
               {docCategory && (
                 <span className="text-xs text-text-muted bg-muted px-1.5 py-0.5 rounded flex-shrink-0">
                   {docCategory}
+                </span>
+              )}
+              {anchor && (
+                <span className="inline-flex items-center gap-0.5 flex-shrink-0">
+                  {anchorFound ? (
+                    <Link2 className="w-3 h-3 text-red-500" />
+                  ) : (
+                    <Link2Off className="w-3 h-3 text-red-400 opacity-70" title="Section not found" />
+                  )}
+                  <span className="text-[10px] text-red-500 font-medium">§ {anchor}</span>
                 </span>
               )}
             </button>
@@ -205,6 +234,7 @@ export const LinkedDocExtension = Node.create({
       docCategory: { default: "" },
       viewMode:    { default: "card" },
       spaceSlug:   { default: "" },
+      anchor:      { default: "" },
     };
   },
 
@@ -219,6 +249,7 @@ export const LinkedDocExtension = Node.create({
             docCategory: el.getAttribute("data-doc-category") || "",
             viewMode:    el.getAttribute("data-view-mode")    || "card",
             spaceSlug:   el.getAttribute("data-space-slug")   || "",
+            anchor:      el.getAttribute("data-anchor")       || "",
           };
         },
       },
@@ -234,6 +265,7 @@ export const LinkedDocExtension = Node.create({
         "data-doc-category": node.attrs.docCategory || "",
         "data-view-mode":    node.attrs.viewMode || "card",
         "data-space-slug":   node.attrs.spaceSlug || "",
+        "data-anchor":       node.attrs.anchor || "",
       }),
       "[Linked Doc]",
     ];

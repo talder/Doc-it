@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { X, HardDriveDownload, RefreshCw, Copy, Check, CheckCircle, ShieldCheck } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { X, HardDriveDownload, RefreshCw, Copy, Check, CheckCircle, ShieldCheck, Loader2 } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
 
 // ~200 common, easy-to-remember English words (4-7 letters)
@@ -62,6 +62,8 @@ function generatePassphrase(): string {
   return `${w1}-${w2}-${w3}-${w4}-${num}${sym}`;
 }
 
+type ModalPhase = "idle" | "building" | "ready" | "downloaded" | "job_error";
+
 interface Props {
   onClose: () => void;
 }
@@ -70,15 +72,20 @@ export default function OfflineBundleModal({ onClose }: Props) {
   const [passphrase, setPassphrase] = useState(() => generatePassphrase());
   const [copied, setCopied] = useState(false);
   const [noted, setNoted] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [phase, setPhase] = useState<ModalPhase>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [filename, setFilename] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  // Clean up polling on unmount
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
   const handleRegenerate = useCallback(() => {
     setPassphrase(generatePassphrase());
@@ -93,9 +100,29 @@ export default function OfflineBundleModal({ onClose }: Props) {
     setTimeout(() => setCopied(false), 2500);
   }, [passphrase]);
 
+  const startPolling = useCallback((jId: string) => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(async () => {
+      try {
+        const r = await fetch(`/api/offline-bundle?jobId=${encodeURIComponent(jId)}`);
+        if (!r.ok) return;
+        const data = await r.json();
+        if (data.status === "done") {
+          clearInterval(pollRef.current!);
+          setFilename(data.filename ?? null);
+          setPhase("ready");
+        } else if (data.status === "error") {
+          clearInterval(pollRef.current!);
+          setError(data.error ?? "Generation failed");
+          setPhase("job_error");
+        }
+      } catch { /* network hiccup — keep polling */ }
+    }, 2000);
+  }, []);
+
   const handleGenerate = async () => {
     setError(null);
-    setLoading(true);
+    setPhase("building");
     try {
       const res = await fetch("/api/offline-bundle", {
         method: "POST",
@@ -106,24 +133,19 @@ export default function OfflineBundleModal({ onClose }: Props) {
         const json = await res.json().catch(() => ({}));
         throw new Error(json?.error ?? `Server error ${res.status}`);
       }
-      const blob = await res.blob();
-      const cd = res.headers.get("Content-Disposition") ?? "";
-      const nameMatch = cd.match(/filename="([^"]+)"/);
-      const filename = nameMatch?.[1] ?? "doc-it-offline.zip";
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      setDone(true);
+      const { jobId: jId } = await res.json();
+      setJobId(jId);
+      startPolling(jId);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
+      setPhase("idle");
     }
+  };
+
+  const handleDownload = () => {
+    if (!jobId) return;
+    window.location.href = `/api/offline-bundle/download?jobId=${encodeURIComponent(jobId)}`;
+    setPhase("downloaded");
   };
 
   return (
@@ -145,20 +167,49 @@ export default function OfflineBundleModal({ onClose }: Props) {
 
         {/* Body */}
         <div className="modal-body" style={{ padding: "20px 24px 24px" }}>
-          {done ? (
+          {phase === "downloaded" ? (
             <div style={{ textAlign: "center", padding: "24px 0" }}>
               <CheckCircle style={{ width: 48, height: 48, color: "#16a34a", margin: "0 auto 16px" }} />
               <p style={{ fontWeight: 600, fontSize: 16, marginBottom: 8 }}>Bundle downloaded!</p>
-              <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 6, lineHeight: 1.6 }}>
+              <p style={{ fontSize: 13, color: "var(--color-text-muted)", marginBottom: 6, lineHeight: 1.6 }}>
                 Unzip the file and open the HTML in any modern browser.
               </p>
-              <div style={{ background: "var(--muted-bg, #f1f5f9)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "var(--text-secondary)", margin: "12px 0 20px", lineHeight: 1.6 }}>
+              <div style={{ background: "var(--color-muted)", border: "1px solid var(--color-border)", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "var(--color-text-secondary)", margin: "12px 0 20px", lineHeight: 1.6 }}>
                 <strong>Store your passphrase securely.</strong> Without it, the bundle cannot be unlocked.
-                Consider a password manager, a printed copy in a safe, or a sealed envelope.
               </div>
-              <button className="modal-btn-primary" onClick={onClose}>
-                Close
-              </button>
+              <button className="modal-btn-primary" onClick={onClose}>Close</button>
+            </div>
+          ) : phase === "building" ? (
+            <div style={{ textAlign: "center", padding: "32px 0" }}>
+              <Loader2 style={{ width: 40, height: 40, color: "var(--color-accent)", margin: "0 auto 16px", animation: "spin 1s linear infinite" }} />
+              <p style={{ fontWeight: 600, fontSize: 15, marginBottom: 8 }}>Building your bundle…</p>
+              <p style={{ fontSize: 13, color: "var(--color-text-muted)", lineHeight: 1.6, marginBottom: 20 }}>
+                This may take a minute for large documentation stores.<br />
+                You can close this window — you&rsquo;ll receive a notification when the bundle is ready.
+              </p>
+              <button className="modal-btn-cancel" onClick={onClose}>Close &amp; notify me</button>
+            </div>
+          ) : phase === "ready" ? (
+            <div style={{ textAlign: "center", padding: "28px 0" }}>
+              <CheckCircle style={{ width: 44, height: 44, color: "#16a34a", margin: "0 auto 14px" }} />
+              <p style={{ fontWeight: 600, fontSize: 15, marginBottom: 6 }}>Your bundle is ready!</p>
+              {filename && <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginBottom: 18 }}>{filename}</p>}
+              <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+                <button className="modal-btn-cancel" onClick={onClose}>Close</button>
+                <button className="modal-btn-primary" onClick={handleDownload} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <HardDriveDownload style={{ width: 16, height: 16 }} />
+                  Download Bundle
+                </button>
+              </div>
+            </div>
+          ) : phase === "job_error" ? (
+            <div style={{ textAlign: "center", padding: "28px 0" }}>
+              <p style={{ fontWeight: 600, fontSize: 15, color: "#dc2626", marginBottom: 8 }}>Generation failed</p>
+              <p style={{ fontSize: 13, color: "var(--color-text-muted)", marginBottom: 20 }}>{error}</p>
+              <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+                <button className="modal-btn-cancel" onClick={onClose}>Close</button>
+                <button className="modal-btn-primary" onClick={() => { setPhase("idle"); setError(null); }}>Try again</button>
+              </div>
             </div>
           ) : (
             <>
@@ -286,26 +337,17 @@ export default function OfflineBundleModal({ onClose }: Props) {
               )}
 
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-                <button className="modal-btn-cancel" onClick={onClose} disabled={loading}>
+                <button className="modal-btn-cancel" onClick={onClose}>
                   Cancel
                 </button>
                 <button
                   className="modal-btn-primary"
                   onClick={handleGenerate}
-                  disabled={loading || !noted}
-                  style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 180 }}
+                  disabled={!noted}
+                  style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 200 }}
                 >
-                  {loading ? (
-                    <>
-                      <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" strokeOpacity=".25"/><path d="M12 2a10 10 0 0 1 10 10" strokeOpacity="1"/></svg>
-                      Generating&hellip;
-                    </>
-                  ) : (
-                    <>
-                      <HardDriveDownload className="w-4 h-4" />
-                      Generate &amp; Download
-                    </>
-                  )}
+                  <HardDriveDownload className="w-4 h-4" />
+                  Generate Bundle
                 </button>
               </div>
             </>

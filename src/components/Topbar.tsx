@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Search, LogOut, Settings, Sun, Moon, Archive, User, Bell, X, FileText, BookOpen, Check, HardDriveDownload, Home, Trophy, Share2, Trash2, Lock, Clock, BookMarked, ClipboardList, Monitor, Headset, ShieldCheck, Star, Info } from "lucide-react";
 import OfflineBundleModal from "@/components/OfflineBundleModal";
+import ChangelogModal from "@/components/modals/ChangelogModal";
 import { useTheme, isLightTheme, type Theme } from "@/components/ThemeProvider";
 import type { Space, SanitizedUser, ReviewItem } from "@/lib/types";
 
@@ -53,6 +54,7 @@ export interface AppNotification {
   docName: string;
   category: string;
   time: string;
+  meta?: Record<string, string>;
 }
 
 interface ShareOverviewItem {
@@ -102,6 +104,7 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
   const [reviewsOpen, setReviewsOpen] = useState(false);
   const [notifsOpen, setNotifsOpen] = useState(false);
   const [offlineBundleOpen, setOfflineBundleOpen] = useState(false);
+  const [changelogOpen, setChangelogOpen] = useState(false);
   const [avatarError, setAvatarError] = useState(false);
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const spaceRef = useRef<HTMLDivElement>(null);
@@ -491,6 +494,8 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
                   <div key={n.id} className="notif-item">
                     {n.type === "new_user" ? (
                       <User className="w-3.5 h-3.5 text-amber-500 flex-shrink-0 mt-0.5" />
+                    ) : n.type === "bundle_ready" ? (
+                      <HardDriveDownload className="w-3.5 h-3.5 text-accent flex-shrink-0 mt-0.5" />
                     ) : (
                       <FileText className="w-3.5 h-3.5 text-accent flex-shrink-0 mt-0.5" />
                     )}
@@ -498,15 +503,21 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
                       <span className="notif-item-msg">{n.message}</span>
                       <div className="notif-item-meta">
                         <span>{n.time}</span>
-                        {n.type === "new_user" ? (
-                          <button className="notif-action-btn" onClick={() => { setNotifsOpen(false); router.push("/admin"); }}>
-                            Admin Panel
-                          </button>
-                        ) : (
-                          <button className="notif-action-btn" onClick={() => { setNotifsOpen(false); onNotificationAction?.(n); }}>
-                            Edit Now
-                          </button>
-                        )}
+                    {n.type === "new_user" ? (
+                      <button className="notif-action-btn" onClick={() => { setNotifsOpen(false); router.push("/admin"); }}>
+                        Admin Panel
+                      </button>
+                    ) : n.type === "bundle_ready" ? (
+                      n.meta?.jobId && !n.meta?.error ? (
+                        <button className="notif-action-btn" onClick={() => { setNotifsOpen(false); window.location.href = `/api/offline-bundle/download?jobId=${n.meta!.jobId}`; }}>
+                          Download
+                        </button>
+                      ) : null
+                    ) : (
+                      <button className="notif-action-btn" onClick={() => { setNotifsOpen(false); onNotificationAction?.(n); }}>
+                        Edit Now
+                      </button>
+                    )}
                       </div>
                     </div>
                     <button className="notif-dismiss-btn" onClick={() => onDismissNotification?.(n.id)} title="Dismiss">
@@ -628,10 +639,13 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
                 <BookOpen className="w-3.5 h-3.5" />
                 Documentation
               </button>
-              <div className="px-3 py-2 text-sm text-text-muted flex items-center gap-2">
+              <button
+                onClick={() => { setUserMenuOpen(false); setChangelogOpen(true); }}
+                className="w-full text-left px-3 py-2 text-sm text-text-muted hover:bg-muted flex items-center gap-2 transition-colors"
+              >
                 <Info className="w-3.5 h-3.5 flex-shrink-0" />
                 Version {appVersion ?? "…"}
-              </div>
+              </button>
               {/* Sign out */}
               <hr className="border-border-light my-1" />
               <button
@@ -652,6 +666,9 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
 
     {offlineBundleOpen && (
       <OfflineBundleModal onClose={() => setOfflineBundleOpen(false)} />
+    )}
+    {changelogOpen && (
+      <ChangelogModal onClose={() => setChangelogOpen(false)} />
     )}
   </>);
 }

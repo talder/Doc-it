@@ -90,12 +90,19 @@ function scrollToHeading(heading: TocHeading) {
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
+interface Backlink {
+  name: string;
+  category: string;
+}
+
 interface Props {
   markdown: string;
   onClose: () => void;
+  backlinks?: Backlink[];
+  onBacklinkClick?: (bl: Backlink) => void;
 }
 
-export default function TableOfContents({ markdown, onClose }: Props) {
+export default function TableOfContents({ markdown, onClose, backlinks = [], onBacklinkClick }: Props) {
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [dragging, setDragging] = useState(false);
@@ -167,28 +174,51 @@ export default function TableOfContents({ markdown, onClose }: Props) {
       </div>
 
       {/* Heading list */}
-      {headings.length === 0 ? (
-        <p className="px-3 py-4 text-xs text-text-muted italic">No headings found</p>
-      ) : (
-        <nav className="flex-1 overflow-y-auto py-2 px-1">
-          {headings.map((h) => (
-            <button
-              key={h.index}
-              onClick={() => handleClick(h)}
-              title={h.text}
-              className={`
-                w-full text-left rounded py-1 pr-2 transition-colors
-                hover:bg-muted/60 active:bg-muted
-                ${INDENT[h.level]}
-                ${LABEL[h.level]}
-                ${activeIdx === h.index ? "bg-accent-light !text-accent-text" : ""}
-              `}
-            >
-              <span className="truncate block leading-snug">{h.text}</span>
-            </button>
-          ))}
-        </nav>
-      )}
+      <div className="flex-1 overflow-y-auto flex flex-col">
+        {headings.length === 0 ? (
+          <p className="px-3 py-4 text-xs text-text-muted italic">No headings found</p>
+        ) : (
+          <nav className="py-2 px-1">
+            {headings.map((h) => (
+              <button
+                key={h.index}
+                onClick={() => handleClick(h)}
+                title={h.text}
+                className={`
+                  w-full text-left rounded py-1 pr-2 transition-colors
+                  hover:bg-muted/60 active:bg-muted
+                  ${INDENT[h.level]}
+                  ${LABEL[h.level]}
+                  ${activeIdx === h.index ? "bg-accent-light !text-accent-text" : ""}
+                `}
+              >
+                <span className="truncate block leading-snug">{h.text}</span>
+              </button>
+            ))}
+          </nav>
+        )}
+
+        {/* Backlinks */}
+        {backlinks.length > 0 && (
+          <div className="mt-auto border-t border-border pt-2 pb-3 px-1">
+            <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+              Linked from
+            </p>
+            {backlinks.map((bl) => (
+              <button
+                key={`${bl.category}/${bl.name}`}
+                onClick={() => onBacklinkClick?.(bl)}
+                title={bl.name}
+                className="w-full text-left rounded py-1 pl-2 pr-2 text-xs text-accent hover:bg-muted/60 transition-colors flex items-center gap-1.5 truncate"
+              >
+                <svg className="shrink-0" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                <span className="truncate">{bl.name}</span>
+                {bl.category && <span className="text-text-muted shrink-0">· {bl.category}</span>}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

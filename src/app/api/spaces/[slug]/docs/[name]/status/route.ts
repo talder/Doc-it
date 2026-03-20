@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSpaceRole } from "@/lib/permissions";
-import { getCurrentUser } from "@/lib/auth";
+import { requireSpaceRole, getSpaces } from "@/lib/permissions";
+import { getCurrentUser, getUsers } from "@/lib/auth";
 import { readDocStatusMap, writeDocStatusMap } from "@/lib/config";
 import { auditLog } from "@/lib/audit";
+import { sendMail } from "@/lib/email";
 import type { DocStatus } from "@/lib/types";
 
 type Params = { params: Promise<{ slug: string; name: string }> };
@@ -84,5 +85,33 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
   await writeDocStatusMap(slug, map);
   auditLog(request, { event: "document.status.change", outcome: "success", actor: user.username, spaceSlug: slug, resource: `${category}/${name}`, resourceType: "document", details: { status, reviewer } });
+
+  // Notify the reviewer by email (fire-and-forget)
+  if (status === "review" && reviewer) {
+    (async () => {
+      try {
+        const [users, spaces] = await Promise.all([getUsers(), getSpaces()]);
+        const reviewerUser = users.find((u) => u.username === reviewer);
+        if (!reviewerUser?.email) return;
+        const spaceName = spaces.find((s) => s.slug === slug)?.name ?? slug;
+        await sendMail(
+          reviewerUser.email,
+          `[Doc-it] You have been asked to review "${name}"`,
+          `<p><strong>${user.username}</strong> has requested your review on a document.</p>
+           <table style="border-collapse:collapse;font-family:sans-serif;font-size:14px">
+             <tr><td style="padding:4px 12px;font-weight:bold">Document</td><td style="padding:4px 12px">${name}</td></tr>
+             <tr><td style="padding:4px 12px;font-weight:bold">Category</td><td style="padding:4px 12px">${category || "—"}</td></tr>
+             <tr><td style="padding:4px 12px;font-weight:bold">Space</td><td style="padding:4px 12px">${spaceName}</td></tr>
+             <tr><td style="padding:4px 12px;font-weight:bold">Requested by</td><td style="padding:4px 12px">${user.username}</td></tr>
+           </table>
+           <p style="margin-top:16px">Log in to Doc-it to review the document.</p>
+           <p style="color:#888;font-size:12px">This is an automated notification from your Doc-it instance.</p>`
+        );
+      } catch {
+        // fire-and-forget — never block the response
+      }
+    })();
+  }
+
   return NextResponse.json(map[key]);
 }

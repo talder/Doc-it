@@ -19,6 +19,27 @@ import { getSpaceDir, getAttachmentsDir } from "./config";
 import { buildReaderHtml, type BundleMeta } from "./offline-reader-template";
 import type { User } from "./types";
 
+// Callout blockquote renderer for the offline bundle (> [!info] etc.)
+const _CALLOUT_TYPES = new Set(["info", "warning", "success", "danger"]);
+const _CALLOUT_ICON: Record<string, string> = {
+  info: "&#8505;", warning: "&#9888;", success: "&#10003;", danger: "&#9888;",
+};
+marked.use({
+  renderer: {
+    blockquote({ tokens }) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const inner = (this as any).parser.parse(tokens) as string;
+      const match = inner.match(/^\s*<p>\s*\[!(\w+)\]/i);
+      if (match && _CALLOUT_TYPES.has(match[1].toLowerCase())) {
+        const type = match[1].toLowerCase();
+        const body = inner.replace(/^\s*<p>\s*\[!\w+\]\s*(<br\s*\/?>)?\s*/, "<p>").trim();
+        return `<div class="ob-callout ob-callout-${type}"><span class="ob-callout-icon">${_CALLOUT_ICON[type]}</span><div class="ob-callout-body">${body || "<p></p>"}</div></div>\n`;
+      }
+      return `<blockquote>${inner}</blockquote>\n`;
+    },
+  },
+});
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface OfflineDoc {
@@ -190,6 +211,7 @@ async function scanAndRenderDocs(
         const { body, metadata } = parseFrontmatter(raw);
         let html = await marked(body);
         html = await embedImages(html, spaceSlug, categoryPath);
+        html = await resolveSpecialNodes(html, spaceSlug, categoryPath);
         acc.push({
           name: docName,
           category: categoryPath,
@@ -211,7 +233,180 @@ async function scanAndRenderDocs(
   return acc;
 }
 
-// ── Image embedding ───────────────────────────────────────────────────────────
+// ── Special node resolver (draw.io / attachments / PDF embeds) ───────────────
+
+function _escHtml(s: string): string {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function _escAttr(s: string): string {
+  return String(s).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+function _formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1_048_576) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1_048_576).toFixed(1)} MB`;
+}
+
+async function resolveSpecialNodes(
+  html: string,
+  spaceSlug: string,
+  category: string,
+): Promise<string> {
+  let m: RegExpExecArray | null;
+
+  // 0. Excalidraw: <!-- excalidraw:{drawingId} -->
+  const excRe = /<!--\s*excalidraw:([\w-]+)\s*-->/g;
+  const excMatches: { full: string; id: string }[] = [];
+  while ((m = excRe.exec(html)) !== null) excMatches.push({ full: m[0], id: m[1] });
+  for (const { full, id } of excMatches) {
+    const svgPath = path.join(getSpaceDir(spaceSlug), ".excalidraw", `${id}.svg`);
+    let replacement: string;
+    try {
+      const data = await fs.readFile(svgPath);
+      replacement = `<img src="data:image/svg+xml;base64,${data.toString("base64")}" class="ob-drawio" alt="Excalidraw drawing" />`;
+    } catch {
+      replacement = `<div class="ob-drawio-placeholder">&#9643; Excalidraw drawing (file unavailable)</div>`;
+    }
+    html = html.replace(full, replacement);
+  }
+
+  // 1. Draw.io WITH embedded SVG: <!-- drawio:{b64-xml}|{b64-svg} -->
+  html = html.replace(
+    /<!--\s*drawio:([A-Za-z0-9+/=]+)\|([A-Za-z0-9+/=]+)\s*-->/g,
+    (_match, _xmlB64, svgB64) =>
+      `<img src="data:image/svg+xml;base64,${svgB64}" class="ob-drawio" alt="Draw.io diagram" />`,
+  );
+
+  // ── 2. Draw.io WITHOUT SVG: <!-- drawio:{b64-xml} --> ────────────────────────
+  html = html.replace(
+    /<!--\s*drawio:([A-Za-z0-9+/=]+)\s*-->/g,
+    () =>
+      `<div class="ob-drawio-placeholder">&#9643; Draw.io diagram (no SVG preview available)</div>`,
+  );
+
+  // ── 3. Attachments: <!-- attachment:{b64-json} --> ───────────────────────────
+  const attachRe = /<!--\s*attachment:([A-Za-z0-9+/=]+)\s*-->/g;
+  const attachMatches: { full: string; b64: string }[] = [];
+  while ((m = attachRe.exec(html)) !== null) attachMatches.push({ full: m[0], b64: m[1] });
+
+  for (const { full, b64 } of attachMatches) {
+    let replacement: string;
+    try {
+      const attrs = JSON.parse(Buffer.from(b64, "base64").toString("utf-8")) as {
+        filename: string; originalName: string; mimeType: string; size: number;
+        category: string; spaceSlug: string; url: string;
+      };
+      const cat = attrs.category || category;
+      const slug = attrs.spaceSlug || spaceSlug;
+      const filePath = path.join(getAttachmentsDir(slug, cat), attrs.filename);
+      const displayName = attrs.originalName || attrs.filename;
+      const sizeStr = attrs.size ? ` &middot; ${_formatSize(attrs.size)}` : "";
+
+      let href = "";
+      try {
+        const data = await fs.readFile(filePath);
+        const mime = mimeFromExt(attrs.filename, attrs.mimeType);
+        href = `data:${mime};base64,${data.toString("base64")}`;
+      } catch { /* file missing */ }
+
+      const dlBtn = href
+        ? `<a class="ob-att-dl" href="${href}" download="${_escAttr(displayName)}">&#11123; Download</a>`
+        : `<span class="ob-att-na">File unavailable offline</span>`;
+
+      replacement =
+        `<div class="ob-attachment">` +
+        `<span class="ob-att-icon">&#128206;</span>` +
+        `<span class="ob-att-name">${_escHtml(displayName)}${sizeStr}</span>` +
+        dlBtn +
+        `</div>`;
+    } catch {
+      replacement = `<div class="ob-attachment"><span class="ob-att-icon">&#128206;</span><span class="ob-att-name">Attachment</span></div>`;
+    }
+    html = html.replace(full, replacement);
+  }
+
+  // ── 4. PDF embeds: <!-- pdf-embed:{b64-json} --> ─────────────────────────────
+  const pdfRe = /<!--\s*pdf-embed:([A-Za-z0-9+/=]+)\s*-->/g;
+  const pdfMatches: { full: string; b64: string }[] = [];
+  while ((m = pdfRe.exec(html)) !== null) pdfMatches.push({ full: m[0], b64: m[1] });
+
+  for (const { full, b64 } of pdfMatches) {
+    let replacement: string;
+    try {
+      const attrs = JSON.parse(Buffer.from(b64, "base64").toString("utf-8")) as {
+        filename: string; originalName: string; category: string;
+        spaceSlug: string; url: string;
+      };
+      const cat = attrs.category || category;
+      const slug = attrs.spaceSlug || spaceSlug;
+      const filePath = path.join(getAttachmentsDir(slug, cat), attrs.filename);
+      const displayName = attrs.originalName || attrs.filename;
+
+      let dataUri = "";
+      try {
+        const data = await fs.readFile(filePath);
+        dataUri = `data:application/pdf;base64,${data.toString("base64")}`;
+      } catch { /* file missing */ }
+
+      if (dataUri) {
+        replacement =
+          `<div class="ob-pdf">` +
+          `<div class="ob-pdf-header">` +
+          `<span class="ob-pdf-icon">&#128196;</span>` +
+          `<span class="ob-pdf-name">${_escHtml(displayName)}</span>` +
+          `<a class="ob-att-dl" href="${dataUri}" download="${_escAttr(displayName)}">&#11123; Download PDF</a>` +
+          `</div>` +
+          `<object class="ob-pdf-viewer" data="${dataUri}" type="application/pdf">` +
+          `<div class="ob-pdf-fallback">PDF preview unavailable &mdash; ` +
+          `<a href="${dataUri}" download="${_escAttr(displayName)}">download instead</a>.</div>` +
+          `</object>` +
+          `</div>`;
+      } else {
+        replacement =
+          `<div class="ob-pdf">` +
+          `<span class="ob-pdf-icon">&#128196;</span>` +
+          `<span class="ob-pdf-name">${_escHtml(displayName)}</span>` +
+          `<span class="ob-att-na"> &mdash; File unavailable offline</span>` +
+          `</div>`;
+      }
+    } catch {
+      replacement = `<div class="ob-pdf"><span>PDF embed</span></div>`;
+    }
+    html = html.replace(full, replacement);
+  }
+
+  // 5. Linked-doc references: <!-- linked-doc:{b64-json} -->
+  html = html.replace(
+    /<!--\s*linked-doc:([A-Za-z0-9+/=]+)\s*-->/g,
+    (_match, b64) => {
+      try {
+        const a = JSON.parse(Buffer.from(b64, "base64").toString("utf-8")) as {
+          docName: string; docCategory: string;
+        };
+        const loc = [a.docCategory, a.docName].filter(Boolean).join(" / ");
+        return `<div class="ob-linked-doc">&#128196;&nbsp;<strong>${_escHtml(a.docName || "Linked document")}</strong>&nbsp;<span class="ob-att-na">${_escHtml(loc)}</span></div>`;
+      } catch {
+        return `<div class="ob-linked-doc">&#128196; Linked document</div>`;
+      }
+    },
+  );
+
+  // 6. Inline database blocks: <!-- database:{b64-json} -->
+  html = html.replace(
+    /<!--\s*database:([A-Za-z0-9+/=]+)\s*-->/g,
+    () => `<div class="ob-drawio-placeholder">&#128203;&nbsp;Inline database &mdash; see the Databases section in the sidebar</div>`,
+  );
+
+  return html;
+}
+
+// ── Image embedding
 
 async function embedImages(
   html: string,
@@ -280,9 +475,10 @@ async function resolveToDataUri(
   }
 }
 
-function mimeFromExt(filename: string): string {
+function mimeFromExt(filename: string, fallback?: string): string {
   const ext = path.extname(filename).toLowerCase();
   const map: Record<string, string> = {
+    // images
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
     ".png": "image/png",
@@ -291,8 +487,37 @@ function mimeFromExt(filename: string): string {
     ".svg": "image/svg+xml",
     ".ico": "image/x-icon",
     ".bmp": "image/bmp",
+    ".avif": "image/avif",
+    ".tiff": "image/tiff",
+    // documents
+    ".pdf": "application/pdf",
+    ".txt": "text/plain",
+    ".csv": "text/csv",
+    ".json": "application/json",
+    ".xml": "application/xml",
+    ".md": "text/markdown",
+    // office
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".doc": "application/msword",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".xls": "application/vnd.ms-excel",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".ppt": "application/vnd.ms-powerpoint",
+    // archives
+    ".zip": "application/zip",
+    ".gz": "application/gzip",
+    ".tar": "application/x-tar",
+    ".7z": "application/x-7z-compressed",
+    // draw.io
+    ".drawio": "application/xml",
+    ".dio": "application/xml",
+    // media
+    ".mp4": "video/mp4",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".webm": "video/webm",
   };
-  return map[ext] ?? "application/octet-stream";
+  return map[ext] ?? fallback ?? "application/octet-stream";
 }
 
 // ── Database loader ───────────────────────────────────────────────────────────

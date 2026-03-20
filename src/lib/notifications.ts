@@ -19,15 +19,16 @@ const NOTIF_DIR = path.join(process.cwd(), "config", "notifications");
 
 export interface AppNotification {
   id: string;
-  type: "mention" | "new_user";
+  type: "mention" | "new_user" | "bundle_ready";
   message: string;
   from: string;
-  /** Only relevant for mention notifications */
   spaceSlug: string;
   docName: string;
   category: string;
   createdAt: string;
   read: boolean;
+  /** Optional metadata for notification-type-specific data (e.g. bundle jobId) */
+  meta?: Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------

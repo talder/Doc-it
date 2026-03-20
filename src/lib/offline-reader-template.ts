@@ -127,6 +127,32 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .dv-body strong{font-weight:600}
 .dv-body input[type=checkbox]{margin-right:5px}
 
+/* ── Offline embedded attachments / PDFs / drawings ────────── */
+.ob-attachment{display:flex;align-items:center;gap:10px;border:1px solid var(--border);background:var(--surface);padding:10px 12px;border-radius:8px;margin:10px 0}
+.ob-att-icon{color:var(--muted);font-size:16px}
+.ob-att-name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}
+.ob-att-dl{font-size:12px;font-weight:600;color:var(--accent);text-decoration:none;border:1px solid var(--border);padding:5px 9px;border-radius:6px;background:#fff}
+.ob-att-dl:hover{border-color:var(--accent);background:#eff6ff}
+.ob-att-na{font-size:12px;color:var(--muted)}
+.ob-pdf{border:1px solid var(--border);border-radius:8px;background:var(--surface);padding:10px 12px;margin:10px 0}
+.ob-pdf-header{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.ob-pdf-icon{color:#dc2626;font-size:16px}
+.ob-pdf-name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px;font-weight:500}
+.ob-pdf-viewer{display:block;width:100%;height:560px;border:1px solid var(--border);border-radius:6px;background:#fff}
+.ob-pdf-fallback{padding:14px;font-size:13px;color:var(--muted)}
+.ob-pdf-fallback a{color:var(--accent)}
+.ob-drawio{display:block;max-width:100%;height:auto;border:1px solid var(--border);border-radius:8px;background:#fff;padding:8px;margin:10px 0}
+.ob-drawio-placeholder{border:1px dashed var(--border);border-radius:8px;padding:10px 12px;color:var(--muted);font-size:13px;background:var(--surface);margin:10px 0}
+.ob-callout{display:flex;align-items:flex-start;gap:10px;padding:12px 16px;border-left:4px solid;border-radius:6px;margin:12px 0;font-size:0.9rem;line-height:1.6}
+.ob-callout-icon{font-size:1.1rem;flex-shrink:0;margin-top:1px}
+.ob-callout-body{flex:1;min-width:0}
+.ob-callout-body p{margin:0.25rem 0}
+.ob-callout-info{border-color:#3b82f6;background:#eff6ff;color:#1e40af}
+.ob-callout-warning{border-color:#f59e0b;background:#fffbeb;color:#92400e}
+.ob-callout-success{border-color:#22c55e;background:#f0fdf4;color:#166534}
+.ob-callout-danger{border-color:#ef4444;background:#fef2f2;color:#991b1b}
+.ob-linked-doc{display:flex;align-items:center;gap:8px;border:1px solid var(--border);background:var(--surface);padding:8px 12px;border-radius:8px;margin:8px 0;font-size:13px}
+
 /* ── Database view ──────────────────────────────────────────── */
 .dbv{padding:36px 48px}
 @media(max-width:900px){.dbv{padding:24px 16px}}
@@ -405,6 +431,39 @@ function showDb(dbId){
   renderSidebar();
 }
 
+// Resolve a relation row ID to a human-readable label using the related database
+function resolveRelation(rowId, relDbId, relColId){
+  if(!relDbId||!rowId||!state.payload) return esc(String(rowId));
+  var relDb=null;
+  for(var si=0;si<state.payload.spaces.length;si++){
+    var spc=state.payload.spaces[si];
+    for(var di=0;di<spc.databases.length;di++){
+      if(spc.databases[di].id===relDbId){ relDb=spc.databases[di]; break; }
+    }
+    if(relDb) break;
+  }
+  if(!relDb) return esc(String(rowId));
+  for(var ri=0;ri<relDb.rows.length;ri++){
+    var row=relDb.rows[ri];
+    if(row.id===rowId){
+      // Use the designated display column if available
+      if(relColId&&row.cells[relColId]!==undefined&&row.cells[relColId]!==null&&row.cells[relColId]!==''){
+        return esc(String(row.cells[relColId]));
+      }
+      // Fall back to the first text-like column with a value
+      for(var ci=0;ci<relDb.columns.length;ci++){
+        var ct=relDb.columns[ci].type;
+        if(ct==='text'||ct==='email'||ct==='url'||ct==='number'){
+          var cv=row.cells[relDb.columns[ci].id];
+          if(cv!==undefined&&cv!==null&&cv!=='') return esc(String(cv));
+        }
+      }
+      return esc(String(rowId));
+    }
+  }
+  return esc(String(rowId));
+}
+
 function renderCell(v,col){
   if(v===null||v===undefined||v==='') return '<span class="db-nil">\u2014</span>';
   switch(col.type){
@@ -413,6 +472,13 @@ function renderCell(v,col){
     case 'select': return '<span class="db-tag">'+esc(String(v))+'</span>';
     case 'url': return '<a class="db-url" href="'+esc(String(v))+'" target="_blank" rel="noopener">'+esc(String(v))+'</a>';
     case 'date': return fmtDate(String(v));
+    case 'relation':{
+      var ids=Array.isArray(v)?v:(v?[v]:[]);
+      if(!ids.length) return '<span class="db-nil">\u2014</span>';
+      return ids.map(function(rid){
+        return '<span class="db-tag">'+resolveRelation(String(rid),col.relationDbId,col.relationDisplayColumn)+'</span>';
+      }).join(' ');
+    }
     default: return esc(String(v));
   }
 }

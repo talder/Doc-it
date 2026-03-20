@@ -291,7 +291,8 @@ const markedCalloutExtension: MarkedExtension = {
       out = replaceComment(out, /<!--\s*linked-doc:([A-Za-z0-9+/=]+)\s*-->/, (m) => {
         try {
           const a = JSON.parse(atob(m[1]));
-          return `<div data-linked-doc="" data-doc-name="${a.docName}" data-doc-category="${a.docCategory}" data-view-mode="${a.viewMode || 'card'}" data-space-slug="${a.spaceSlug}"></div>`;
+          const anchorAttr = a.anchor ? ` data-anchor="${a.anchor}"` : "";
+          return `<div data-linked-doc="" data-doc-name="${a.docName}" data-doc-category="${a.docCategory}" data-view-mode="${a.viewMode || 'card'}" data-space-slug="${a.spaceSlug}"${anchorAttr}></div>`;
         } catch { return null; }
       }) ?? out;
 
@@ -479,12 +480,14 @@ turndown.addRule("linkedDoc", {
   filter: (node) => node.nodeName === "DIV" && node.hasAttribute("data-linked-doc"),
   replacement: (_content, node) => {
     const el = node as HTMLElement;
-    const attrs = {
+    const anchor = el.getAttribute("data-anchor") || "";
+    const attrs: Record<string, string> = {
       docName:     el.getAttribute("data-doc-name")     || "",
       docCategory: el.getAttribute("data-doc-category") || "",
       viewMode:    el.getAttribute("data-view-mode")    || "card",
       spaceSlug:   el.getAttribute("data-space-slug")   || "",
     };
+    if (anchor) attrs.anchor = anchor;
     return `\n<!-- linked-doc:${btoa(JSON.stringify(attrs))} -->\n\n`;
   },
 });
@@ -774,7 +777,13 @@ function FontSizeButton({ editor }: { editor: ReturnType<typeof useEditor> }) {
   );
 }
 
-// ─── Doc Picker Dialog ────────────────────────────────────────────────────────
+/** Extract heading texts from markdown source */
+function extractHeadings(md: string): string[] {
+  return [...md.matchAll(/^#{1,6}\s+(.+)$/gm)]
+    .map((m) => m[1].trim().replace(/[*_`[\]]/g, ""));
+}
+
+// ─── Doc Picker Dialog ────────────────────────────────────────────────────
 function DocPickerDialog({
   spaceSlug,
   editor,
@@ -786,6 +795,10 @@ function DocPickerDialog({
 }) {
   const [docs, setDocs] = useState<DocFile[]>([]);
   const [query, setQuery] = useState("");
+  const [step, setStep] = useState<"pick-doc" | "pick-anchor">("pick-doc");
+  const [selectedDoc, setSelectedDoc] = useState<DocFile | null>(null);
+  const [headings, setHeadings] = useState<string[]>([]);
+  const [customAnchor, setCustomAnchor] = useState("");
 
   useEffect(() => {
     fetch(`/api/spaces/${encodeURIComponent(spaceSlug)}/docs`)
@@ -800,12 +813,25 @@ function DocPickerDialog({
       d.category.toLowerCase().includes(query.toLowerCase())
   );
 
-  const selectDoc = (doc: DocFile) => {
+  const pickDoc = (doc: DocFile) => {
+    setSelectedDoc(doc);
+    setStep("pick-anchor");
+    setHeadings([]);
+    setCustomAnchor("");
+    fetch(`/api/spaces/${encodeURIComponent(spaceSlug)}/docs/${encodeURIComponent(doc.name)}?category=${encodeURIComponent(doc.category)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { if (data?.content) setHeadings(extractHeadings(data.content)); })
+      .catch(() => {});
+  };
+
+  const insertDoc = (anchor?: string) => {
+    if (!selectedDoc) return;
     editor?.commands.insertLinkedDoc({
-      docName: doc.name,
-      docCategory: doc.category,
+      docName: selectedDoc.name,
+      docCategory: selectedDoc.category,
       viewMode: "card",
       spaceSlug,
+      anchor: anchor?.trim() || "",
     });
     onClose();
   };
@@ -819,32 +845,87 @@ function DocPickerDialog({
         className="bg-surface rounded-xl shadow-xl border border-border w-full max-w-md p-4"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-2 mb-3 border-b border-border pb-3">
-          <Search className="w-4 h-4 text-text-muted flex-shrink-0" />
-          <input
-            autoFocus
-            className="flex-1 bg-transparent outline-none text-sm text-text-primary placeholder:text-text-muted"
-            placeholder="Search documents…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </div>
-        <div className="max-h-72 overflow-y-auto space-y-0.5">
-          {filtered.length === 0 && (
-            <div className="px-2 py-6 text-center text-sm text-text-muted">No documents found</div>
-          )}
-          {filtered.map((doc) => (
+        {step === "pick-doc" ? (
+          <>
+            <div className="flex items-center gap-2 mb-3 border-b border-border pb-3">
+              <Search className="w-4 h-4 text-text-muted flex-shrink-0" />
+              <input
+                autoFocus
+                className="flex-1 bg-transparent outline-none text-sm text-text-primary placeholder:text-text-muted"
+                placeholder="Search documents…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </div>
+            <div className="max-h-72 overflow-y-auto space-y-0.5">
+              {filtered.length === 0 && (
+                <div className="px-2 py-6 text-center text-sm text-text-muted">No documents found</div>
+              )}
+              {filtered.map((doc) => (
+                <button
+                  key={`${doc.category}/${doc.name}`}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-muted text-left transition-colors"
+                  onClick={() => pickDoc(doc)}
+                >
+                  <FileTextIcon className="w-4 h-4 text-accent flex-shrink-0" />
+                  <span className="font-medium text-sm text-text-primary flex-1">{doc.name}</span>
+                  <span className="text-xs text-text-muted">{doc.category}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center gap-2 mb-3 border-b border-border pb-3">
+              <button
+                className="p-1 rounded hover:bg-muted text-text-muted"
+                onClick={() => setStep("pick-doc")}
+                title="Back"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5"/><path d="m12 5-7 7 7 7"/></svg>
+              </button>
+              <span className="text-sm font-medium text-text-primary truncate flex-1">
+                Link to section in &ldquo;{selectedDoc?.name}&rdquo;
+              </span>
+            </div>
             <button
-              key={`${doc.category}/${doc.name}`}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-muted text-left transition-colors"
-              onClick={() => selectDoc(doc)}
+              className="w-full text-left px-3 py-2 rounded-lg hover:bg-muted text-sm text-text-muted italic mb-1 transition-colors"
+              onClick={() => insertDoc()}
             >
-              <FileTextIcon className="w-4 h-4 text-accent flex-shrink-0" />
-              <span className="font-medium text-sm text-text-primary flex-1">{doc.name}</span>
-              <span className="text-xs text-text-muted">{doc.category}</span>
+              Link to document (no specific section)
             </button>
-          ))}
-        </div>
+            {headings.length > 0 && (
+              <div className="max-h-48 overflow-y-auto space-y-0.5 border-t border-border pt-2 mt-1">
+                {headings.map((h, i) => (
+                  <button
+                    key={i}
+                    className="w-full text-left px-3 py-2 rounded-lg hover:bg-muted transition-colors flex items-center gap-2"
+                    onClick={() => insertDoc(h)}
+                  >
+                    <span className="text-xs text-red-500 font-bold">§</span>
+                    <span className="text-sm text-text-primary">{h}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="mt-3 flex gap-2 border-t border-border pt-3">
+              <input
+                className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg bg-surface-alt outline-none focus:border-accent placeholder:text-text-muted"
+                placeholder="Or type a custom heading…"
+                value={customAnchor}
+                onChange={(e) => setCustomAnchor(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && customAnchor.trim()) insertDoc(customAnchor); }}
+              />
+              <button
+                className="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50 transition-colors"
+                disabled={!customAnchor.trim()}
+                onClick={() => insertDoc(customAnchor)}
+              >
+                Link
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -1275,12 +1356,12 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
     };
   }, []);
 
-  // ── Linked-doc navigation handler ───────────────────────────────────────
+  // ── Linked-doc navigation handler ─────────────────────────────────────
   useEffect(() => {
-    setLinkedDocClickHandler((docName, docCategory, linkedSpaceSlug) => {
+    setLinkedDocClickHandler((docName, docCategory, linkedSpaceSlug, anchor) => {
       document.dispatchEvent(
         new CustomEvent("navigate:doc", {
-          detail: { docName, docCategory, spaceSlug: linkedSpaceSlug },
+          detail: { docName, docCategory, spaceSlug: linkedSpaceSlug, anchor },
           bubbles: true,
         })
       );

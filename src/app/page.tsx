@@ -289,9 +289,13 @@ export default function Home() {
   });
   const [showPresenceWarning, setShowPresenceWarning] = useState(false);
 
+  // Anchor scroll state and backlinks
+  const [pendingAnchor, setPendingAnchor] = useState<string | null>(null);
+  const [backlinks, setBacklinks] = useState<{ name: string; category: string }[]>([]);
+
   // Persistent notifications (Topbar bell)
-  const [notifications, setNotifications] = useState<{ id: string; type?: string; message: string; docName: string; category: string; time: string }[]>([]);
-  const addNotification = useCallback((message: string, docName: string, category: string, type?: string) => {
+  const [notifications, setNotifications] = useState<{ id: string; type?: string; message: string; docName: string; category: string; time: string; meta?: Record<string, string> }[]>([]);
+  const addNotification = useCallback((message: string, docName: string, category: string, type?: string, meta?: Record<string, string>) => {
     setNotifications((prev) => [{
       id: `${Date.now()}-${Math.random()}`,
       type,
@@ -299,6 +303,7 @@ export default function Home() {
       docName,
       category,
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      meta,
     }, ...prev]);
   }, []);
   const dismissNotification = useCallback((id: string) => {
@@ -524,7 +529,7 @@ export default function Home() {
           setShowLoginNotifsModal(true);
           // Also add to the Topbar bell so they stay visible after dismissing the modal
           for (const n of unread) {
-            addNotification(n.message, n.docName ?? "", n.category ?? "", n.type);
+            addNotification(n.message, n.docName ?? "", n.category ?? "", n.type, n.meta);
           }
           // Mark all as read
           fetch("/api/notifications", {
@@ -556,15 +561,49 @@ export default function Home() {
   // Handle linked-doc navigation events fired by LinkedDocExtension
   useEffect(() => {
     const handler = (e: Event) => {
-      const { docName, docCategory } = (e as CustomEvent).detail;
+      const { docName, docCategory, anchor } = (e as CustomEvent).detail;
       const target = docs.find(
         (d) => d.name === docName && d.category === docCategory
       );
-      if (target) guardedNav(() => loadDoc(target));
+      if (target) {
+        if (anchor) setPendingAnchor(anchor);
+        guardedNav(() => loadDoc(target));
+      }
     };
     document.addEventListener("navigate:doc", handler);
     return () => document.removeEventListener("navigate:doc", handler);
   }, [docs, loadDoc, guardedNav]);
+
+  // Scroll to heading after anchor navigation (runs when activeDoc changes)
+  useEffect(() => {
+    if (!pendingAnchor || !activeDoc) return;
+    const anchor = pendingAnchor;
+    setPendingAnchor(null);
+    setTimeout(() => {
+      const proseMirror = document.querySelector(".ProseMirror");
+      if (!proseMirror) return;
+      const headings = proseMirror.querySelectorAll("h1,h2,h3,h4,h5,h6");
+      for (const h of headings) {
+        if (h.textContent?.trim().toLowerCase() === anchor.toLowerCase()) {
+          h.scrollIntoView({ behavior: "smooth", block: "start" });
+          break;
+        }
+      }
+    }, 350);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDoc]);
+
+  // Fetch backlinks whenever the active document changes
+  useEffect(() => {
+    setBacklinks([]);
+    if (!activeDoc || !currentSpace || activeDoc.isTemplate) return;
+    fetch(
+      `/api/spaces/${encodeURIComponent(currentSpace.slug)}/backlinks?doc=${encodeURIComponent(activeDoc.name)}&category=${encodeURIComponent(activeDoc.category)}`
+    )
+      .then((r) => (r.ok ? r.json() : { backlinks: [] }))
+      .then((data) => setBacklinks(data.backlinks ?? []))
+      .catch(() => {});
+  }, [activeDoc, currentSpace]);
 
   // Save (auto-save while editing) — stores latest content for revision on Done
   const handleSave = useCallback(async (content: string) => {
@@ -1808,20 +1847,23 @@ export default function Home() {
                   spaceMembers={spaceMembers}
                   tagColors={customization.tagColors}
                 />
-              ) : currentSpace ? (
-                <SpaceHome
-                  spaceSlug={currentSpace.slug}
-                  spaceName={currentSpace.name}
-                  dashboardRole={dashboardRole}
-                  onOpenDoc={(name, category) => {
-                    const target = docs.find((d) => d.name === name && d.category === category);
-                    if (target) loadDoc(target);
-                  }}
-                />
-              ) : (
-                <div className="flex-1 flex items-center justify-center text-text-muted h-full">
-                  <p>Create or select a document to start editing</p>
-                </div>
+              ) : null}
+              {!activeDoc && (
+                currentSpace ? (
+                  <SpaceHome
+                    spaceSlug={currentSpace.slug}
+                    spaceName={currentSpace.name}
+                    dashboardRole={dashboardRole}
+                    onOpenDoc={(name, category) => {
+                      const target = docs.find((d) => d.name === name && d.category === category);
+                      if (target) loadDoc(target);
+                    }}
+                  />
+                ) : (
+                  <div className="flex-1 flex items-center justify-center text-text-muted h-full">
+                    <p>Create or select a document to start editing</p>
+                  </div>
+                )
               )}
             </div>
 
@@ -1830,6 +1872,11 @@ export default function Home() {
               <TableOfContents
                 markdown={lastSavedMarkdown || markdown}
                 onClose={closeToc}
+                backlinks={activeDoc.isTemplate ? [] : backlinks}
+                onBacklinkClick={(bl) => {
+                  const target = docs.find((d) => d.name === bl.name && d.category === bl.category);
+                  if (target) guardedNav(() => loadDoc(target));
+                }}
               />
             )}
 
@@ -1841,7 +1888,12 @@ export default function Home() {
                 className="absolute right-0 top-1/2 -translate-y-1/2 z-10 flex flex-col items-center justify-center gap-1.5 py-3 bg-surface border border-r-0 border-border rounded-l-md hover:bg-accent/10 text-text-muted hover:text-accent transition-all shadow-sm"
                 style={{ width: 24, borderLeftWidth: 2, borderLeftColor: "var(--color-accent)", borderLeftStyle: "solid" }}
               >
-                <List className="w-3 h-3 shrink-0" />
+                <div className="relative">
+                  <List className="w-3 h-3 shrink-0" />
+                  {!activeDoc.isTemplate && backlinks.length > 0 && (
+                    <span className="absolute -top-1 -right-1 w-1.5 h-1.5 rounded-full bg-accent" />
+                  )}
+                </div>
                 <span
                   className="text-[9px] font-bold uppercase tracking-widest leading-none"
                   style={{ writingMode: "vertical-rl", textOrientation: "upright" }}
