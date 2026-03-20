@@ -177,6 +177,23 @@ else
   ok "Install dir $INSTALL_DIR will be created"
 fi
 
+# Data directory ownership (upgrade only — auto-corrected, shown for transparency)
+if $UPGRADE && id "$SERVICE_USER" &>/dev/null; then
+  BAD_OWN=()
+  for _dir in config docs logs archive history backups trash .next; do
+    _full="$INSTALL_DIR/$_dir"
+    [[ -e "$_full" ]] || continue
+    _owner=$(stat -c '%U' "$_full" 2>/dev/null || echo "unknown")
+    [[ "$_owner" != "$SERVICE_USER" ]] && BAD_OWN+=("$_dir (owned by $_owner)")
+  done
+  if [[ ${#BAD_OWN[@]} -gt 0 ]]; then
+    for _d in "${BAD_OWN[@]}"; do note "Wrong ownership: $_d"; done
+    note "Ownership will be corrected automatically during upgrade."
+  else
+    ok "File ownership: all data dirs owned by $SERVICE_USER"
+  fi
+fi
+
 echo "  ──────────────────────────────────────────────────────"
 if $CHECKS_OK; then
   echo -e "  ${G}${BOLD}All checks passed.${NC}"
@@ -224,14 +241,21 @@ else
 fi
 
 # ── 4. Service user & permissions ──────────────────────────────
+# Determine whether the service user already exists (relevant for --upgrade)
+SVC_USER_EXISTS=false
+id "$SERVICE_USER" &>/dev/null && SVC_USER_EXISTS=true
+
 if $SERVICE; then
-  if ! id "$SERVICE_USER" &>/dev/null; then
+  if ! $SVC_USER_EXISTS; then
     info "Creating service user: $SERVICE_USER ..."
     $SUDO useradd -r -s /bin/false -d "$INSTALL_DIR" "$SERVICE_USER"
+    SVC_USER_EXISTS=true
   fi
-  # Pre-create runtime data directories so the service user can
-  # write to the SQLite database, documents, logs, etc. from the
-  # very first request.  These are gitignored and only exist at runtime.
+fi
+
+# Always fix ownership when a service user exists (covers both fresh install
+# and --upgrade, where npm build previously ran as root and left wrong owners).
+if $SERVICE || $SVC_USER_EXISTS; then
   info "Setting file permissions for service user: $SERVICE_USER ..."
   for dir in config docs logs archive history backups trash; do
     $SUDO mkdir -p "$INSTALL_DIR/$dir"
@@ -245,7 +269,9 @@ fi
 cd "$INSTALL_DIR"
 info "Installing npm dependencies..."
 NPM_SSL=$( $NO_SSL && echo "--strict-ssl=false" || echo "" )
-if $SERVICE; then
+# Run as the service user when one exists so that all generated files
+# (.next/, node_modules/, etc.) are owned correctly from the start.
+if $SERVICE || $SVC_USER_EXISTS; then
   $SUDO -u "$SERVICE_USER" npm install $NPM_SSL
   info "Building production bundle..."
   $SUDO -u "$SERVICE_USER" npm run build
@@ -253,6 +279,18 @@ else
   npm install $NPM_SSL
   info "Building production bundle..."
   npm run build
+fi
+
+# After a successful build, ensure every file is still owned by the service
+# user (npm may restore symlinks or create cache files as root).
+if $SERVICE || $SVC_USER_EXISTS; then
+  $SUDO chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
+fi
+
+# Restart the existing service after an upgrade
+if $UPGRADE && $SVC_USER_EXISTS; then
+  info "Restarting service..."
+  $SUDO systemctl restart "$SERVICE_NAME" 2>/dev/null || true
 fi
 
 # ── 6. Service (systemd) ───────────────────────────────────────
