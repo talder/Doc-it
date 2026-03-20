@@ -382,6 +382,7 @@ export type AuditEventType =
   | "service_key.revoke"
   | "settings.update"
   | "access.denied"
+  | "offline.bundle.requested"
   | "offline.bundle.download"
   | "auth.account.locked"
   | "auth.account.unlocked"
