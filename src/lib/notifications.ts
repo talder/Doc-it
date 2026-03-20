@@ -10,6 +10,7 @@ import path from "path";
 import { ensureDir } from "./config";
 import { getUsers } from "./auth";
 import { sendMail, getSmtpConfig } from "./email";
+import { broadcastNotification } from "./notification-bus";
 
 const NOTIF_DIR = path.join(process.cwd(), "config", "notifications");
 
@@ -51,6 +52,8 @@ export async function readNotifications(username: string): Promise<AppNotificati
 
 export async function writeNotifications(username: string, notifs: AppNotification[]): Promise<void> {
   await fs.writeFile(await notifPath(username), JSON.stringify(notifs, null, 2), "utf-8");
+  // Push the newest notification to any connected SSE clients immediately
+  if (notifs.length > 0) broadcastNotification(username, notifs[0]);
 }
 
 // ---------------------------------------------------------------------------

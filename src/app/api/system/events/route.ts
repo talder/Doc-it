@@ -1,8 +1,13 @@
 import { isShutdownPending, subscribeShutdown, unsubscribeShutdown } from "@/lib/shutdown";
+import { subscribeNotifications } from "@/lib/notification-bus";
+import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  const user = await getCurrentUser();
+  const username = user?.username ?? null;
+
   const encoder = new TextEncoder();
   let closed = false;
 
@@ -29,9 +34,18 @@ export async function GET(request: Request) {
         send("shutdown", JSON.stringify({ reason: "Server is shutting down" }));
         closed = true;
         clearInterval(keepalive);
+        unsubNotifs();
         try { controller.close(); } catch { /* ignore */ }
       };
       subscribeShutdown(onShutdown);
+
+      // Subscribe to per-user notification events
+      const unsubNotifs = username
+        ? subscribeNotifications((notifUsername, notif) => {
+            if (notifUsername !== username) return;
+            send("notification", JSON.stringify(notif));
+          })
+        : () => {};
 
       // Keepalive every 25s to prevent proxy timeouts
       const keepalive = setInterval(() => {
@@ -42,6 +56,7 @@ export async function GET(request: Request) {
           closed = true;
           clearInterval(keepalive);
           unsubscribeShutdown(onShutdown);
+          unsubNotifs();
         }
       }, 25_000);
 
@@ -50,6 +65,7 @@ export async function GET(request: Request) {
         closed = true;
         clearInterval(keepalive);
         unsubscribeShutdown(onShutdown);
+        unsubNotifs();
         try { controller.close(); } catch { /* ignore */ }
       });
     },

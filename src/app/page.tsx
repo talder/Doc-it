@@ -601,19 +601,24 @@ export default function Home() {
   // (state values are stale inside event listeners)
   useEffect(() => { lastSavedMarkdownRef.current = lastSavedMarkdown; }, [lastSavedMarkdown]);
 
-  // Subscribe to server shutdown events — autosave and warn the user
+  // Subscribe to server-sent events: shutdown warnings + real-time notifications
   useEffect(() => {
     const es = new EventSource("/api/system/events");
+
     es.addEventListener("shutdown", () => {
       setShutdownPending(true);
-      // Force-save with latest known content so no work is lost
       const content = lastSavedMarkdownRef.current;
-      if (content !== null) {
-        handleSave(content).catch(() => {});
-      }
+      if (content !== null) handleSave(content).catch(() => {});
     });
+
+    es.addEventListener("notification", (e: MessageEvent) => {
+      try {
+        const n = JSON.parse(e.data);
+        addNotification(n.message ?? "", n.docName ?? "", n.category ?? "", n.type, n.meta);
+      } catch { /* malformed — ignore */ }
+    });
+
     return () => es.close();
-  // handleSave is stable (useCallback with deps); re-connect if it changes
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
