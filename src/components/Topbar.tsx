@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Search, LogOut, Settings, Sun, Moon, Archive, User, Bell, X, FileText, BookOpen, Check, HardDriveDownload, Home, Trophy, Share2, Trash2, Lock, Clock, BookMarked, ClipboardList, Monitor, Headset, ShieldCheck, Star } from "lucide-react";
+import { ChevronDown, Search, LogOut, Settings, Sun, Moon, Archive, User, Bell, X, FileText, BookOpen, Check, HardDriveDownload, Home, Trophy, Share2, Trash2, Lock, Clock, BookMarked, ClipboardList, Monitor, Headset, ShieldCheck, Star, Info } from "lucide-react";
 import OfflineBundleModal from "@/components/OfflineBundleModal";
 import { useTheme, isLightTheme, type Theme } from "@/components/ThemeProvider";
 import type { Space, SanitizedUser, ReviewItem } from "@/lib/types";
@@ -103,6 +103,7 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
   const [notifsOpen, setNotifsOpen] = useState(false);
   const [offlineBundleOpen, setOfflineBundleOpen] = useState(false);
   const [avatarError, setAvatarError] = useState(false);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
   const spaceRef = useRef<HTMLDivElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
   const themeRef = useRef<HTMLDivElement>(null);
@@ -573,7 +574,12 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
 
         <div className="relative" ref={userRef}>
           <button
-            onClick={() => setUserMenuOpen(!userMenuOpen)}
+            onClick={() => {
+              setUserMenuOpen(!userMenuOpen);
+              if (!appVersion) {
+                fetch("/api/version").then((r) => r.json()).then((d) => setAppVersion(d.version)).catch(() => {});
+              }
+            }}
             className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-muted transition-colors"
           >
             <div className="w-7 h-7 rounded-full bg-accent text-white flex items-center justify-center text-xs font-medium overflow-hidden">
@@ -613,6 +619,21 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
                   Administration
                 </button>
               )}
+              {/* Help section */}
+              <hr className="border-border-light my-1" />
+              <button
+                onClick={() => { setUserMenuOpen(false); router.push("/documentation"); }}
+                className="w-full text-left px-3 py-2 text-sm text-text-secondary hover:bg-muted flex items-center gap-2"
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                Documentation
+              </button>
+              <div className="px-3 py-2 text-sm text-text-muted flex items-center gap-2">
+                <Info className="w-3.5 h-3.5 flex-shrink-0" />
+                Version {appVersion ?? "…"}
+              </div>
+              {/* Sign out */}
+              <hr className="border-border-light my-1" />
               <button
                 onClick={() => {
                   setUserMenuOpen(false);

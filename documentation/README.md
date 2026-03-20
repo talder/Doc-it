@@ -29,6 +29,7 @@
   - [Crash Logging](features/crash-logging.md)
   - [Active Directory / LDAP](features/active-directory.md)
   - [Dashboard](features/dashboard.md)
+  - [Document Sharing](features/document-sharing.md)
 - **API Reference**
   - [Authentication](api/authentication.md)
   - [Spaces](api/spaces.md)
@@ -99,10 +100,4 @@ Select your space from the top bar, click **New Document** in the sidebar, choos
 | **Active Directory** | Optional LDAP/LDAPS authentication with shadow user provisioning and AD group → space role mappings. |
 | **Dashboard** | Dashy-style home page with link card sections; per-card group visibility controls. |
 | **User Group** | Admin-managed groups of users for permission targeting (e.g. dashboard link visibility). |
-
----
-
-## Screenshot Gallery
-
-| Screen | Preview |
-|---|---|
+| **Document Sharing** | Token-based public share links with read / read-write modes, optional passwords, and expiry settings. |
