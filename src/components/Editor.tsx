@@ -30,7 +30,7 @@ import {
   Link as LinkIcon, Superscript as SuperscriptIcon, Subscript as SubscriptIcon,
   Highlighter, Eraser, Palette, Type,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
-  ExternalLink, Copy, Pencil, Trash2, Globe, Loader2,
+  ExternalLink, Copy, Pencil, Trash2, Globe, Loader2, X,
   Heading1, Heading2, Heading3,
 } from "lucide-react";
 
