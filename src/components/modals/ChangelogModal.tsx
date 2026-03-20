@@ -30,7 +30,7 @@ export default function ChangelogModal({ onClose }: Props) {
       className="modal-overlay"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="modal-container max-w-4xl w-full" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-container w-full" style={{ maxWidth: 880 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2 className="modal-title">Release Notes</h2>
           <button onClick={onClose} className="modal-close">
