@@ -15,6 +15,7 @@ import { checkAndMarkExpiryAlerts } from "./lib/certificates";
 import { sendMail } from "./lib/email";
 import { getUsers } from "./lib/auth";
 import { writeCrashEntry, cleanupOldCrashLogs } from "./lib/crash-log";
+import { notifyShutdown } from "./lib/shutdown";
 
 if (process.env.NODE_ENV === "development") {
   process.stdout.setMaxListeners(30);
@@ -158,6 +159,26 @@ setTimeout(async () => {
     lastCertCheckAt = 0;
   } catch { /* ignore */ }
 }, 30_000);
+
+// ── Graceful shutdown — warn connected clients before exiting ────────────────
+
+// Track whether we've already handled SIGTERM to avoid double-firing
+let shutdownHandled = false;
+
+process.once("SIGTERM", () => {
+  if (shutdownHandled) return;
+  shutdownHandled = true;
+
+  console.log("[shutdown] SIGTERM received — notifying connected clients…");
+  notifyShutdown();
+
+  // Give clients ~4 seconds to receive the SSE event and autosave, then
+  // re-raise SIGTERM so Next.js can complete its graceful HTTP shutdown.
+  setTimeout(() => {
+    console.log("[shutdown] Grace period elapsed — proceeding with shutdown.");
+    process.kill(process.pid, "SIGTERM");
+  }, 4_000);
+});
 
 // ── Crash logging — process-level handlers ───────────────────────────────────
 

@@ -194,6 +194,10 @@ export default function Home() {
   // Reading view state
   const [readingView, setReadingView] = useState(false);
 
+  // Server shutdown warning
+  const [shutdownPending, setShutdownPending] = useState(false);
+  const lastSavedMarkdownRef = useRef<string | null>(null);
+
   // Track whether user intentionally navigated to home (skip auto-select)
   const [showHome, setShowHome] = useState(true);
 
@@ -592,6 +596,26 @@ export default function Home() {
     }, 350);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDoc]);
+
+  // Keep a ref to the latest saved markdown for use in the shutdown handler
+  // (state values are stale inside event listeners)
+  useEffect(() => { lastSavedMarkdownRef.current = lastSavedMarkdown; }, [lastSavedMarkdown]);
+
+  // Subscribe to server shutdown events — autosave and warn the user
+  useEffect(() => {
+    const es = new EventSource("/api/system/events");
+    es.addEventListener("shutdown", () => {
+      setShutdownPending(true);
+      // Force-save with latest known content so no work is lost
+      const content = lastSavedMarkdownRef.current;
+      if (content !== null) {
+        handleSave(content).catch(() => {});
+      }
+    });
+    return () => es.close();
+  // handleSave is stable (useCallback with deps); re-connect if it changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Fetch backlinks whenever the active document changes
   useEffect(() => {
@@ -1778,6 +1802,14 @@ export default function Home() {
                   <Minimize2 className="w-4 h-4" />
                 </button>
               </div>
+            </div>
+          )}
+          {/* Server shutdown warning banner */}
+          {shutdownPending && (
+            <div className="presence-warning" style={{ background: "var(--color-destructive, #dc2626)", borderColor: "transparent" }}>
+              <span style={{ color: "#fff" }}>
+                <strong>⚠ The server is shutting down.</strong> Your work has been saved. Please close this tab — the application will be unavailable shortly.
+              </span>
             </div>
           )}
           {/* Presence warning banner */}

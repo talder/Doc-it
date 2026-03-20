@@ -212,7 +212,8 @@ if $UPGRADE; then
   info "Stopping service before upgrade..."
   $SUDO systemctl stop "$SERVICE_NAME" 2>/dev/null || true
   info "Pulling latest from GitHub..."
-  $SUDO git $GIT_SSL -C "$INSTALL_DIR" pull --rebase origin main
+  $SUDO git $GIT_SSL -C "$INSTALL_DIR" fetch origin main
+  $SUDO git $GIT_SSL -C "$INSTALL_DIR" reset --hard origin/main
 else
   if [[ -d "$INSTALL_DIR" && -f "$INSTALL_DIR/package.json" ]]; then
     die "$INSTALL_DIR already contains an installation. Use --upgrade to update it, or --dir to pick another path."
