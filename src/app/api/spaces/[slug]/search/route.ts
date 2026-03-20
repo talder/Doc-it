@@ -4,6 +4,7 @@ import path from "path";
 import { requireSpaceRole } from "@/lib/permissions";
 import { getSpaceDir } from "@/lib/config";
 import { parseFrontmatter } from "@/lib/frontmatter";
+import { getDb } from "@/lib/config";
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -14,12 +15,15 @@ const SNIPPET_RADIUS = 80; // characters around match
 interface SearchResult {
   name: string;
   category: string;
-  matchType: "name" | "content" | "tag" | "both";
+  matchType: "name" | "content" | "tag" | "both" | "attachment";
   snippet?: string;
   author?: string;
   updatedAt?: string;
   classification?: string;
   tags?: string[];
+  // attachment-specific
+  attachmentName?: string;
+  attachmentId?: string;
 }
 
 function escapeRegex(s: string): string {
@@ -171,9 +175,40 @@ export async function GET(request: NextRequest, { params }: Params) {
   const results: SearchResult[] = [];
   await searchDocs(spaceDir, "", query, query.toLowerCase(), filters, results);
 
+  // Attachment text search (PDF text layer via blobstore)
+  if (results.length < MAX_RESULTS) {
+    try {
+      const db = getDb();
+      const attHits = db.prepare(`
+        SELECT r.id, r.original_name, r.doc_category, r.doc_name, b.text_content
+        FROM attachment_refs r
+        JOIN blobs b ON r.sha256 = b.sha256
+        WHERE r.space_slug = ?
+          AND b.text_content IS NOT NULL
+          AND lower(b.text_content) LIKE ?
+        LIMIT ?
+      `).all(slug, `%${query.toLowerCase()}%`, MAX_RESULTS - results.length) as Array<{
+        id: string; original_name: string; doc_category: string;
+        doc_name: string; text_content: string;
+      }>;
+
+      for (const hit of attHits) {
+        const snippet = extractSnippet(hit.text_content, query, SNIPPET_RADIUS);
+        results.push({
+          name: hit.doc_name || hit.original_name,
+          category: hit.doc_category || "",
+          matchType: "attachment",
+          snippet,
+          attachmentName: hit.original_name,
+          attachmentId: hit.id,
+        });
+      }
+    } catch { /* blobstore tables not yet initialised — skip silently */ }
+  }
+
   // Sort: name matches first, then content matches, then by recency
   results.sort((a, b) => {
-    const typeOrder = { name: 0, both: 0, tag: 1, content: 2 };
+    const typeOrder: Record<string, number> = { name: 0, both: 0, tag: 1, content: 2, attachment: 3 };
     const ta = typeOrder[a.matchType] ?? 2;
     const tb = typeOrder[b.matchType] ?? 2;
     if (ta !== tb) return ta - tb;

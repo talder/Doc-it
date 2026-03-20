@@ -980,6 +980,12 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
 
+  // Duplicate file detected — wait for user to choose a name
+  const [pendingDuplicate, setPendingDuplicate] = useState<{
+    sha256: string; existingNames: string[];
+    file: File; isPdf: boolean; size: number; mimeType: string;
+  } | null>(null);
+
   // ── URL input modal state (link + image) ──────────────────────────────────────
   const [urlModal, setUrlModal] = useState<{
     open: boolean;
@@ -1390,6 +1396,20 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
         return;
       }
       const data = await res.json();
+
+      // Duplicate detected — hold file info and let user choose a name
+      if (data.isDuplicate) {
+        setPendingDuplicate({
+          sha256: data.sha256,
+          existingNames: data.existingNames,
+          file,
+          isPdf,
+          size: file.size,
+          mimeType: file.type || "",
+        });
+        return;
+      }
+
       const target = pendingSlashEditor || editor;
       if (isPdf) {
         target?.commands.insertPDFEmbed({
@@ -1414,6 +1434,40 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
     },
     [spaceSlug, category, pendingSlashEditor, editor]
   );
+
+  // Confirm duplicate: POST chosen name, then insert node
+  const confirmDuplicate = useCallback(async (chosenName: string) => {
+    if (!pendingDuplicate || !spaceSlug) return;
+    const { sha256, file, isPdf, size, mimeType } = pendingDuplicate;
+    const cat = category || "General";
+    setPendingDuplicate(null);
+    try {
+      const res = await fetch(
+        `/api/spaces/${encodeURIComponent(spaceSlug)}/attachments`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sha256, chosenName, category: cat, size, mimeType }),
+        }
+      );
+      if (!res.ok) { alert("Failed to confirm upload. Please try again."); return; }
+      const data = await res.json();
+      const target = pendingSlashEditor || editor;
+      if (isPdf) {
+        target?.commands.insertPDFEmbed({
+          filename: data.filename, originalName: data.originalName,
+          category: data.category, spaceSlug, url: data.url,
+        } as PDFEmbedAttrs);
+      } else {
+        target?.commands.insertAttachment({
+          filename: data.filename, originalName: data.originalName,
+          mimeType: data.mimeType, size: data.size,
+          category: data.category, spaceSlug, url: data.url,
+        } as AttachmentAttrs);
+      }
+      setPendingSlashEditor(null);
+    } catch { alert("Upload confirmation failed."); }
+  }, [pendingDuplicate, spaceSlug, category, pendingSlashEditor, editor]);
 
   // ── Image upload handler (for UrlInputModal upload tab) ─────────────────
   const handleImageUpload = useCallback(
@@ -1904,6 +1958,16 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
                 continue;
               }
               const data = await res.json();
+              if (data.isDuplicate) {
+                setPendingDuplicate({
+                  sha256: data.sha256,
+                  existingNames: data.existingNames,
+                  file, isPdf: true,
+                  size: file.size,
+                  mimeType: file.type || "",
+                });
+                continue;
+              }
               target?.chain().insertContent([
                 { type: "pdfEmbed", attrs: {
                   filename: data.filename,
@@ -1922,6 +1986,50 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
           e.target.value = "";
         }}
       />
+
+      {/* Duplicate file dialog */}
+      {pendingDuplicate && (
+        <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setPendingDuplicate(null); }}>
+          <div className="modal-container" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">Duplicate File Detected</h2>
+              <button className="modal-close" onClick={() => setPendingDuplicate(null)}><X className="w-5 h-5" /></button>
+            </div>
+            <div className="modal-body">
+              <p className="text-sm text-text-secondary mb-4">
+                A file with identical content already exists. Choose which name to use — your choice will be applied to all existing references system-wide.
+              </p>
+              <div className="flex flex-col gap-2">
+                {[...new Set(pendingDuplicate.existingNames)].slice(0, 5).map((name) => (
+                  <button
+                    key={name}
+                    className="w-full text-left px-3 py-2.5 rounded-lg border border-border hover:border-accent hover:bg-accent/5 transition-colors"
+                    onClick={() => confirmDuplicate(name)}
+                  >
+                    <span className="text-[10px] text-text-muted uppercase tracking-wider block mb-0.5">Use existing name</span>
+                    <span className="text-sm font-medium text-text-primary truncate block">{name}</span>
+                  </button>
+                ))}
+                <div className="flex items-center gap-2 my-1">
+                  <hr className="flex-1 border-border" />
+                  <span className="text-xs text-text-muted">or</span>
+                  <hr className="flex-1 border-border" />
+                </div>
+                <button
+                  className="w-full text-left px-3 py-2.5 rounded-lg border border-accent bg-accent/5 hover:bg-accent/10 transition-colors"
+                  onClick={() => confirmDuplicate(pendingDuplicate.file.name)}
+                >
+                  <span className="text-[10px] text-text-muted uppercase tracking-wider block mb-0.5">Use my filename</span>
+                  <span className="text-sm font-medium text-accent truncate block">{pendingDuplicate.file.name}</span>
+                </button>
+              </div>
+              <div className="mt-4 flex justify-end">
+                <button className="modal-btn-cancel" onClick={() => setPendingDuplicate(null)}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Doc picker dialog (linked document slash command) */}
       {showDocPicker && spaceSlug && (

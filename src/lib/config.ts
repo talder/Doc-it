@@ -64,7 +64,7 @@ export async function saveStorageConfig(storageRoot: string): Promise<void> {
 let _db: BetterSqlite3.Database | null = null;
 let _migrated = false;
 
-function getDb(): BetterSqlite3.Database {
+export function getDb(): BetterSqlite3.Database {
   if (_db) return _db;
 
   // Ensure config directory exists (sync — runs once)
@@ -82,6 +82,32 @@ function getDb(): BetterSqlite3.Database {
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
     )
+  `);
+
+  // ── Global blobstore tables ────────────────────────────────────────────
+  _db.exec(`
+    CREATE TABLE IF NOT EXISTS blobs (
+      sha256       TEXT PRIMARY KEY,
+      size         INTEGER NOT NULL,
+      mime         TEXT NOT NULL,
+      text_content TEXT,
+      uploaded_by  TEXT NOT NULL,
+      created_at   TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS attachment_refs (
+      id           TEXT PRIMARY KEY,
+      sha256       TEXT NOT NULL REFERENCES blobs(sha256),
+      original_name TEXT NOT NULL,
+      space_slug   TEXT NOT NULL,
+      doc_category TEXT NOT NULL DEFAULT '',
+      doc_name     TEXT NOT NULL DEFAULT '',
+      uploaded_by  TEXT NOT NULL,
+      created_at   TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_att_refs_sha256
+      ON attachment_refs(sha256);
+    CREATE INDEX IF NOT EXISTS idx_att_refs_space
+      ON attachment_refs(space_slug, doc_category, doc_name);
   `);
 
   return _db;
@@ -146,6 +172,11 @@ function findJsonFiles(dir: string, root: string): { relPath: string; content: s
 
 export function getConfigDir() {
   return CONFIG_DIR;
+}
+
+/** Path to the global content-addressed blobstore (inside config/). */
+export function getBlobstoreDir(): string {
+  return path.join(CONFIG_DIR, "blobstore");
 }
 
 export function getDocsDir() {

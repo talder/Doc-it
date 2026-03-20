@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import { requireSpaceRole } from "@/lib/permissions";
 import { getAttachmentsDir } from "@/lib/config";
+import { readRef, readBlobBytes, getBlob } from "@/lib/blobstore";
 
 type Params = { params: Promise<{ slug: string; filename: string }> };
 
@@ -42,6 +43,29 @@ export async function GET(request: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  // ── 1. Try blobstore lookup by ref id ──────────────────────────────────
+  const ref = readRef(filename);
+  if (ref) {
+    try {
+      const blob = getBlob(ref.sha256);
+      const buffer = await readBlobBytes(ref.sha256);
+      const contentType = blob?.mime || MIME_MAP[path.extname(ref.original_name).toLowerCase()] || "application/octet-stream";
+      const displayName = ref.original_name || filename;
+      return new NextResponse(buffer, {
+        headers: {
+          "Content-Type": contentType,
+          "Content-Disposition": download
+            ? `attachment; filename="${displayName}"`
+            : `inline; filename="${displayName}"`,
+          "Cache-Control": "private, max-age=3600",
+        },
+      });
+    } catch {
+      return NextResponse.json({ error: "Blob file missing" }, { status: 404 });
+    }
+  }
+
+  // ── 2. Legacy fallback for non-migrated files ────────────────────────────
   try {
     const buffer = await fs.readFile(filePath);
     const ext = path.extname(filename).toLowerCase();
