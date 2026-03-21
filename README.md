@@ -14,7 +14,7 @@ A self-hosted, Confluence-like documentation platform built with Next.js, TipTap
 
 ---
 
-## Inspiration & Credits
+## Inspiration
 
 Three applications have been the primary functional inspiration behind Doc-it — shaping its feature set, UX philosophy, and documentation workflow:
 
