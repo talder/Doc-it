@@ -8,19 +8,8 @@
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![Node.js](https://img.shields.io/badge/Node.js-24_LTS-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![License: PolyForm NC](https://img.shields.io/badge/License-PolyForm_NC_1.0-blue)](LICENSE)
-[![Inspired by Jotty](https://img.shields.io/badge/Inspired%20by-Jotty-orange?logo=github)](https://github.com/fccview/jotty)
 
-A self-hosted, Confluence-like documentation platform built with Next.js, TipTap, and Tailwind CSS.
-
----
-
-## Inspiration
-
-Three applications have been the primary functional inspiration behind Doc-it — shaping its feature set, UX philosophy, and documentation workflow:
-
-- **[Jotty](https://github.com/fccview/jotty)** by [@fccview](https://github.com/fccview) — a lightweight self-hosted note-taking app with a clean interface and file-based storage philosophy that directly inspired Doc-it's storage approach and simplicity.
-- **[Confluence](https://www.atlassian.com/software/confluence)** by Atlassian — the industry benchmark for team documentation, which has led the way in spaces, structured page hierarchies, and collaborative workflows that Doc-it aims to replicate in a self-hosted form.
-- **[Affine](https://affine.pro)** — a next-generation open-source knowledge base combining docs, whiteboards, and databases in a unified workspace, inspiring Doc-it's richer editor capabilities and embedded drawing/database features.
+A self-hosted documentation platform built with Next.js, TipTap, and Tailwind CSS for IT departments.
 
 ---
 
