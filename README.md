@@ -22,8 +22,6 @@ Three applications have been the primary functional inspiration behind Doc-it �
 - **[Confluence](https://www.atlassian.com/software/confluence)** by Atlassian — the industry benchmark for team documentation, which has led the way in spaces, structured page hierarchies, and collaborative workflows that Doc-it aims to replicate in a self-hosted form.
 - **[Affine](https://affine.pro)** — a next-generation open-source knowledge base combining docs, whiteboards, and databases in a unified workspace, inspiring Doc-it's richer editor capabilities and embedded drawing/database features.
 
-> ⭐ **[github.com/fccview/jotty](https://github.com/fccview/jotty)**
-
 ---
 
 ## Features
