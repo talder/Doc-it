@@ -239,7 +239,7 @@ export interface DocMetadata {
 export type DbColumnType =
   | "text" | "number" | "select" | "multiSelect"
   | "checkbox" | "date" | "url" | "email"
-  | "relation" | "formula" | "member" | "createdBy";
+  | "formula" | "member" | "createdBy";
 
 export type DbViewType = "table" | "kanban" | "calendar" | "gallery";
 
@@ -248,8 +248,6 @@ export interface DbColumn {
   name: string;
   type: DbColumnType;
   options?: string[];           // select / multiSelect
-  relationDbId?: string;        // relation
-  relationDisplayColumn?: string; // which column from related DB to show as label
   formula?: string;             // formula
   width?: number;               // default column width in px
   defaultValue?: unknown;       // default cell value for new rows

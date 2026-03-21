@@ -466,39 +466,6 @@ function showDb(dbId){
   renderSidebar();
 }
 
-// Resolve a relation row ID to a human-readable label using the related database
-function resolveRelation(rowId, relDbId, relColId){
-  if(!relDbId||!rowId||!state.payload) return esc(String(rowId));
-  var relDb=null;
-  for(var si=0;si<state.payload.spaces.length;si++){
-    var spc=state.payload.spaces[si];
-    for(var di=0;di<spc.databases.length;di++){
-      if(spc.databases[di].id===relDbId){ relDb=spc.databases[di]; break; }
-    }
-    if(relDb) break;
-  }
-  if(!relDb) return esc(String(rowId));
-  for(var ri=0;ri<relDb.rows.length;ri++){
-    var row=relDb.rows[ri];
-    if(row.id===rowId){
-      // Use the designated display column if available
-      if(relColId&&row.cells[relColId]!==undefined&&row.cells[relColId]!==null&&row.cells[relColId]!==''){
-        return esc(String(row.cells[relColId]));
-      }
-      // Fall back to the first text-like column with a value
-      for(var ci=0;ci<relDb.columns.length;ci++){
-        var ct=relDb.columns[ci].type;
-        if(ct==='text'||ct==='email'||ct==='url'||ct==='number'){
-          var cv=row.cells[relDb.columns[ci].id];
-          if(cv!==undefined&&cv!==null&&cv!=='') return esc(String(cv));
-        }
-      }
-      return esc(String(rowId));
-    }
-  }
-  return esc(String(rowId));
-}
-
 function renderCell(v,col){
   if(v===null||v===undefined||v==='') return '<span class="db-nil">\u2014</span>';
   switch(col.type){
@@ -507,13 +474,6 @@ function renderCell(v,col){
     case 'select': return '<span class="db-tag">'+esc(String(v))+'</span>';
     case 'url': return '<a class="db-url" href="'+esc(String(v))+'" target="_blank" rel="noopener">'+esc(String(v))+'</a>';
     case 'date': return fmtDate(String(v));
-    case 'relation':{
-      var ids=Array.isArray(v)?v:(v?[v]:[]);
-      if(!ids.length) return '<span class="db-nil">\u2014</span>';
-      return ids.map(function(rid){
-        return '<span class="db-tag">'+resolveRelation(String(rid),col.relationDbId,col.relationDisplayColumn)+'</span>';
-      }).join(' ');
-    }
     default: return esc(String(v));
   }
 }

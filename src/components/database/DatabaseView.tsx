@@ -100,7 +100,6 @@ export default function DatabaseView({ dbId, spaceSlug, canWrite, onClose, initi
   const [titleValue, setTitleValue] = useState("");
   const [currentUser, setCurrentUser] = useState<string>("");
   const [members, setMembers] = useState<{ username: string; fullName?: string }[]>([]);
-  const [allDatabases, setAllDatabases] = useState<{ id: string; title: string }[]>([]);
 
   const api = `/api/spaces/${encodeURIComponent(spaceSlug)}/databases/${encodeURIComponent(dbId)}`;
 
@@ -120,14 +119,12 @@ export default function DatabaseView({ dbId, spaceSlug, canWrite, onClose, initi
   useEffect(() => {
     const loadContext = async () => {
       try {
-        const [meRes, membersRes, dbsRes] = await Promise.all([
+        const [meRes, membersRes] = await Promise.all([
           fetch("/api/auth/me"),
           fetch(`/api/spaces/${encodeURIComponent(spaceSlug)}/members`),
-          fetch(`/api/spaces/${encodeURIComponent(spaceSlug)}/databases`),
         ]);
         if (meRes.ok) { const d = await meRes.json(); if (d.user) setCurrentUser(d.user.username); }
         if (membersRes.ok) setMembers(await membersRes.json());
-        if (dbsRes.ok) { const d = await dbsRes.json(); setAllDatabases(d.map((x: { id: string; title: string }) => ({ id: x.id, title: x.title }))); }
       } catch { /* ignore */ }
     };
     loadContext();
@@ -189,8 +186,6 @@ export default function DatabaseView({ dbId, spaceSlug, canWrite, onClose, initi
       ...(col.width ? { width: col.width } : { width: 150 }),
       ...(col.defaultValue !== undefined ? { defaultValue: col.defaultValue } : {}),
       ...(col.defaultCurrentDate ? { defaultCurrentDate: col.defaultCurrentDate } : {}),
-      ...(col.relationDbId ? { relationDbId: col.relationDbId } : {}),
-      ...(col.relationDisplayColumn ? { relationDisplayColumn: col.relationDisplayColumn } : {}),
     };
     const columns = [...db.columns, newCol];
     const views = db.views.map((v) => ({
@@ -438,8 +433,6 @@ export default function DatabaseView({ dbId, spaceSlug, canWrite, onClose, initi
             currentUser={currentUser}
             members={members}
             spaceSlug={spaceSlug}
-            allDatabases={allDatabases}
-            onNavigateToRelation={onOpenDatabase ? (_dbId, _rowId, label) => onOpenDatabase(_dbId, label) : undefined}
           />
         )}
         {activeView?.type === "kanban" && (

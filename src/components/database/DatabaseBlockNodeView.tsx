@@ -99,7 +99,6 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
   const [titleValue, setTitleValue] = useState("");
   const [currentUser, setCurrentUser] = useState<string>("");
   const [members, setMembers] = useState<{ username: string; fullName?: string }[]>([]);
-  const [allDatabases, setAllDatabases] = useState<{ id: string; title: string }[]>([]);
   const [isModal, setIsModal] = useState(false);
   const displayMode = (node.attrs.displayMode as "inline" | "card" | "embed") || "inline";
 
@@ -118,18 +117,16 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
 
   useEffect(() => { fetchDb(); }, [fetchDb]);
 
-  // Fetch current user, space members, and DB list for member/relation fields
+  // Fetch current user and space members for member/createdBy fields
   useEffect(() => {
     const loadContext = async () => {
       try {
-        const [meRes, membersRes, dbsRes] = await Promise.all([
+        const [meRes, membersRes] = await Promise.all([
           fetch("/api/auth/me"),
           fetch(`/api/spaces/${encodeURIComponent(spaceSlug)}/members`),
-          fetch(`/api/spaces/${encodeURIComponent(spaceSlug)}/databases`),
         ]);
         if (meRes.ok) { const d = await meRes.json(); if (d.user) setCurrentUser(d.user.username); }
         if (membersRes.ok) setMembers(await membersRes.json());
-        if (dbsRes.ok) { const d = await dbsRes.json(); setAllDatabases(d.map((x: { id: string; title: string }) => ({ id: x.id, title: x.title }))); }
       } catch { /* ignore */ }
     };
     loadContext();
@@ -197,8 +194,6 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
       ...(col.width ? { width: col.width } : { width: 150 }),
       ...(col.defaultValue !== undefined ? { defaultValue: col.defaultValue } : {}),
       ...(col.defaultCurrentDate ? { defaultCurrentDate: col.defaultCurrentDate } : {}),
-      ...(col.relationDbId ? { relationDbId: col.relationDbId } : {}),
-      ...(col.relationDisplayColumn ? { relationDisplayColumn: col.relationDisplayColumn } : {}),
     };
     const columns = [...db.columns, newCol];
     const views = db.views.map((v) => ({
@@ -478,10 +473,6 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
           currentUser={currentUser}
           members={members}
           spaceSlug={spaceSlug}
-          allDatabases={allDatabases}
-          onNavigateToRelation={(targetDbId, _rowId, label) =>
-            window.dispatchEvent(new CustomEvent("navigate-to-database", { detail: { dbId: targetDbId, search: label } }))
-          }
         />
       )}
       {activeView?.type === "kanban" && (
@@ -616,10 +607,6 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
                   currentUser={currentUser}
                   members={members}
                   spaceSlug={spaceSlug}
-                  allDatabases={allDatabases}
-                  onNavigateToRelation={(targetDbId, _rowId, label) =>
-                    window.dispatchEvent(new CustomEvent("navigate-to-database", { detail: { dbId: targetDbId, search: label } }))
-                  }
                 />
               )}
               {activeView?.type === "kanban" && (

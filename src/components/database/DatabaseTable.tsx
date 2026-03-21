@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Plus, Trash2, MoreVertical, GripVertical, Copy, Eraser, X, Link2, ArrowUp, ArrowDown } from "lucide-react";
+import { Plus, Trash2, MoreVertical, GripVertical, Copy, Eraser, X, ArrowUp, ArrowDown } from "lucide-react";
 import type { Database, DbColumn, DbRow, DbView, DbColumnType } from "@/lib/types";
-import RelationPickerModal from "./RelationPickerModal";
 
 const COLUMN_TYPES: { value: DbColumnType; label: string }[] = [
   { value: "text", label: "Text" },
@@ -16,7 +15,6 @@ const COLUMN_TYPES: { value: DbColumnType; label: string }[] = [
   { value: "email", label: "Email" },
   { value: "member", label: "Member" },
   { value: "createdBy", label: "Created By" },
-  { value: "relation", label: "Relation" },
 ];
 
 interface Props {
@@ -34,15 +32,13 @@ interface Props {
   currentUser?: string;
   members?: { username: string; fullName?: string }[];
   spaceSlug?: string;
-  allDatabases?: { id: string; title: string }[];
-  onNavigateToRelation?: (dbId: string, rowId: string, label: string) => void;
 }
 
 export default function DatabaseTable({
   db, view, rows, canWrite,
   onAddRow, onUpdateRow, onDeleteRow,
   onAddColumn, onUpdateColumn, onDeleteColumn, onUpdateView,
-  currentUser, members = [], spaceSlug, allDatabases = [], onNavigateToRelation,
+  currentUser, members = [], spaceSlug,
 }: Props) {
   const [editCell, setEditCell] = useState<{ rowId: string; colId: string } | null>(null);
   const [editValue, setEditValue] = useState<string>("");
@@ -53,12 +49,6 @@ export default function DatabaseTable({
   const [selectOptions, setSelectOptions] = useState<string>("");
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [colDefaultPanel, setColDefaultPanel] = useState<string | null>(null);
-  const [colRelationPanel, setColRelationPanel] = useState<string | null>(null);
-  const [colDisplayColPanel, setColDisplayColPanel] = useState<string | null>(null);
-  const [relatedDbRows, setRelatedDbRows] = useState<Record<string, DbRow[] | null>>({});
-  const [relatedDbCols, setRelatedDbCols] = useState<Record<string, DbColumn[]>>({});
-  const [relationPicker, setRelationPicker] = useState<{ rowId: string; colId: string } | null>(null);
-  const fetchingRelated = useRef<Set<string>>(new Set());
   const colMenuRef = useRef<HTMLDivElement>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
   const tabNavigating = useRef(false);
@@ -78,8 +68,8 @@ export default function DatabaseTable({
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (colMenuRef.current && !colMenuRef.current.contains(e.target as Node)) {
-        setColMenu(null); setColRename(null); setColTypeChange(null); setSelectEditCol(null);
-        setColDefaultPanel(null); setColRelationPanel(null); setColDisplayColPanel(null);
+      setColMenu(null); setColRename(null); setColTypeChange(null); setSelectEditCol(null);
+        setColDefaultPanel(null);
       }
     };
     document.addEventListener("mousedown", handler);
@@ -118,8 +108,8 @@ export default function DatabaseTable({
     nc += step;
     if (nc >= orderedCols.length) { nc = 0; nr++; }
     else if (nc < 0) { nc = orderedCols.length - 1; nr--; }
-    // Skip read-only and non-inline-editable columns
-    while (nr >= 0 && nr < rows.length && (orderedCols[nc]?.type === "createdBy" || orderedCols[nc]?.type === "relation")) {
+    // Skip read-only columns
+    while (nr >= 0 && nr < rows.length && orderedCols[nc]?.type === "createdBy") {
       nc += step;
       if (nc >= orderedCols.length) { nc = 0; nr++; }
       else if (nc < 0) { nc = orderedCols.length - 1; nr--; }
@@ -181,46 +171,6 @@ export default function DatabaseTable({
     const empty = Object.fromEntries(db.columns.map((c) => [c.id, null]));
     selectedRows.forEach((rowId) => onUpdateRow(rowId, empty));
     setSelectedRows(new Set());
-  };
-
-  // Lazy-fetch rows from a related database for relation cells
-  const fetchRelatedDbRows = useCallback(async (dbId: string) => {
-    if (!spaceSlug || fetchingRelated.current.has(dbId)) return;
-    fetchingRelated.current.add(dbId);
-    try {
-      const res = await fetch(`/api/spaces/${encodeURIComponent(spaceSlug)}/databases/${encodeURIComponent(dbId)}`);
-      if (res.ok) {
-        const data = await res.json();
-        setRelatedDbRows((prev) => ({ ...prev, [dbId]: data.rows || [] }));
-        if (data.columns) setRelatedDbCols((prev) => ({ ...prev, [dbId]: data.columns }));
-      }
-    } catch { /* ignore */ }
-  }, [spaceSlug]);
-
-  // Eagerly fetch related DB rows for all relation columns (so chips show labels, not IDs)
-  useEffect(() => {
-    db.columns.filter((c) => c.type === "relation" && c.relationDbId)
-      .forEach((c) => fetchRelatedDbRows(c.relationDbId!));
-  }, [db.columns, fetchRelatedDbRows]);
-
-  // Trigger fetch when a relation cell is opened for editing
-  useEffect(() => {
-    if (!editCell) return;
-    const col = db.columns.find((c) => c.id === editCell.colId);
-    if (col?.type === "relation" && col.relationDbId) fetchRelatedDbRows(col.relationDbId);
-  }, [editCell, db.columns, fetchRelatedDbRows]);
-
-  const getRowLabel = (rowId: string, dbId: string, displayColId?: string): string => {
-    const dbRows = relatedDbRows[dbId];
-    if (!dbRows) return rowId.slice(0, 8);
-    const row = dbRows.find((r) => r.id === rowId);
-    if (!row) return rowId.slice(0, 8);
-    // Use configured display column if set
-    if (displayColId && row.cells[displayColId] != null && row.cells[displayColId] !== "") {
-      return String(row.cells[displayColId]);
-    }
-    const firstText = Object.values(row.cells).find((v) => v != null && v !== "" && typeof v === "string");
-    return firstText ? String(firstText) : `Row ${rowId.slice(0, 6)}`;
   };
 
   const handleAddColumn = () => {
@@ -355,39 +305,6 @@ export default function DatabaseTable({
         : <span className="db-cell-empty">—</span>;
     }
 
-    if (col.type === "relation") {
-      const vals = Array.isArray(value) ? (value as string[]) : [];
-      if (!col.relationDbId) {
-        return canWrite
-          ? <span className="db-cell-empty db-relation-hint" onClick={(e) => { e.stopPropagation(); setColMenu(col.id); setColRelationPanel(col.id); }}>Link database…</span>
-          : <span className="db-cell-empty">—</span>;
-      }
-      const displayColId = col.relationDisplayColumn;
-      return (
-        <div className="db-relation-cell" onClick={(e) => e.stopPropagation()}>
-          {vals.length > 0 ? (
-            <div className="db-cell-tags">
-              {vals.map((id) => {
-                const label = getRowLabel(id, col.relationDbId!, displayColId);
-                return onNavigateToRelation
-                  ? <button key={id} className="db-relation-chip db-relation-chip-link" onClick={(e) => { e.stopPropagation(); onNavigateToRelation(col.relationDbId!, id, label); }}>{label}</button>
-                  : <span key={id} className="db-relation-chip">{label}</span>;
-              })}
-            </div>
-          ) : <span className="db-cell-empty">—</span>}
-          {canWrite && (
-            <button
-              className="db-relation-edit-btn"
-              onClick={(e) => { e.stopPropagation(); setRelationPicker({ rowId: row.id, colId: col.id }); }}
-              title="Edit linked records"
-            >
-              <Link2 className="w-3 h-3" />
-            </button>
-          )}
-        </div>
-      );
-    }
-
     if (isEditing) {
       return (
         <input
@@ -481,12 +398,7 @@ export default function DatabaseTable({
                         onClick={() => {
                           onUpdateColumn(col.id, { type: t.value });
                           setColTypeChange(null);
-                          if (t.value === "relation") {
-                            // Keep menu open and show relation config panel
-                            setColRelationPanel(col.id);
-                          } else {
-                            setColMenu(null);
-                          }
+                          setColMenu(null);
                         }}>
                         {t.label}
                       </button>
@@ -564,41 +476,6 @@ export default function DatabaseTable({
                     ))}
                     <button className="db-col-menu-item" style={{ marginTop: 4 }} onClick={() => setColDefaultPanel(null)}>← Back</button>
                   </div>
-                ) : colRelationPanel === col.id ? (
-                  <div className="db-col-default-panel">
-                    <div className="db-col-menu-item" style={{ opacity: 0.5, fontSize: "0.65rem", cursor: "default" }}>Link to database</div>
-                    {allDatabases.filter((d) => d.id !== db.id).length === 0
-                      ? <div className="db-col-menu-item" style={{ opacity: 0.5 }}>No other databases</div>
-                      : allDatabases.filter((d) => d.id !== db.id).map((d) => (
-                          <button key={d.id}
-                            className={`db-col-menu-item${col.relationDbId === d.id ? " active" : ""}`}
-                            onClick={() => { onUpdateColumn(col.id, { relationDbId: d.id, relationDisplayColumn: undefined }); setColRelationPanel(null); setColMenu(null); }}
-                          >
-                            {d.title}
-                          </button>
-                        ))
-                    }
-                    <button className="db-col-menu-item" style={{ marginTop: 4 }} onClick={() => setColRelationPanel(null)}>← Back</button>
-                  </div>
-                ) : colDisplayColPanel === col.id ? (
-                  <div className="db-col-default-panel">
-                    <div className="db-col-menu-item" style={{ opacity: 0.5, fontSize: "0.65rem", cursor: "default" }}>Display column</div>
-                    <button
-                      className={`db-col-menu-item${!col.relationDisplayColumn ? " active" : ""}`}
-                      onClick={() => { onUpdateColumn(col.id, { relationDisplayColumn: undefined }); setColDisplayColPanel(null); setColMenu(null); }}
-                    >
-                      Auto (first text)
-                    </button>
-                    {(col.relationDbId && relatedDbCols[col.relationDbId] || []).filter((rc: DbColumn) => rc.type !== "createdBy").map((rc: DbColumn) => (
-                      <button key={rc.id}
-                        className={`db-col-menu-item${col.relationDisplayColumn === rc.id ? " active" : ""}`}
-                        onClick={() => { onUpdateColumn(col.id, { relationDisplayColumn: rc.id }); setColDisplayColPanel(null); setColMenu(null); }}
-                      >
-                        {rc.name}
-                      </button>
-                    ))}
-                    <button className="db-col-menu-item" style={{ marginTop: 4 }} onClick={() => setColDisplayColPanel(null)}>← Back</button>
-                  </div>
                 ) : (
                   <>
                     <button className="db-col-menu-item" onClick={() => setColRename({ colId: col.id, name: col.name })}>Rename</button>
@@ -608,12 +485,6 @@ export default function DatabaseTable({
                     )}
                     {(col.type === "select" || col.type === "multiSelect" || col.type === "date" || col.type === "checkbox" || col.type === "member") && (
                       <button className="db-col-menu-item" onClick={() => setColDefaultPanel(col.id)}>Set default…</button>
-                    )}
-                    {col.type === "relation" && (
-                      <button className="db-col-menu-item" onClick={() => setColRelationPanel(col.id)}>Link to database…</button>
-                    )}
-                    {col.type === "relation" && col.relationDbId && (
-                      <button className="db-col-menu-item" onClick={() => setColDisplayColPanel(col.id)}>Display column…</button>
                     )}
                     <button className="db-col-menu-item" onClick={() => {
                       const hidden = [...(view.hiddenColumns || []), col.id];
@@ -686,30 +557,6 @@ export default function DatabaseTable({
           </button>
         </div>
       )}
-      {/* Relation picker modal */}
-      {relationPicker && (() => {
-        const col = db.columns.find((c) => c.id === relationPicker.colId);
-        const row = rows.find((r) => r.id === relationPicker.rowId) || db.rows.find((r) => r.id === relationPicker.rowId);
-        if (!col?.relationDbId || !row) return null;
-        const relRows = relatedDbRows[col.relationDbId];
-        const relCols = relatedDbCols[col.relationDbId] || [];
-        const relDbMeta = allDatabases.find((d) => d.id === col.relationDbId);
-        const vals = Array.isArray(row.cells[col.id]) ? (row.cells[col.id] as string[]) : [];
-        return relRows ? (
-          <RelationPickerModal
-            rows={relRows}
-            columns={relCols}
-            selectedIds={vals}
-            displayColumnId={col.relationDisplayColumn}
-            dbTitle={relDbMeta?.title || "Database"}
-            onToggle={(rowId, selected) => {
-              const next = selected ? [...vals, rowId] : vals.filter((v) => v !== rowId);
-              onUpdateRow(row.id, { [col.id]: next });
-            }}
-            onClose={() => setRelationPicker(null)}
-          />
-        ) : null;
-      })()}
       {/* Selection action bar */}
       {selectedRows.size > 0 && (
         <div className="db-selection-bar">
