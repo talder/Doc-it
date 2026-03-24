@@ -1346,10 +1346,18 @@ export async function exportCert(
   }
 
   if (format === "PKCS12" || format === "PFX") {
+    // PFX requires a private key (Windows will reject a PFX without one).
+    // PKCS12 allows cert-only bundles for compatibility.
+    if (format === "PFX" && !cert.keyId) {
+      throw new Error("PFX export requires a private key linked to this certificate. The key must have been generated or imported in this store.");
+    }
     const forgeCert = forge.pki.certificateFromPem(cert.pem);
     let forgeKey: forge.pki.rsa.PrivateKey | null = null;
     if (cert.keyId) {
       const keyRec = store.keys.find((k) => k.id === cert.keyId);
+      if (!keyRec && format === "PFX") {
+        throw new Error("Private key record not found in store. Cannot export as PFX without the private key.");
+      }
       if (keyRec) {
         const pem = await decryptField(keyRec.pemEncrypted);
         forgeKey = forge.pki.privateKeyFromPem(pem) as forge.pki.rsa.PrivateKey;
