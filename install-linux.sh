@@ -295,9 +295,9 @@ NPM_SSL=$( $NO_SSL && echo "--strict-ssl=false" || echo "" )
 # Run as the service user when one exists so that all generated files
 # (.next/, node_modules/, etc.) are owned correctly from the start.
 if $SERVICE || $SVC_USER_EXISTS; then
-  $SUDO -u "$SERVICE_USER" npm install $NPM_SSL || die "npm install failed"
+  sudo -u "$SERVICE_USER" npm install $NPM_SSL || die "npm install failed"
   info "Building production bundle..."
-  $SUDO -u "$SERVICE_USER" npm run build || die "Production build failed"
+  sudo -u "$SERVICE_USER" npm run build || die "Production build failed"
 else
   npm install $NPM_SSL || die "npm install failed"
   info "Building production bundle..."
