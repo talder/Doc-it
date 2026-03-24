@@ -228,9 +228,23 @@ if $UPGRADE; then
   [[ -d "$INSTALL_DIR/.git" ]] || die "--upgrade: $INSTALL_DIR is not a git repo. Run without --upgrade to install first."
   info "Stopping service before upgrade..."
   $SUDO systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+
+  # Capture current commit before pulling so we can show what changed
+  OLD_HEAD=$($SUDO git -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR" rev-parse HEAD 2>/dev/null || echo "")
+
   info "Pulling latest from GitHub..."
   $SUDO git $GIT_SSL -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR" fetch origin main
   $SUDO git $GIT_SSL -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR" reset --hard origin/main
+
+  # Show changed files since previous version
+  NEW_HEAD=$($SUDO git -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR" rev-parse HEAD 2>/dev/null || echo "")
+  if [[ -n "$OLD_HEAD" && -n "$NEW_HEAD" && "$OLD_HEAD" != "$NEW_HEAD" ]]; then
+    info "Changes since previous version:"
+    $SUDO git -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR" --no-pager diff --stat "$OLD_HEAD" "$NEW_HEAD"
+    echo ""
+  elif [[ "$OLD_HEAD" == "$NEW_HEAD" ]]; then
+    info "Already up to date (no new commits)."
+  fi
 else
   if [[ -d "$INSTALL_DIR" && -f "$INSTALL_DIR/package.json" ]]; then
     die "$INSTALL_DIR already contains an installation. Use --upgrade to update it, or --dir to pick another path."
@@ -267,19 +281,34 @@ fi
 
 # ── 5. Dependencies & build ────────────────────────────────────
 cd "$INSTALL_DIR"
+
+# On upgrade, git reset runs as root which can leave files owned by root.
+# Fix ownership BEFORE npm install/build so the build user can write everywhere.
+if $SERVICE || $SVC_USER_EXISTS; then
+  $SUDO chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
+else
+  $SUDO chown -R "$(whoami)" "$INSTALL_DIR"
+fi
+
 info "Installing npm dependencies..."
 NPM_SSL=$( $NO_SSL && echo "--strict-ssl=false" || echo "" )
 # Run as the service user when one exists so that all generated files
 # (.next/, node_modules/, etc.) are owned correctly from the start.
 if $SERVICE || $SVC_USER_EXISTS; then
-  $SUDO -u "$SERVICE_USER" npm install $NPM_SSL
+  $SUDO -u "$SERVICE_USER" npm install $NPM_SSL || die "npm install failed"
   info "Building production bundle..."
-  $SUDO -u "$SERVICE_USER" npm run build
+  $SUDO -u "$SERVICE_USER" npm run build || die "Production build failed"
 else
-  npm install $NPM_SSL
+  npm install $NPM_SSL || die "npm install failed"
   info "Building production bundle..."
-  npm run build
+  npm run build || die "Production build failed"
 fi
+
+# Verify the build actually produced output
+if [[ ! -f "$INSTALL_DIR/.next/BUILD_ID" ]]; then
+  die "Production build verification failed — .next/BUILD_ID not found. Check for errors above."
+fi
+info "Build verified (.next/BUILD_ID exists)"
 
 # After a successful build, ensure every file is still owned by the service
 # user (npm may restore symlinks or create cache files as root).
