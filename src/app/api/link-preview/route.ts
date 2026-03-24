@@ -1,4 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
+import dns from "dns/promises";
+import net from "net";
+
+function isPrivateOrLoopback(ip: string): boolean {
+  // IPv6 loopback
+  if (ip === "::1") return true;
+  // IPv4-mapped IPv6 addresses (e.g., ::ffff:127.0.0.1)
+  if (ip.startsWith("::ffff:")) {
+    ip = ip.substring("::ffff:".length);
+  }
+  if (net.isIPv4(ip)) {
+    const octets = ip.split(".").map(Number);
+    const [o1, o2] = octets;
+    // 10.0.0.0/8
+    if (o1 === 10) return true;
+    // 127.0.0.0/8
+    if (o1 === 127) return true;
+    // 172.16.0.0/12
+    if (o1 === 172 && o2 >= 16 && o2 <= 31) return true;
+    // 192.168.0.0/16
+    if (o1 === 192 && o2 === 168) return true;
+    // Link-local 169.254.0.0/16
+    if (o1 === 169 && o2 === 254) return true;
+  } else if (net.isIPv6(ip)) {
+    // Unique local addresses fc00::/7 and link-local fe80::/10
+    const lower = ip.toLowerCase();
+    if (lower.startsWith("fc") || lower.startsWith("fd")) return true;
+    if (lower.startsWith("fe80:")) return true;
+  }
+  return false;
+}
 
 export async function GET(req: NextRequest) {
   const url = req.nextUrl.searchParams.get("url");
@@ -9,6 +40,12 @@ export async function GET(req: NextRequest) {
   try {
     parsed = new URL(url);
     if (!["http:", "https:"].includes(parsed.protocol)) throw new Error("bad protocol");
+
+    // SSRF protection: resolve hostname and block private/loopback IPs
+    const addresses = await dns.lookup(parsed.hostname, { all: true });
+    if (addresses.length === 0 || addresses.some((a) => isPrivateOrLoopback(a.address))) {
+      return NextResponse.json({ error: "Forbidden host" }, { status: 400 });
+    }
   } catch {
     return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
   }
