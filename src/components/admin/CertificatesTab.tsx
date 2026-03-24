@@ -275,7 +275,7 @@ export default function CertificatesTab() {
   const [pendingExport, setPendingExport] = useState<{ type: "cert" | "key"; id: string; format: string } | null>(null);
 
   const triggerExport = (type: "cert" | "key", id: string, format: string) => {
-    if (format === "PEM+key" || format === "PKCS12") {
+    if (format === "PEM+key" || format === "PKCS12" || format === "PFX") {
       setCertExportPassphrase("");
       setCertExportPassVisible(false);
       setPendingExport({ type, id, format });
@@ -765,6 +765,7 @@ export default function CertificatesTab() {
                         <option value="PKCS7-chain">PKCS #7 all (*.p7b)</option>
                         <option value="PEM-chain">PEM all (*.pem)</option>
                         <option value="PKCS12">PKCS #12 (*.p12)</option>
+                        <option value="PFX">PFX (*.pfx)</option>
                         <option value="PEM+key">PEM + Key (*.pem)</option>
                         <option value="cert-index">Certificate Index (*.txt)</option>
                       </select>

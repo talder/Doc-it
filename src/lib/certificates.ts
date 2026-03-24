@@ -1345,7 +1345,7 @@ export async function exportCert(
     return { data: b64, mimeType: "application/pkcs7-mime", filename: `${safeName}.p7b` };
   }
 
-  if (format === "PKCS12") {
+  if (format === "PKCS12" || format === "PFX") {
     const forgeCert = forge.pki.certificateFromPem(cert.pem);
     let forgeKey: forge.pki.rsa.PrivateKey | null = null;
     if (cert.keyId) {
@@ -1368,7 +1368,8 @@ export async function exportCert(
     const p12Asn1 = forge.pkcs12.toPkcs12Asn1(forgeKey, certChain, passphrase || "", { algorithm: "3des" });
     const p12Der = forge.asn1.toDer(p12Asn1).getBytes();
     const b64 = Buffer.from(p12Der, "binary").toString("base64");
-    return { data: b64, mimeType: "application/x-pkcs12", filename: `${safeName}.p12` };
+    const ext = format === "PFX" ? "pfx" : "p12";
+    return { data: b64, mimeType: "application/x-pkcs12", filename: `${safeName}.${ext}` };
   }
 
   if (format === "PEM+key") {

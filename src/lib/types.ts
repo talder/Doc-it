@@ -615,6 +615,7 @@ export type PkiExportFormat =
   | "PKCS7"
   | "PKCS7-chain"
   | "PKCS12"
+  | "PFX"
   | "PEM-chain"
   | "PEM+key"
   | "cert-index";
