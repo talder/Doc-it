@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { X, AlertTriangle } from "lucide-react";
 import type { ChangeCategory, ChangeRisk, ChangeStatus } from "@/lib/changelog";
 
-const CATEGORIES: ChangeCategory[] = ["Disk", "Network", "Security", "Software", "Hardware", "Configuration", "Other"];
+const DEFAULT_CATEGORIES_FALLBACK: ChangeCategory[] = ["Disk", "Network", "Security", "Software", "Hardware", "Configuration", "Other"];
 const RISKS: ChangeRisk[] = ["Low", "Medium", "High", "Critical"];
 const STATUSES: ChangeStatus[] = ["Completed", "Failed", "Rolled Back"];
 
@@ -28,16 +28,18 @@ interface ChangeLogModalProps {
     status: ChangeStatus;
   }) => Promise<void>;
   knownSystems: string[];
+  categories?: string[];
 }
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export default function ChangeLogModal({ isOpen, onClose, onSave, knownSystems }: ChangeLogModalProps) {
+export default function ChangeLogModal({ isOpen, onClose, onSave, knownSystems, categories }: ChangeLogModalProps) {
+  const activeCategories = categories && categories.length > 0 ? categories : DEFAULT_CATEGORIES_FALLBACK;
   const [date, setDate] = useState(today());
   const [system, setSystem] = useState("");
-  const [category, setCategory] = useState<ChangeCategory>("Other");
+  const [category, setCategory] = useState<ChangeCategory>("");
   const [description, setDescription] = useState("");
   const [impact, setImpact] = useState("");
   const [risk, setRisk] = useState<ChangeRisk>("Medium");
@@ -53,7 +55,7 @@ export default function ChangeLogModal({ isOpen, onClose, onSave, knownSystems }
     if (isOpen) {
       setDate(today());
       setSystem("");
-      setCategory("Other");
+      setCategory("");
       setDescription("");
       setImpact("");
       setRisk("Medium");
@@ -70,7 +72,7 @@ export default function ChangeLogModal({ isOpen, onClose, onSave, knownSystems }
 
   if (!isOpen) return null;
 
-  const isValid = date && system.trim() && description.trim() && impact.trim();
+  const isValid = date && system.trim() && category && description.trim() && impact.trim();
 
   // Merge known systems with asset names, deduplicated
   const allSystems = Array.from(new Set([...knownSystems, ...assetNames]));
@@ -131,7 +133,8 @@ export default function ChangeLogModal({ isOpen, onClose, onSave, knownSystems }
               <div className="cl-field">
                 <label className="cl-label">Category *</label>
                 <select className="cl-input" value={category} onChange={(e) => setCategory(e.target.value as ChangeCategory)}>
-                  {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  <option value="" disabled>Select…</option>
+                  {activeCategories.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
 

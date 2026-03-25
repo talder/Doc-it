@@ -254,39 +254,39 @@ const GROUPS: EndpointGroup[] = [
     ],
   },
   {
-    name: "Databases",
+    name: "Enhanced Tables",
     endpoints: [
       {
-        id: "list-dbs", method: "GET", path: "/api/spaces/{slug}/databases", summary: "List databases", auth: "user",
+        id: "list-dbs", method: "GET", path: "/api/spaces/{slug}/databases", summary: "List enhanced tables", auth: "user",
         params: [{ name: "slug", type: "path", required: true, description: "Space slug" }],
       },
       {
-        id: "create-db", method: "POST", path: "/api/spaces/{slug}/databases", summary: "Create a database", auth: "user",
+        id: "create-db", method: "POST", path: "/api/spaces/{slug}/databases", summary: "Create an enhanced table", auth: "user",
         params: [
           { name: "slug", type: "path", required: true, description: "Space slug" },
-          { name: "name", type: "body", required: true, description: "Database name" },
+          { name: "name", type: "body", required: true, description: "Table name" },
           { name: "columns", type: "body", required: true, description: 'Array of column defs: [{name,type}]', example: '[{"name":"Title","type":"text"}]' },
         ],
       },
       {
-        id: "get-db", method: "GET", path: "/api/spaces/{slug}/databases/{dbId}", summary: "Get database schema", auth: "user",
+        id: "get-db", method: "GET", path: "/api/spaces/{slug}/databases/{dbId}", summary: "Get enhanced table schema", auth: "user",
         params: [
           { name: "slug", type: "path", required: true, description: "Space slug" },
-          { name: "dbId", type: "path", required: true, description: "Database ID" },
+          { name: "dbId", type: "path", required: true, description: "Enhanced Table ID" },
         ],
       },
       {
-        id: "list-rows", method: "GET", path: "/api/spaces/{slug}/databases/{dbId}/rows", summary: "List database rows", auth: "user",
+        id: "list-rows", method: "GET", path: "/api/spaces/{slug}/databases/{dbId}/rows", summary: "List enhanced table rows", auth: "user",
         params: [
           { name: "slug", type: "path", required: true, description: "Space slug" },
-          { name: "dbId", type: "path", required: true, description: "Database ID" },
+          { name: "dbId", type: "path", required: true, description: "Enhanced Table ID" },
         ],
       },
       {
         id: "create-row", method: "POST", path: "/api/spaces/{slug}/databases/{dbId}/rows", summary: "Create a row", auth: "user",
         params: [
           { name: "slug", type: "path", required: true, description: "Space slug" },
-          { name: "dbId", type: "path", required: true, description: "Database ID" },
+          { name: "dbId", type: "path", required: true, description: "Enhanced Table ID" },
           { name: "data", type: "body", required: true, description: "Object: column name → value", example: '{"Title":"My row"}' },
         ],
       },

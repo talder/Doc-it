@@ -24,7 +24,7 @@ export default function FavoritesList({ favorites, onSelect, onRemove, currentSp
         <Star className="w-8 h-8 mx-auto mb-3 text-text-muted opacity-40" />
         <p className="text-sm font-medium text-text-muted">No favorites yet</p>
         <p className="text-xs text-text-muted mt-1 opacity-70">
-          Star docs or databases to access them quickly
+          Star docs or enhanced tables to access them quickly
         </p>
       </div>
     );

@@ -28,7 +28,7 @@ export default function DatabasesList({ databases, onSelectDatabase, canWrite, o
   return (
     <div className="px-1">
       {databases.length === 0 ? (
-        <p className="px-3 py-6 text-sm text-text-muted text-center">No databases yet</p>
+        <p className="px-3 py-6 text-sm text-text-muted text-center">No enhanced tables yet</p>
       ) : (
         <div className="space-y-0.5">
           {databases.map((db) => {

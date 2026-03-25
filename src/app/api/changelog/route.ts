@@ -5,10 +5,10 @@ import {
   addChangeLogEntry,
   filterChangeLog,
   getKnownSystems,
+  getChangeCategories,
 } from "@/lib/changelog";
-import type { ChangeCategory, ChangeRisk, ChangeStatus } from "@/lib/changelog";
+import type { ChangeRisk, ChangeStatus } from "@/lib/changelog";
 
-const VALID_CATEGORIES: ChangeCategory[] = ["Disk", "Network", "Security", "Software", "Hardware", "Configuration", "Other"];
 const VALID_RISKS: ChangeRisk[] = ["Low", "Medium", "High", "Critical"];
 const VALID_STATUSES: ChangeStatus[] = ["Completed", "Failed", "Rolled Back"];
 
@@ -52,8 +52,9 @@ export async function POST(request: NextRequest) {
   if (!date || !system?.trim() || !description?.trim() || !impact?.trim()) {
     return NextResponse.json({ error: "date, system, description, and impact are required" }, { status: 400 });
   }
-  if (!VALID_CATEGORIES.includes(category)) {
-    return NextResponse.json({ error: `Invalid category. Must be one of: ${VALID_CATEGORIES.join(", ")}` }, { status: 400 });
+  const validCategories = await getChangeCategories();
+  if (!validCategories.includes(category)) {
+    return NextResponse.json({ error: `Invalid category. Must be one of: ${validCategories.join(", ")}` }, { status: 400 });
   }
   if (!VALID_RISKS.includes(risk)) {
     return NextResponse.json({ error: `Invalid risk. Must be one of: ${VALID_RISKS.join(", ")}` }, { status: 400 });

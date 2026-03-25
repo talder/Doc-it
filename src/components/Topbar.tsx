@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Search, LogOut, Settings, Sun, Moon, Archive, User, Bell, X, FileText, BookOpen, Check, HardDriveDownload, Home, Trophy, Share2, Trash2, Lock, Clock, BookMarked, ClipboardList, Monitor, Headset, ShieldCheck, Star, Info } from "lucide-react";
+import { ChevronDown, Search, LogOut, Settings, Sun, Moon, Archive, User, Bell, X, FileText, BookOpen, Check, HardDriveDownload, Home, Trophy, Share2, Trash2, Lock, Clock, BookMarked, ClipboardList, Monitor, Headset, ShieldCheck, Star, Info, Phone } from "lucide-react";
 import OfflineBundleModal from "@/components/OfflineBundleModal";
 import ChangelogModal from "@/components/modals/ChangelogModal";
 import { useTheme, isLightTheme, type Theme } from "@/components/ThemeProvider";
@@ -95,7 +95,6 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
   const [sharesOpen, setSharesOpen] = useState(false);
   const [sharesData, setSharesData] = useState<ShareOverviewItem[]>([]);
   const [sharesLoading, setSharesLoading] = useState(false);
-  const sharesRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const [spaceMenuOpen, setSpaceMenuOpen] = useState(false);
@@ -107,6 +106,15 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [avatarError, setAvatarError] = useState(false);
   const [appVersion, setAppVersion] = useState<string | null>(null);
+  const [onCallAllowed, setOnCallAllowed] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    fetch("/api/oncall/check")
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d?.allowed) setOnCallAllowed(true); })
+      .catch(() => {});
+  }, [user]);
   const spaceRef = useRef<HTMLDivElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
   const themeRef = useRef<HTMLDivElement>(null);
@@ -123,7 +131,7 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
       if (reviewsRef.current && !reviewsRef.current.contains(e.target as Node)) setReviewsOpen(false);
       if (notifsRef.current && !notifsRef.current.contains(e.target as Node)) setNotifsOpen(false);
       if (leaderboardRef.current && !leaderboardRef.current.contains(e.target as Node)) setLeaderboardOpen(false);
-      if (sharesRef.current && !sharesRef.current.contains(e.target as Node)) setSharesOpen(false);
+      if (userRef.current && !userRef.current.contains(e.target as Node)) setSharesOpen(false);
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
@@ -258,6 +266,17 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
           <Headset className="w-4 h-4" />
         </button>
 
+        {/* On-Call Reports */}
+        {onCallAllowed && (
+          <button
+            onClick={() => router.push("/oncall")}
+            className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
+            data-tip="On-Call Reports"
+          >
+            <Phone className="w-4 h-4" />
+          </button>
+        )}
+
         {/* Certificate Manager */}
         {user?.isAdmin && (
           <button
@@ -269,113 +288,6 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
           </button>
         )}
 
-        {/* Shared pages overview */}
-        <div className="relative" ref={sharesRef}>
-          <button
-            onClick={async () => {
-              setSharesOpen((v) => !v);
-              if (!sharesOpen && currentSpace) {
-                setSharesLoading(true);
-                try {
-                  const res = await fetch(`/api/spaces/${encodeURIComponent(currentSpace.slug)}/shares`);
-                  if (res.ok) {
-                    const data = await res.json();
-                    setSharesData(data.shares ?? []);
-                  }
-                } catch {}
-                setSharesLoading(false);
-              }
-            }}
-            className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
-            data-tip="Shared Pages"
-          >
-            <Share2 className="w-4 h-4" />
-          </button>
-          {sharesOpen && (
-            <div className="absolute right-0 top-full mt-1 z-50 bg-surface border border-border rounded-lg shadow-lg min-w-[340px] max-w-[420px]">
-              <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
-                <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Shared Pages</span>
-                <span className="text-xs text-text-muted">{sharesData.length} active</span>
-              </div>
-              {sharesLoading ? (
-                <div className="px-4 py-6 text-sm text-text-muted text-center">Loading…</div>
-              ) : sharesData.length === 0 ? (
-                <div className="px-4 py-6 text-sm text-text-muted text-center">No shared pages</div>
-              ) : (
-                <div className="max-h-80 overflow-y-auto py-1">
-                  {sharesData.map((s) => (
-                    <div key={s.token} className="flex items-start gap-3 px-4 py-2.5 hover:bg-muted group">
-                      <FileText className="w-4 h-4 text-accent flex-shrink-0 mt-0.5" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-text-primary truncate">{s.docName}</p>
-                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                          <span className="text-[10px] text-text-muted">{s.category}</span>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${s.mode === "read" ? "bg-blue-500/10 text-blue-600" : "bg-green-500/10 text-green-600"}`}>
-                            {s.mode === "read" ? "Read" : "Read & Write"}
-                          </span>
-                          {s.hasPassword && <span title="Password-protected"><Lock className="w-3 h-3 text-amber-500" /></span>}
-                          {s.expiresAt && (
-                            <span className="text-[10px] text-text-muted flex items-center gap-0.5" title={`Expires: ${new Date(s.expiresAt).toLocaleString()}`}>
-                              <Clock className="w-3 h-3" />
-                              {new Date(s.expiresAt).toLocaleDateString()}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[10px] text-text-muted mt-0.5">by {s.createdBy} · {new Date(s.createdAt).toLocaleDateString()}</p>
-                      </div>
-                      <button
-                        className="p-1 rounded hover:bg-red-500/10 text-text-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                        title="Revoke share"
-                        onClick={async () => {
-                          if (!currentSpace) return;
-                          await fetch(`/api/spaces/${encodeURIComponent(currentSpace.slug)}/shares`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ action: "revoke", token: s.token }),
-                          });
-                          setSharesData((prev) => prev.filter((x) => x.token !== s.token));
-                        }}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* API Docs */}
-        <button
-          onClick={() => router.push("/api-docs")}
-          className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
-          data-tip="API Documentation"
-        >
-          <BookOpen className="w-4 h-4" />
-        </button>
-
-        {/* Archive */}
-        {onOpenArchive && (
-          <button
-            onClick={onOpenArchive}
-            className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
-            data-tip="Archive"
-          >
-            <Archive className="w-4 h-4" />
-          </button>
-        )}
-
-        {/* Trash / Recycle bin */}
-        {onOpenTrash && (
-          <button
-            onClick={onOpenTrash}
-            className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
-            data-tip="Recycle Bin"
-          >
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
-          </button>
-        )}
 
         {/* Trophy / Leaderboard */}
         <div className="relative" ref={leaderboardRef}>
@@ -419,14 +331,6 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
           )}
         </div>
 
-        {/* Offline Bundle */}
-        <button
-          onClick={() => setOfflineBundleOpen(true)}
-          className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
-          data-tip="Offline Bundle"
-        >
-          <HardDriveDownload className="w-4 h-4" />
-        </button>
 
         {/* Reviews waiting badge */}
         {reviewItems.length > 0 && (
@@ -585,9 +489,11 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
 
         <div className="relative" ref={userRef}>
           <button
-            onClick={() => {
-              setUserMenuOpen(!userMenuOpen);
-              if (!appVersion) {
+          onClick={() => {
+              const next = !userMenuOpen;
+              setUserMenuOpen(next);
+              if (!next) setSharesOpen(false);
+              if (next && !appVersion) {
                 fetch("/api/version").then((r) => r.json()).then((d) => setAppVersion(d.version)).catch(() => {});
               }
             }}
@@ -628,6 +534,117 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
                 >
                   <Settings className="w-3.5 h-3.5" />
                   Administration
+                </button>
+              )}
+              {/* Space tools */}
+              <hr className="border-border-light my-1" />
+              <button
+                onClick={() => { setUserMenuOpen(false); router.push("/api-docs"); }}
+                className="w-full text-left px-3 py-2 text-sm text-text-secondary hover:bg-muted flex items-center gap-2"
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                API Documentation
+              </button>
+              <button
+                onClick={() => { setUserMenuOpen(false); setOfflineBundleOpen(true); }}
+                className="w-full text-left px-3 py-2 text-sm text-text-secondary hover:bg-muted flex items-center gap-2"
+              >
+                <HardDriveDownload className="w-3.5 h-3.5" />
+                Offline Bundle
+              </button>
+              {currentSpace && (
+                <>
+                  <button
+                    onClick={async () => {
+                      if (!sharesOpen) {
+                        setSharesLoading(true);
+                        try {
+                          const res = await fetch(`/api/spaces/${encodeURIComponent(currentSpace.slug)}/shares`);
+                          if (res.ok) {
+                            const data = await res.json();
+                            setSharesData(data.shares ?? []);
+                          }
+                        } catch {}
+                        setSharesLoading(false);
+                      }
+                      setSharesOpen((v) => !v);
+                    }}
+                    className="w-full text-left px-3 py-2 text-sm text-text-secondary hover:bg-muted flex items-center gap-2"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                    Shared Pages
+                    {sharesData.length > 0 && (
+                      <span className="ml-auto text-xs text-text-muted">{sharesData.length}</span>
+                    )}
+                    <ChevronDown className={`w-3 h-3 ${sharesData.length > 0 ? "" : "ml-auto"} transition-transform ${sharesOpen ? "rotate-180" : ""}`} />
+                  </button>
+                  {sharesOpen && (
+                    <div className="border-t border-border-light">
+                      {sharesLoading ? (
+                        <div className="px-4 py-4 text-sm text-text-muted text-center">Loading…</div>
+                      ) : sharesData.length === 0 ? (
+                        <div className="px-4 py-4 text-sm text-text-muted text-center">No shared pages</div>
+                      ) : (
+                        <div className="max-h-56 overflow-y-auto py-1">
+                          {sharesData.map((s) => (
+                            <div key={s.token} className="flex items-start gap-3 px-4 py-2 hover:bg-muted group">
+                              <FileText className="w-3.5 h-3.5 text-accent flex-shrink-0 mt-0.5" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-text-primary truncate">{s.docName}</p>
+                                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                  <span className="text-[10px] text-text-muted">{s.category}</span>
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${s.mode === "read" ? "bg-blue-500/10 text-blue-600" : "bg-green-500/10 text-green-600"}`}>
+                                    {s.mode === "read" ? "Read" : "Read & Write"}
+                                  </span>
+                                  {s.hasPassword && <span title="Password-protected"><Lock className="w-3 h-3 text-amber-500" /></span>}
+                                  {s.expiresAt && (
+                                    <span className="text-[10px] text-text-muted flex items-center gap-0.5" title={`Expires: ${new Date(s.expiresAt).toLocaleString()}`}>
+                                      <Clock className="w-3 h-3" />
+                                      {new Date(s.expiresAt).toLocaleDateString()}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[10px] text-text-muted mt-0.5">by {s.createdBy} · {new Date(s.createdAt).toLocaleDateString()}</p>
+                              </div>
+                              <button
+                                className="p-1 rounded hover:bg-red-500/10 text-text-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                                title="Revoke share"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  await fetch(`/api/spaces/${encodeURIComponent(currentSpace.slug)}/shares`, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ action: "revoke", token: s.token }),
+                                  });
+                                  setSharesData((prev) => prev.filter((x) => x.token !== s.token));
+                                }}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+              {onOpenArchive && (
+                <button
+                  onClick={() => { setUserMenuOpen(false); onOpenArchive(); }}
+                  className="w-full text-left px-3 py-2 text-sm text-text-secondary hover:bg-muted flex items-center gap-2"
+                >
+                  <Archive className="w-3.5 h-3.5" />
+                  Archive
+                </button>
+              )}
+              {onOpenTrash && (
+                <button
+                  onClick={() => { setUserMenuOpen(false); setSharesOpen(false); onOpenTrash(); }}
+                  className="w-full text-left px-3 py-2 text-sm text-text-secondary hover:bg-muted flex items-center gap-2"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Recycle Bin
                 </button>
               )}
               {/* Help section */}

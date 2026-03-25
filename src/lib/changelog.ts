@@ -13,14 +13,11 @@ import { getAuditConfig } from "./audit";
 
 // ── Types ────────────────────────────────────────────────────────────
 
-export type ChangeCategory =
-  | "Disk"
-  | "Network"
-  | "Security"
-  | "Software"
-  | "Hardware"
-  | "Configuration"
-  | "Other";
+export type ChangeCategory = string;
+
+export const DEFAULT_CATEGORIES: string[] = [
+  "Disk", "Network", "Security", "Software", "Hardware", "Configuration", "Other",
+];
 
 export type ChangeRisk = "Low" | "Medium" | "High" | "Critical";
 
@@ -48,6 +45,7 @@ export interface ChangeLogEntry {
 
 export interface ChangeLogSettings {
   retentionYears: number;
+  categories?: string[];
 }
 
 export interface ChangeLogData {
@@ -93,6 +91,13 @@ export async function readChangeLogSettings(): Promise<ChangeLogSettings> {
 
 export async function saveChangeLogSettings(settings: ChangeLogSettings): Promise<void> {
   await writeJsonConfig(SETTINGS_FILE, settings);
+}
+
+/** Returns the active category list (configured or default). */
+export async function getChangeCategories(): Promise<string[]> {
+  const settings = await readChangeLogSettings();
+  if (settings.categories && settings.categories.length > 0) return settings.categories;
+  return [...DEFAULT_CATEGORIES];
 }
 
 // ── Public API ───────────────────────────────────────────────────────

@@ -49,13 +49,23 @@ A self-hosted documentation platform built with Next.js, TipTap, and Tailwind CS
 
 ### Databases
 - **Inline databases** — embed structured tables directly inside documents via `/database`
-- **Custom schemas** — define columns with types: text, number, date, checkbox, select, multi-select, URL, relation
+- **Custom schemas** — define columns with types: text, number, date, checkbox, select, multi-select, URL, email, member, created-by
 - **Views** — switch between Table, Board (Kanban), and Gallery views per database
 - **Relation picker** — searchable modal for linking rows across databases; configurable display column per relation field
 - **Column header sorting** — click any column header to cycle unsorted → ascending → descending
 - **Stable row numbers** — row numbers reflect insertion order, not display position
 - **Filtering & sorting** — filter rows and sort by any column via toolbar controls
 - **Per-space storage** — each database is stored as JSON within its space, versioned with the space
+
+### On-Call Reports
+- **On-call logging** — log on-call incidents with date, time, problem description, working time, and solution
+- **Auto-incrementing IDs** — ONC-000001, ONC-000002, etc.
+- **Solution tracking** — add or edit solutions after submission via a dedicated rich-text editor modal
+- **90-day activity heatmap** — visual heatmap in three 30-day blocks showing call volume over time
+- **Calendar & filtering** — calendar sidebar for date filtering, full-text search, and sortable table columns
+- **Working time tracking** — parse and display durations in `1h30m` format with per-view totals
+- **Access control** — admin-configurable list of allowed users
+- **Weekly email digest** — optional scheduled email report of the previous week's on-call entries
 
 ### Journal
 - **Personal journals** — per-user private journals with entries encrypted at rest (AES-256-GCM)
@@ -85,7 +95,8 @@ A self-hosted documentation platform built with Next.js, TipTap, and Tailwind CS
   - **Extensions** — Basic Constraints (type + path length + critical), Key Identifiers (SKI/AKI), validity period with quick-pick buttons, CDP and OCSP/AIA URLs
   - **Key Usage** — Key Usage (9 flags) and Extended Key Usage (12 flags) with Critical toggle
 - **Templates** — save reusable certificate profiles (Subject + Extensions + Key Usage) and apply them to new CSRs
-- **Certificate operations** — import PEM/DER/PKCS7/PKCS12, export to PEM/DER/PKCS7/PKCS12, revoke with reason, renew, delete
+- **Certificate operations** — import PEM/DER/PKCS7/PKCS12, export to PEM/DER/PKCS7/PKCS12/PFX, revoke with reason, renew, delete
+- **Automatic key linking** — imported certificates are automatically linked to existing private keys by matching public key fingerprints; PFX export bundles the private key when linked
 - **CRL generation** — generate and download Certificate Revocation Lists per CA
 - **Import** — drag-and-drop or browse to import certificate files (PEM, DER, PKCS7, PKCS12) and private key PEMs
 
@@ -288,6 +299,7 @@ src/
     changelog/       # Change log page
     helpdesk/        # Helpdesk agent UI + admin config
     journal/         # Personal & space journal
+    oncall/          # On-call reports
     portal/          # Self-service portal (login, register, tickets)
     portals/         # Public portal listing & pages
     login/           # Login page
@@ -315,6 +327,8 @@ src/
     helpdesk-portal.ts # Portal user auth (separate from main auth)
     assets.ts        # Asset management module
     changelog.ts     # Change log module
+    oncall.ts        # On-call reports module (server-side CRUD, filtering, email)
+    oncall-shared.ts # Client-safe on-call types and pure helpers
     journal.ts       # Journal module (encrypted user journals)
     audit.ts         # NIS2 audit logging (encrypted, syslog, write queue)
     crash-log.ts     # Crash logging (server + client, JSONL, email alerts)
@@ -345,6 +359,8 @@ Key configuration entries (stored as JSON values):
 - `assets.json` — asset registry
 - `changelog.json` — change log entries
 - `changelog-settings.json` — changelog retention period (default 5 years)
+- `oncall.json` — on-call report entries
+- `oncall-settings.json` — on-call allowed users, email settings
 - `audit.json` — audit configuration
 - `backup.json` — backup configuration and targets
 - `ad.json` — Active Directory / LDAP authentication settings

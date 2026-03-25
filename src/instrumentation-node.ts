@@ -11,6 +11,14 @@
  */
 
 import { getBackupConfig, runBackup, getBackupState } from "./lib/backup";
+import {
+  readOnCallData,
+  readOnCallSettings,
+  saveOnCallSettings,
+  filterOnCallEntries,
+  buildWeeklyReportHtml,
+  getPreviousWeekRange,
+} from "./lib/oncall";
 import { checkAndMarkExpiryAlerts } from "./lib/certificates";
 import { sendMail } from "./lib/email";
 import { getUsers } from "./lib/auth";
@@ -203,6 +211,48 @@ process.on("unhandledRejection", (reason) => {
     details: { type: "unhandledRejection" },
   });
 });
+
+// ── On-Call weekly email digest (every Monday at configured time) ────────────
+
+setInterval(async () => {
+  try {
+    const settings = await readOnCallSettings();
+    if (!settings.emailEnabled || settings.emailRecipients.length === 0) return;
+
+    const now = new Date();
+    // Only run on Mondays
+    if (now.getDay() !== 1) return;
+
+    // Check time
+    const [hh, mm] = (settings.emailSendTime ?? "08:00").split(":").map(Number);
+    if (now.getHours() !== hh || now.getMinutes() !== mm) return;
+
+    // Debounce: skip if already sent this week
+    if (settings.lastWeeklyReportAt) {
+      const last = new Date(settings.lastWeeklyReportAt);
+      const diffMin = (now.getTime() - last.getTime()) / 60_000;
+      if (diffMin < 60 * 24 * 6) return; // sent within last 6 days
+    }
+
+    const { from, to } = getPreviousWeekRange(now);
+    const data = await readOnCallData();
+    const entries = filterOnCallEntries(data.entries, { from, to });
+    const html = buildWeeklyReportHtml(entries, from, to);
+    const subject = `On-Call Weekly Report: ${from} \u2013 ${to}`;
+
+    let sent = 0;
+    for (const recipient of settings.emailRecipients) {
+      const ok = await sendMail(recipient, subject, html).catch(() => false);
+      if (ok) sent++;
+    }
+
+    settings.lastWeeklyReportAt = now.toISOString();
+    await saveOnCallSettings(settings);
+    console.log(`[oncall] Weekly report sent to ${sent}/${settings.emailRecipients.length} recipients (${from} – ${to})`);
+  } catch (err) {
+    console.error("[oncall] Weekly report scheduler error:", err);
+  }
+}, INTERVAL_MS);
 
 // ── Crash log retention cleanup (once per day) ───────────────────────────────
 

@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { readChangeLogSettings, saveChangeLogSettings } from "@/lib/changelog";
+import { readChangeLogSettings, saveChangeLogSettings, DEFAULT_CATEGORIES } from "@/lib/changelog";
 
 export async function GET() {
   const user = await getCurrentUser();
   if (!user?.isAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const settings = await readChangeLogSettings();
-  return NextResponse.json(settings);
+  return NextResponse.json({
+    ...settings,
+    categories: settings.categories ?? DEFAULT_CATEGORIES,
+  });
 }
 
 export async function PUT(request: NextRequest) {
@@ -24,6 +27,16 @@ export async function PUT(request: NextRequest) {
     );
   }
 
-  await saveChangeLogSettings({ retentionYears });
+  const newSettings: Parameters<typeof saveChangeLogSettings>[0] = { retentionYears };
+
+  if (Array.isArray(body.categories)) {
+    const cats = (body.categories as unknown[]).map((c) => String(c).trim()).filter(Boolean);
+    if (cats.length === 0) {
+      return NextResponse.json({ error: "categories must have at least one entry" }, { status: 400 });
+    }
+    newSettings.categories = cats;
+  }
+
+  await saveChangeLogSettings(newSettings);
   return NextResponse.json({ success: true });
 }

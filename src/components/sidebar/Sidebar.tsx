@@ -314,13 +314,13 @@ export default function Sidebar({
                     <ChevronDown className="w-3 h-3" />
                   )}
                   <DbIcon className="w-3 h-3" />
-                  Databases
+                  Enhanced Tables
                 </button>
                 {canWrite && !databasesCollapsed && (
                   <button
                     onClick={() => onNewDatabase?.()}
                     className="text-xs text-accent hover:underline"
-                    title="New database"
+                    title="New enhanced table"
                   >
                     + New
                   </button>

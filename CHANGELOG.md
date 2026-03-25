@@ -4,6 +4,22 @@ All notable changes to Doc-it are documented here.
 
 ---
 
+## [0.2.16] — 2026-03-25
+
+### Added
+- **On-Call module** — new `/oncall` page for logging, viewing, and managing on-call reports with calendar, sortable table, heatmap, and working-time tracking.
+- **On-Call solution editor modal** — clicking Edit / Add solution now opens a dedicated popup with a full-width rich-text editor instead of an inline editor squeezed inside the detail modal.
+- **On-Call 90-day activity heatmap** — the activity heatmap now covers 90 days (up from 30), displayed in three separate 30-day blocks with date range labels.
+- **Database `createdBy` auto-population** — the `Created By` column type is now enforced server-side: the row creation API automatically fills it with the authenticated user, even if the client-side fetch hasn't completed yet.
+- **Certificate key auto-linking** — importing a certificate (PEM, DER, PKCS7, PKCS12) now automatically links it to an existing private key in the store by matching public key SHA-256 fingerprints. PFX export includes the private key when a match exists.
+
+### Fixed
+- **On-Call page module-not-found errors** — `oncall/page.tsx` and `OnCallDetailModal.tsx` imported from the server-only `@/lib/oncall` module, pulling `fs` and `better-sqlite3` into the client bundle. Moved client-safe types and pure functions to `@/lib/oncall-shared`.
+- **Admin tab bar text wrapping** — widened the admin page container from `max-w-4xl` to `max-w-5xl`, added `whitespace-nowrap` to tab buttons, and enabled `overflow-x-auto` so all 8 tabs display on a single line.
+- **Editor save race condition losing database blocks** — when a user created a database via the `/database` slash command and navigated to another document before the 10-second debounced save fired, the old document's content was never saved. The debounced save now captures the save handler at edit time and flushes any pending save before loading new content.
+
+---
+
 ## [0.2.11] — 2026-03-20
 
 ### Added

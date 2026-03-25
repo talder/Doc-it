@@ -131,8 +131,9 @@ function AdminContent() {
   const [storageLoaded, setStorageLoaded] = useState(false);
 
   // Changelog settings state
-  const [changelogSettings, setChangelogSettings] = useState({ retentionYears: 5 });
+  const [changelogSettings, setChangelogSettings] = useState({ retentionYears: 5, categories: ["Disk", "Network", "Security", "Software", "Hardware", "Configuration", "Other"] as string[] });
   const [changelogSettingsLoaded, setChangelogSettingsLoaded] = useState(false);
+  const [newChangelogCategory, setNewChangelogCategory] = useState("");
 
   // Active Directory settings state
   const defaultAdConfig: Omit<AdConfig, "bindPasswordEncrypted"> & { bindPasswordSet?: boolean; bindPassword?: string } = {
@@ -178,6 +179,12 @@ function AdminContent() {
   const [dashAccessLoaded, setDashAccessLoaded] = useState(false);
   const [newDashUser, setNewDashUser] = useState("");
   const [newDashAdGroup, setNewDashAdGroup] = useState("");
+
+  // On-Call settings state
+  const [onCallSettings, setOnCallSettings] = useState({ allowedUsers: [] as string[], emailEnabled: false, emailRecipients: [] as string[], emailSendTime: "08:00" });
+  const [onCallSettingsLoaded, setOnCallSettingsLoaded] = useState(false);
+  const [newOnCallUser, setNewOnCallUser] = useState("");
+  const [newOnCallRecipient, setNewOnCallRecipient] = useState("");
 
   // Crash logs state
   const [crashEntries, setCrashEntries] = useState<CrashEntry[]>([]);
@@ -261,7 +268,11 @@ function AdminContent() {
   const fetchChangelogSettings = useCallback(async () => {
     const res = await fetch("/api/settings/changelog");
     if (res.ok) {
-      setChangelogSettings(await res.json());
+      const data = await res.json();
+      setChangelogSettings({
+        retentionYears: data.retentionYears ?? 5,
+        categories: data.categories ?? ["Disk", "Network", "Security", "Software", "Hardware", "Configuration", "Other"],
+      });
       setChangelogSettingsLoaded(true);
     }
   }, []);
@@ -289,6 +300,20 @@ function AdminContent() {
     if (res.ok) {
       setDashAccess(await res.json());
       setDashAccessLoaded(true);
+    }
+  }, []);
+
+  const fetchOnCallSettings = useCallback(async () => {
+    const res = await fetch("/api/oncall/settings");
+    if (res.ok) {
+      const data = await res.json();
+      setOnCallSettings({
+        allowedUsers: data.allowedUsers ?? [],
+        emailEnabled: data.emailEnabled ?? false,
+        emailRecipients: data.emailRecipients ?? [],
+        emailSendTime: data.emailSendTime ?? "08:00",
+      });
+      setOnCallSettingsLoaded(true);
     }
   }, []);
 
@@ -586,7 +611,7 @@ function AdminContent() {
 
   return (
     <div className="min-h-screen bg-surface-alt">
-      <div className="max-w-4xl mx-auto py-8 px-4">
+      <div className="max-w-5xl mx-auto py-8 px-4">
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">
           <button
@@ -603,10 +628,10 @@ function AdminContent() {
         {success && <div className="mb-4 px-4 py-3 bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg">{success}</div>}
 
         {/* Tabs */}
-        <div className="flex gap-1 mb-6 bg-gray-100 p-1 rounded-lg w-fit">
+        <div className="flex gap-1 mb-6 bg-gray-100 p-1 rounded-lg overflow-x-auto">
           <button
             onClick={() => setTab("users")}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
               tab === "users" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
             }`}
           >
@@ -615,7 +640,7 @@ function AdminContent() {
           </button>
           <button
             onClick={() => setTab("spaces")}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
               tab === "spaces" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
             }`}
           >
@@ -624,7 +649,7 @@ function AdminContent() {
           </button>
           <button
             onClick={() => { setTab("service-keys"); if (!svcKeysLoaded) fetchServiceKeys(); }}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
               tab === "service-keys" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
             }`}
           >
@@ -633,7 +658,7 @@ function AdminContent() {
           </button>
           <button
             onClick={() => { setTab("groups"); if (!groupsLoaded) fetchUserGroups(); }}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
               tab === "groups" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
             }`}
           >
@@ -641,8 +666,8 @@ function AdminContent() {
             Groups
           </button>
           <button
-            onClick={() => { setTab("settings"); if (!smtpLoaded) fetchSmtp(); fetchKeyInfo(); if (!storageLoaded) fetchStorageConfig(); if (!changelogSettingsLoaded) fetchChangelogSettings(); if (!adLoaded) fetchAdConfig(); if (!dashAccessLoaded) fetchDashboardAccess(); }}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+            onClick={() => { setTab("settings"); if (!smtpLoaded) fetchSmtp(); fetchKeyInfo(); if (!storageLoaded) fetchStorageConfig(); if (!changelogSettingsLoaded) fetchChangelogSettings(); if (!adLoaded) fetchAdConfig(); if (!dashAccessLoaded) fetchDashboardAccess(); if (!onCallSettingsLoaded) fetchOnCallSettings(); }}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
               tab === "settings" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
             }`}
           >
@@ -658,7 +683,7 @@ function AdminContent() {
                 fetchAuditLogs(explorerFilters, 1);
               }
             }}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
               tab === "audit" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
             }`}
           >
@@ -667,7 +692,7 @@ function AdminContent() {
           </button>
           <button
             onClick={() => { setTab("backup"); if (!backupLoaded) fetchBackup(); }}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
               tab === "backup" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
             }`}
           >
@@ -676,7 +701,7 @@ function AdminContent() {
           </button>
           <button
             onClick={() => { setTab("crash-logs"); if (!crashLoaded) fetchCrashLogs(crashFilters, 1); }}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
               tab === "crash-logs" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
             }`}
           >
@@ -2733,6 +2758,95 @@ function AdminContent() {
             </div>
           </div>
 
+          {/* On-Call settings */}
+          <div className="bg-surface rounded-xl shadow-sm border border-border mt-6">
+            <div className="px-6 py-4 border-b border-border">
+              <h2 className="text-lg font-semibold text-text-primary">On-Call Reports</h2>
+              <p className="text-xs text-text-muted mt-1">Configure access and weekly email digest for the On-Call Reports module.</p>
+            </div>
+            <div className="px-6 py-4 space-y-6">
+              {/* Allowed users */}
+              <div>
+                <h3 className="text-sm font-semibold text-text-primary mb-1">Allowed Users</h3>
+                <p className="text-xs text-text-muted mb-3">Users who can access and create on-call reports. Admins always have access.</p>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {onCallSettings.allowedUsers.map((u, i) => (
+                    <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-accent/10 text-accent rounded-full">
+                      {u}
+                      <button onClick={() => setOnCallSettings({ ...onCallSettings, allowedUsers: onCallSettings.allowedUsers.filter((_, j) => j !== i) })} className="hover:text-red-600"><X className="w-3 h-3" /></button>
+                    </span>
+                  ))}
+                  {onCallSettings.allowedUsers.length === 0 && <span className="text-xs text-text-muted">No users configured (admins only)</span>}
+                </div>
+                <div className="flex gap-2 max-w-xs">
+                  <input type="text" value={newOnCallUser} onChange={(e) => setNewOnCallUser(e.target.value)} placeholder="username" className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" onKeyDown={(e) => { if (e.key === "Enter" && newOnCallUser.trim()) { setOnCallSettings({ ...onCallSettings, allowedUsers: [...onCallSettings.allowedUsers, newOnCallUser.trim()] }); setNewOnCallUser(""); } }} />
+                  <button disabled={!newOnCallUser.trim()} onClick={() => { setOnCallSettings({ ...onCallSettings, allowedUsers: [...onCallSettings.allowedUsers, newOnCallUser.trim()] }); setNewOnCallUser(""); }} className="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50">Add</button>
+                </div>
+              </div>
+
+              {/* Email digest */}
+              <div>
+                <h3 className="text-sm font-semibold text-text-primary mb-1">Weekly Email Digest</h3>
+                <p className="text-xs text-text-muted mb-3">Send a summary of last week's calls every Monday morning. Requires SMTP to be configured.</p>
+                <label className="flex items-center gap-2 text-sm text-text-secondary mb-3">
+                  <input type="checkbox" checked={onCallSettings.emailEnabled} onChange={(e) => setOnCallSettings({ ...onCallSettings, emailEnabled: e.target.checked })} className="rounded" />
+                  Enable weekly email digest
+                </label>
+                <div className="max-w-xs mb-3">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Send time (Monday)</label>
+                  <input type="time" value={onCallSettings.emailSendTime} onChange={(e) => setOnCallSettings({ ...onCallSettings, emailSendTime: e.target.value })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Recipients</label>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {onCallSettings.emailRecipients.map((r, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-gray-100 text-gray-700 rounded-full border border-border">
+                        {r}
+                        <button onClick={() => setOnCallSettings({ ...onCallSettings, emailRecipients: onCallSettings.emailRecipients.filter((_, j) => j !== i) })} className="hover:text-red-600"><X className="w-3 h-3" /></button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex gap-2 max-w-xs">
+                    <input type="email" value={newOnCallRecipient} onChange={(e) => setNewOnCallRecipient(e.target.value)} placeholder="email@example.com" className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" onKeyDown={(e) => { if (e.key === "Enter" && newOnCallRecipient.trim()) { setOnCallSettings({ ...onCallSettings, emailRecipients: [...onCallSettings.emailRecipients, newOnCallRecipient.trim()] }); setNewOnCallRecipient(""); } }} />
+                    <button disabled={!newOnCallRecipient.trim()} onClick={() => { setOnCallSettings({ ...onCallSettings, emailRecipients: [...onCallSettings.emailRecipients, newOnCallRecipient.trim()] }); setNewOnCallRecipient(""); }} className="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50">Add</button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={async () => {
+                    const res = await fetch("/api/oncall/settings", {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(onCallSettings),
+                    });
+                    if (res.ok) flash("On-Call settings saved", "success");
+                    else { const d = await res.json(); flash(d.error || "Failed to save", "error"); }
+                  }}
+                  className="px-4 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors"
+                >
+                  Save On-Call Settings
+                </button>
+                <button
+                  onClick={async () => {
+                    const res = await fetch("/api/oncall/send-report", { method: "POST" });
+                    if (res.ok) {
+                      const d = await res.json();
+                      flash(`Weekly report sent to ${d.sent}/${d.total} recipients (${d.from} – ${d.to})`, "success");
+                    } else {
+                      const d = await res.json();
+                      flash(d.error || "Failed to send report", "error");
+                    }
+                  }}
+                  className="px-4 py-2 text-sm font-medium border border-border text-text-muted rounded-lg hover:bg-muted transition-colors"
+                >
+                  Send Weekly Report Now
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* Change Log settings */}
           <div className="bg-surface rounded-xl shadow-sm border border-border mt-6">
             <div className="px-6 py-4 border-b border-border">
@@ -2747,11 +2861,68 @@ function AdminContent() {
                   min={1}
                   max={99}
                   value={changelogSettings.retentionYears}
-                  onChange={(e) => setChangelogSettings({ retentionYears: parseInt(e.target.value) || 5 })}
+                  onChange={(e) => setChangelogSettings({ ...changelogSettings, retentionYears: parseInt(e.target.value) || 5 })}
                   className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <p className="text-xs text-text-muted mt-1">Change entries older than this are removed. Default: 5 years.</p>
               </div>
+
+              {/* Categories */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-2">Categories</label>
+                <p className="text-xs text-text-muted mb-2">Categories available when logging a change. Must have at least one.</p>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {changelogSettings.categories.map((cat) => (
+                    <span key={cat} className="flex items-center gap-1 px-2.5 py-1 bg-gray-100 text-gray-700 text-sm rounded-full border border-border">
+                      {cat}
+                      {changelogSettings.categories.length > 1 && (
+                        <button
+                          onClick={() => setChangelogSettings({
+                            ...changelogSettings,
+                            categories: changelogSettings.categories.filter((c) => c !== cat),
+                          })}
+                          className="ml-1 text-gray-400 hover:text-red-500 transition-colors"
+                          title={`Remove "${cat}"`}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </span>
+                  ))}
+                </div>
+                <div className="flex gap-2 max-w-xs">
+                  <input
+                    type="text"
+                    value={newChangelogCategory}
+                    onChange={(e) => setNewChangelogCategory(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        const val = newChangelogCategory.trim();
+                        if (val && !changelogSettings.categories.includes(val)) {
+                          setChangelogSettings({ ...changelogSettings, categories: [...changelogSettings.categories, val] });
+                          setNewChangelogCategory("");
+                        }
+                      }
+                    }}
+                    placeholder="New category…"
+                    className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <button
+                    onClick={() => {
+                      const val = newChangelogCategory.trim();
+                      if (val && !changelogSettings.categories.includes(val)) {
+                        setChangelogSettings({ ...changelogSettings, categories: [...changelogSettings.categories, val] });
+                        setNewChangelogCategory("");
+                      }
+                    }}
+                    disabled={!newChangelogCategory.trim() || changelogSettings.categories.includes(newChangelogCategory.trim())}
+                    className="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50 transition-colors"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+
               <button
                 onClick={async () => {
                   const res = await fetch("/api/settings/changelog", {

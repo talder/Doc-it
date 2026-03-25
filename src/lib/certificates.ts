@@ -920,6 +920,19 @@ export async function importCert(
     }
   }
 
+  // Link certificates to existing private keys by matching public key fingerprint
+  for (const rec of records) {
+    if (!rec.keyId) {
+      try {
+        const certObj = new x509.X509Certificate(rec.pem);
+        const spkiDer = certObj.publicKey.rawData;
+        const pubFingerprint = createHash("sha256").update(Buffer.from(spkiDer)).digest("hex");
+        const matchingKey = store.keys.find((k) => k.fingerprint === pubFingerprint);
+        if (matchingKey) rec.keyId = matchingKey.id;
+      } catch { /* skip if public key extraction fails */ }
+    }
+  }
+
   // Link issuer IDs within imported batch and existing store
   const allCerts = [...store.certs, ...records];
   for (const rec of records) {

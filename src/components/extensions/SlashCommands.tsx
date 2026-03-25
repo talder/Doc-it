@@ -233,8 +233,8 @@ const getSlashCommands = (): SlashCommandItem[] => [
   },
   // ── Data / Docs ──────────────────────────────────────────────────────────────
   {
-    title: "Insert Database",
-    description: "Insert an existing database from this space",
+    title: "Insert Enhanced Table",
+    description: "Insert an existing enhanced table from this space",
     icon: <Database className="h-4 w-4" style={{ color: "#14b8a6" }} />,
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).run();
@@ -257,8 +257,8 @@ const getSlashCommands = (): SlashCommandItem[] => [
     },
   },
   {
-    title: "New Database",
-    description: "Create and insert a new database",
+    title: "New Enhanced Table",
+    description: "Create and insert a new enhanced table",
     icon: <Database className="h-4 w-4" />,
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).run();

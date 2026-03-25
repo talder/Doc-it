@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Database, Bug, Users, FolderKanban, CalendarDays, X } from "lucide-react";
 
 const TEMPLATES = [
-  { id: "", label: "Empty", description: "Blank database with default columns", icon: Database },
+  { id: "", label: "Empty", description: "Blank enhanced table with default columns", icon: Database },
   { id: "bug-tracker", label: "Bug Tracker", description: "Title, Status, Priority, Assignee, Due Date", icon: Bug },
   { id: "project-tracker", label: "Project Tracker", description: "Task, Status, Owner, Start/End Date, Progress", icon: FolderKanban },
   { id: "meeting-notes", label: "Meeting Notes", description: "Topic, Date, Attendees, Notes, Action Items", icon: Users },
@@ -48,24 +48,24 @@ export default function DatabaseCreateModal({ isOpen, onClose, onCreate, mode = 
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-surface rounded-xl shadow-xl border border-border w-full max-w-md" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h2 className="text-sm font-semibold text-text-primary">{isEdit ? "Edit Database" : "Create Database"}</h2>
+          <h2 className="text-sm font-semibold text-text-primary">{isEdit ? "Edit Enhanced Table" : "Create Enhanced Table"}</h2>
           <button onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
         <div className="px-5 py-4 space-y-4">
           <div>
-            <label className="block text-xs font-medium text-text-muted mb-1.5">Database Name</label>
+            <label className="block text-xs font-medium text-text-muted mb-1.5">Table Name</label>
             <input
               autoFocus
               className={`w-full px-3 py-2 text-sm rounded-lg border bg-input-bg text-text-primary outline-none focus:border-accent${isDuplicate ? " border-red-400" : " border-border"}`}
-              placeholder="My Database"
+              placeholder="My Enhanced Table"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); if (e.key === "Escape") onClose(); }}
             />
             {isDuplicate && (
-              <p className="text-xs text-red-400 mt-1">A database with this name already exists</p>
+              <p className="text-xs text-red-400 mt-1">A table with this name already exists</p>
             )}
           </div>
           {!isEdit && (

@@ -114,7 +114,7 @@ export default function TrashBinModal({ isOpen, spaceSlug, onClose, onRestored }
                     <p className="text-sm font-medium text-text-primary truncate">
                       {item.name}
                       {item.isTemplate && <span className="text-[10px] text-text-muted ml-1">(template)</span>}
-                      {item.itemType === "database" && <span className="text-[10px] text-text-muted ml-1">(database)</span>}
+                      {item.itemType === "database" && <span className="text-[10px] text-text-muted ml-1">(enhanced table)</span>}
                     </p>
                     <p className="text-xs text-text-muted truncate">
                       {item.itemType === "database" ? "" : `${item.category} · `}deleted by {item.deletedBy} · {timeAgo(item.deletedAt)}

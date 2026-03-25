@@ -48,7 +48,7 @@ export default function SidebarNavigation({ mode, onModeChange, tagCount, templa
               ? "bg-[#14b8a6] text-white"
               : "text-text-muted hover:bg-muted hover:text-text-secondary"
           }`}
-          title="Databases"
+          title="Enhanced Tables"
         >
           <Database className="w-4 h-4" />
         </button>

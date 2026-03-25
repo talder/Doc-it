@@ -1210,11 +1210,14 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
     onUpdate: ({ editor }) => {
       if (isLoadingRef.current) return;
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      // Capture the current save handler so the debounced save targets the
+      // correct document even if the user switches docs before it fires.
+      const capturedSave = onSaveRef.current;
       const doSave = () => {
         try {
           const html = editor.getHTML();
           const md = turndown.turndown(html);
-          onSaveRef.current(md);
+          capturedSave(md);
         } catch {}
         pendingSaveFnRef.current = null;
       };
@@ -1232,6 +1235,16 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
   // Load markdown content
   useEffect(() => {
     if (!editor) return;
+    // Flush any pending debounced save for the PREVIOUS document before
+    // replacing the editor content. The pending doSave closure captured the
+    // old save handler and the editor still holds the old content, so the
+    // flush correctly saves the previous document.
+    if (saveTimeoutRef.current && pendingSaveFnRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+      try { pendingSaveFnRef.current(); } catch {}
+      pendingSaveFnRef.current = null;
+    }
     isLoadingRef.current = true;
     const html = marked.parse(initialMarkdown, { async: false }) as string;
     editor.commands.setContent(html);

@@ -115,7 +115,7 @@ export default function ArchiveModal({ isOpen, spaceSlug, onClose, onUnarchived 
                 <div>
                   <div className="flex items-center gap-1.5 mb-2">
                     <Database className="w-3.5 h-3.5" style={{ color: "#14b8a6" }} />
-                    <span className="text-xs font-medium text-text-muted uppercase tracking-wider">Databases</span>
+                    <span className="text-xs font-medium text-text-muted uppercase tracking-wider">Enhanced Tables</span>
                   </div>
                   <div className="space-y-1">
                     {archivedDbs.map((db) => (

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSpaceRole } from "@/lib/permissions";
+import { getCurrentUser } from "@/lib/auth";
 import { readDatabase, writeDatabase, generateId } from "@/lib/database";
 import type { DbRow } from "@/lib/types";
 
@@ -24,9 +25,19 @@ export async function POST(request: NextRequest, { params }: Params) {
   if (!db) return NextResponse.json({ error: "Database not found" }, { status: 404 });
 
   const { cells } = await request.json();
+
+  // Auto-populate createdBy columns with the authenticated user
+  const user = await getCurrentUser();
+  const mergedCells: Record<string, unknown> = { ...(cells || {}) };
+  for (const col of db.columns) {
+    if (col.type === "createdBy" && !mergedCells[col.id]) {
+      mergedCells[col.id] = user?.username || "";
+    }
+  }
+
   const row: DbRow = {
     id: generateId(),
-    cells: cells || {},
+    cells: mergedCells,
     createdAt: new Date().toISOString(),
   };
 

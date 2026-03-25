@@ -49,6 +49,8 @@ Doc-it is a self-hosted documentation platform built as a single **Next.js 16 Ap
 - `database.ts` — inline database CRUD (JSON files per space)
 - `journal.ts` — encrypted personal and space journals
 - `assets.ts` / `changelog.ts` — asset registry and change log modules
+- `oncall.ts` — on-call report CRUD, filtering, weekly email (server-only; imports `config.ts`)
+- `oncall-shared.ts` — client-safe on-call types and pure helpers (no server deps; safe to import from `"use client"` components)
 
 ### Component Organization (`src/components/`)
 

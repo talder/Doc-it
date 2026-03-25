@@ -8,8 +8,6 @@ import ChangeLogModal from "@/components/ChangeLogModal";
 import ChangeLogDetailModal from "@/components/ChangeLogDetailModal";
 import type { ChangeLogEntry, ChangeCategory } from "@/lib/changelog";
 
-const CATEGORIES: ChangeCategory[] = ["Disk", "Network", "Security", "Software", "Hardware", "Configuration", "Other"];
-
 type SortKey = "date" | "id" | "system" | "category" | "risk" | "status";
 type SortDir = "asc" | "desc";
 
@@ -20,6 +18,7 @@ export default function ChangeLogPage() {
 
   const [entries, setEntries] = useState<ChangeLogEntry[]>([]);
   const [knownSystems, setKnownSystems] = useState<string[]>([]);
+  const [categories, setCategories] = useState<string[]>(["Disk", "Network", "Security", "Software", "Hardware", "Configuration", "Other"]);
   const [loading, setLoading] = useState(true);
 
   // Filters
@@ -34,6 +33,14 @@ export default function ChangeLogPage() {
   // Modals
   const [showNewModal, setShowNewModal] = useState(false);
   const [detailEntry, setDetailEntry] = useState<ChangeLogEntry | null>(null);
+
+  // Fetch categories from settings on mount
+  useEffect(() => {
+    fetch("/api/settings/changelog")
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d?.categories?.length) setCategories(d.categories); })
+      .catch(() => {});
+  }, []);
 
   // Fetch entries
   const fetchData = useCallback(async () => {
@@ -148,7 +155,7 @@ export default function ChangeLogPage() {
               >
                 All
               </button>
-              {CATEGORIES.map((c) => (
+              {categories.map((c) => (
                 <button
                   key={c}
                   className={`cl-cat-btn${categoryFilter === c ? " cl-cat-btn--active" : ""}`}
@@ -224,6 +231,7 @@ export default function ChangeLogPage() {
         onClose={() => setShowNewModal(false)}
         onSave={handleSave}
         knownSystems={knownSystems}
+        categories={categories}
       />
       <ChangeLogDetailModal
         entry={detailEntry}
