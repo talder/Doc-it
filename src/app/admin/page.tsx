@@ -637,9 +637,13 @@ function AdminContent() {
           <h1 className="text-2xl font-bold text-text-primary">Administration</h1>
         </div>
 
-        {/* Feedback */}
-        {error && <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">{error}</div>}
-        {success && <div className="mb-4 px-4 py-3 bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg">{success}</div>}
+        {/* Toast notifications — fixed bottom-right */}
+        {(error || success) && (
+          <div className="fixed bottom-6 right-6 z-50 max-w-sm animate-[slideUp_0.2s_ease-out]">
+            {error && <div className="px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg shadow-lg">{error}</div>}
+            {success && <div className="px-4 py-3 bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg shadow-lg">{success}</div>}
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="flex gap-1 mb-6 bg-gray-100 p-1 rounded-lg overflow-x-auto">
