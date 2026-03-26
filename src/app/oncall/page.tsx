@@ -81,7 +81,7 @@ const heatmapCounts = useMemo(() => getHeatmapCounts(entries, 90), [entries]);
 
   const totalMinutes = useMemo(() => entries.reduce((s, e) => s + e.workingMinutes, 0), [entries]);
 
-  const handleSave = async (data: { date: string; time: string; description: string; workingTime: string; assistedBy: string[]; solution: string }) => {
+  const handleSave = async (data: { date: string; time: string; description: string; workingTime: string; assistedBy: string[]; solution: string; linkedDoc?: { name: string; category: string; spaceSlug: string } }) => {
     await fetch("/api/oncall", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X, Pencil, Check, Loader2 } from "lucide-react";
+import { X, Pencil, Check, Loader2, FileText } from "lucide-react";
 import { MiniEditor } from "./OnCallModal";
 import type { OnCallEntry } from "@/lib/oncall-shared";
 import { formatWorkingTime } from "@/lib/oncall-shared";
@@ -123,6 +123,20 @@ export default function OnCallDetailModal({ entry, onClose, onSolutionSaved }: O
                 <span className="cl-confirm-label">Problem</span>
                 <div dangerouslySetInnerHTML={{ __html: entry.description }} className="oc-confirm-html" />
               </div>
+
+              {entry.linkedDoc && (
+                <div className="cl-confirm-row">
+                  <span className="cl-confirm-label">Linked documentation</span>
+                  <a
+                    href={`/?space=${encodeURIComponent(entry.linkedDoc.spaceSlug)}&doc=${encodeURIComponent(entry.linkedDoc.name)}&cat=${encodeURIComponent(entry.linkedDoc.category)}`}
+                    className="cl-link flex items-center gap-1"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <FileText className="w-3 h-3" />
+                    {entry.linkedDoc.name}
+                  </a>
+                </div>
+              )}
 
               {/* Solution — read-only with edit button */}
               <div className="cl-confirm-row cl-confirm-row--block">

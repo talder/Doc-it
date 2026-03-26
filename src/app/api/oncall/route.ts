@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { date, time, description, workingTime, solution, assistedBy } = body;
+  const { date, time, description, workingTime, solution, assistedBy, linkedDoc } = body;
 
   if (!date || !time || !description?.trim()) {
     return NextResponse.json(
@@ -59,6 +59,11 @@ export async function POST(request: NextRequest) {
     : [];
 
   // Registrar is always forced to the current user
+  // Validate linkedDoc if provided
+  const validLinkedDoc = linkedDoc && typeof linkedDoc === "object" && linkedDoc.name && linkedDoc.spaceSlug
+    ? { name: String(linkedDoc.name), category: String(linkedDoc.category || ""), spaceSlug: String(linkedDoc.spaceSlug) }
+    : undefined;
+
   const entry = await addOnCallEntry({
     registrar: user.username,
     date,
@@ -67,6 +72,7 @@ export async function POST(request: NextRequest) {
     workingMinutes,
     assistedBy: validAssisted,
     solution: solution ?? "",
+    linkedDoc: validLinkedDoc,
   });
 
   return NextResponse.json({ entry }, { status: 201 });

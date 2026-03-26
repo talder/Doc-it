@@ -8,6 +8,7 @@ import {
   buildWeeklyReportHtml,
   getPreviousWeekRange,
 } from "@/lib/oncall";
+import { getUsers } from "@/lib/auth";
 import { sendMail } from "@/lib/email";
 
 /** POST /api/oncall/send-report — manually trigger weekly report (admin only) */
@@ -23,7 +24,9 @@ export async function POST() {
   const { from, to } = getPreviousWeekRange(new Date());
   const data = await readOnCallData();
   const entries = filterOnCallEntries(data.entries, { from, to });
-  const html = buildWeeklyReportHtml(entries, from, to);
+  const users = await getUsers();
+  const nameMap = Object.fromEntries(users.map((u) => [u.username, u.fullName || u.username]));
+  const html = buildWeeklyReportHtml(entries, from, to, nameMap);
   const subject = `On-Call Weekly Report: ${from} – ${to}`;
 
   let sent = 0;

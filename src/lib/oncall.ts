@@ -17,6 +17,7 @@ export interface OnCallEntry {
   workingMinutes: number; // duration in minutes
   assistedBy: string[];   // usernames of persons called for assistance
   solution: string;       // HTML (TipTap), editable post-creation
+  linkedDoc?: { name: string; category: string; spaceSlug: string };
   createdAt: string;      // ISO timestamp
   updatedAt: string;      // ISO timestamp, bumped on solution edit
 }
@@ -107,6 +108,7 @@ export interface CreateOnCallFields {
   workingMinutes: number;
   assistedBy?: string[];
   solution?: string;
+  linkedDoc?: { name: string; category: string; spaceSlug: string };
 }
 
 export async function addOnCallEntry(fields: CreateOnCallFields): Promise<OnCallEntry> {
@@ -122,6 +124,7 @@ export async function addOnCallEntry(fields: CreateOnCallFields): Promise<OnCall
     workingMinutes: fields.workingMinutes,
     assistedBy: fields.assistedBy ?? [],
     solution: fields.solution ?? "",
+    ...(fields.linkedDoc ? { linkedDoc: fields.linkedDoc } : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -199,9 +202,11 @@ export function getPreviousWeekRange(now: Date): { from: string; to: string } {
   };
 }
 
-/** Build the HTML body for the weekly digest email (per-registrar breakdown). */
-export function buildWeeklyReportHtml(entries: OnCallEntry[], from: string, to: string): string {
+/** Build the HTML body for the weekly digest email (per-registrar breakdown).
+ *  `nameMap` maps username → display name (full name); falls back to username. */
+export function buildWeeklyReportHtml(entries: OnCallEntry[], from: string, to: string, nameMap: Record<string, string> = {}): string {
   const totalMinutes = entries.reduce((s, e) => s + e.workingMinutes, 0);
+  const dn = (username: string) => nameMap[username] || username;
   const plain = (html: string) =>
     html
       .replace(/<[^>]+>/g, " ")
@@ -258,10 +263,11 @@ export function buildWeeklyReportHtml(entries: OnCallEntry[], from: string, to: 
         <td style="${tdStyle};font-family:monospace;font-size:0.8rem">${e.id}</td>
         <td style="${tdStyle}">${e.date} ${e.time}</td>
         <td style="${tdStyle};white-space:nowrap">${formatWorkingTime(e.workingMinutes)}</td>
-        <td style="${tdStyle}">${(e.assistedBy ?? []).join(", ") || "—"}</td>
+        <td style="${tdStyle}">${(e.assistedBy ?? []).map(dn).join(", ") || "—"}</td>
         <td style="${tdStyle}">${plain(e.description).slice(0, 120)}${plain(e.description).length > 120 ? "…" : ""}</td>
         <td style="${tdStyle}">${plain(e.solution).slice(0, 100)}${plain(e.solution).length > 100 ? "…" : ""}</td>
-      </tr>`,
+        <td style="${tdStyle}">${e.linkedDoc ? `<a href="/?space=${encodeURIComponent(e.linkedDoc.spaceSlug)}&doc=${encodeURIComponent(e.linkedDoc.name)}&cat=${encodeURIComponent(e.linkedDoc.category)}" style="color:#1d4ed8;text-decoration:underline">${e.linkedDoc.name}</a>` : "—"}</td>
+      </tr>`
         )
         .join("");
 
@@ -277,7 +283,7 @@ export function buildWeeklyReportHtml(entries: OnCallEntry[], from: string, to: 
         .map(
           ([name, count]) => `
       <tr>
-        <td style="${tdStyle}">${name}</td>
+        <td style="${tdStyle}">${dn(name)}</td>
         <td style="${tdStyle};text-align:center">${count}</td>
       </tr>`,
         )
@@ -285,7 +291,7 @@ export function buildWeeklyReportHtml(entries: OnCallEntry[], from: string, to: 
 
       return `
   <div style="margin-top:28px;padding-top:20px;border-top:2px solid #e5e7eb">
-    <h3 style="color:#1d4ed8;margin-bottom:4px">👤 ${registrar}</h3>
+    <h3 style="color:#1d4ed8;margin-bottom:4px">👤 ${dn(registrar)}</h3>
     <p style="color:#374151;margin-top:4px">Calls: <strong>${regEntries.length}</strong> &nbsp;|&nbsp; Total time: <strong>${formatWorkingTime(regTotal)}</strong></p>
 
     <table style="width:100%;border-collapse:collapse;font-size:0.875rem;margin-bottom:16px">
@@ -297,6 +303,7 @@ export function buildWeeklyReportHtml(entries: OnCallEntry[], from: string, to: 
           <th style="${thStyle}">Assisted By</th>
           <th style="${thStyle}">Problem</th>
           <th style="${thStyle}">Solution</th>
+          <th style="${thStyle}">Doc</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>

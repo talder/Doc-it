@@ -237,7 +237,10 @@ setInterval(async () => {
     const { from, to } = getPreviousWeekRange(now);
     const data = await readOnCallData();
     const entries = filterOnCallEntries(data.entries, { from, to });
-    const html = buildWeeklyReportHtml(entries, from, to);
+    const { getUsers } = await import("./lib/auth");
+    const users = await getUsers();
+    const nameMap = Object.fromEntries(users.map((u: { username: string; fullName?: string | null }) => [u.username, u.fullName || u.username]));
+    const html = buildWeeklyReportHtml(entries, from, to, nameMap);
     const subject = `On-Call Weekly Report: ${from} \u2013 ${to}`;
 
     let sent = 0;

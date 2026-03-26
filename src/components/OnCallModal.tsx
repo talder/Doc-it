@@ -5,7 +5,8 @@ import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import Underline from "@tiptap/extension-underline";
-import { X, AlertTriangle, Bold, Italic, UnderlineIcon, List, ListOrdered, Link2, ChevronDown, Check } from "lucide-react";
+import { X, AlertTriangle, Bold, Italic, UnderlineIcon, List, ListOrdered, Link2, ChevronDown, Check, FileText } from "lucide-react";
+import type { OnCallLinkedDoc } from "@/lib/oncall-shared";
 
 // ── Minimal rich-text toolbar + editor ───────────────────────────────────────
 
@@ -73,6 +74,7 @@ export interface OnCallFormData {
   workingTime: string;
   assistedBy: string[];
   solution: string;
+  linkedDoc?: OnCallLinkedDoc;
 }
 
 interface OnCallModalProps {
@@ -98,6 +100,13 @@ export default function OnCallModal({ isOpen, onClose, onSave, currentUser }: On
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerFilter, setPickerFilter] = useState("");
 
+  // Linked doc picker
+  const [linkedDoc, setLinkedDoc] = useState<OnCallLinkedDoc | null>(null);
+  const [docPickerOpen, setDocPickerOpen] = useState(false);
+  const [docPickerFilter, setDocPickerFilter] = useState("");
+  const [availableSpaces, setAvailableSpaces] = useState<{ slug: string; name: string }[]>([]);
+  const [availableDocs, setAvailableDocs] = useState<{ name: string; category: string; space: string }[]>([]);
+
   useEffect(() => {
     if (isOpen) {
       setFormStep("form");
@@ -107,14 +116,37 @@ export default function OnCallModal({ isOpen, onClose, onSave, currentUser }: On
       setSolution("");
       setWorkingTime("");
       setAssistedBy([]);
+      setLinkedDoc(null);
       setSaving(false);
       setWtError("");
       setPickerOpen(false);
       setPickerFilter("");
+      setDocPickerOpen(false);
+      setDocPickerFilter("");
       // Fetch user list
       fetch("/api/oncall/users")
         .then((r) => r.ok ? r.json() : { users: [] })
         .then((d) => setAllUsers(d.users ?? []))
+        .catch(() => {});
+      // Fetch spaces + docs for linked doc picker
+      fetch("/api/spaces")
+        .then((r) => r.ok ? r.json() : [])
+        .then(async (spaces: { slug: string; name: string }[]) => {
+          setAvailableSpaces(spaces);
+          const allDocs: { name: string; category: string; space: string }[] = [];
+          for (const s of spaces) {
+            try {
+              const res = await fetch(`/api/spaces/${s.slug}/init`);
+              if (res.ok) {
+                const d = await res.json();
+                for (const doc of (d.docs ?? [])) {
+                  allDocs.push({ name: doc.name, category: doc.category, space: s.slug });
+                }
+              }
+            } catch {}
+          }
+          setAvailableDocs(allDocs);
+        })
         .catch(() => {});
     }
   }, [isOpen]);
@@ -132,7 +164,7 @@ export default function OnCallModal({ isOpen, onClose, onSave, currentUser }: On
 
   const handleConfirm = async () => {
     setSaving(true);
-    await onSave({ date, time, description, workingTime, assistedBy, solution });
+    await onSave({ date, time, description, workingTime, assistedBy, solution, linkedDoc: linkedDoc ?? undefined });
     setSaving(false);
     onClose();
   };
@@ -237,6 +269,65 @@ export default function OnCallModal({ isOpen, onClose, onSave, currentUser }: On
                 </div>
               </div>
               <div className="cl-field cl-field--full">
+                <label className="cl-label">Linked documentation <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(optional)</span></label>
+                <div className="oc-assisted-picker">
+                  {linkedDoc && (
+                    <div className="oc-assisted-chips">
+                      <span className="oc-assisted-chip">
+                        <FileText className="w-3 h-3" />
+                        {linkedDoc.name}
+                        <button type="button" onClick={() => setLinkedDoc(null)} className="oc-assisted-chip-x"><X className="w-3 h-3" /></button>
+                      </span>
+                    </div>
+                  )}
+                  {!linkedDoc && (
+                    <div className="oc-assisted-dropdown-wrap">
+                      <button type="button" className="cl-input oc-assisted-trigger" onClick={() => setDocPickerOpen((v) => !v)}>
+                        <span className="text-text-muted text-xs">Select document…</span>
+                        <ChevronDown className="w-3.5 h-3.5 text-text-muted" />
+                      </button>
+                      {docPickerOpen && (
+                        <div className="oc-assisted-dropdown">
+                          <input
+                            type="text"
+                            className="oc-assisted-search"
+                            placeholder="Search documents…"
+                            value={docPickerFilter}
+                            onChange={(e) => setDocPickerFilter(e.target.value)}
+                            autoFocus
+                          />
+                          <div className="oc-assisted-options">
+                            {availableDocs
+                              .filter((d) => {
+                                if (!docPickerFilter) return true;
+                                const q = docPickerFilter.toLowerCase();
+                                return d.name.toLowerCase().includes(q) || d.category.toLowerCase().includes(q);
+                              })
+                              .slice(0, 50)
+                              .map((d) => (
+                                <button
+                                  key={`${d.space}/${d.category}/${d.name}`}
+                                  type="button"
+                                  className="oc-assisted-option"
+                                  onClick={() => {
+                                    setLinkedDoc({ name: d.name, category: d.category, spaceSlug: d.space });
+                                    setDocPickerOpen(false);
+                                    setDocPickerFilter("");
+                                  }}
+                                >
+                                  <span><FileText className="w-3 h-3 inline mr-1.5 opacity-50" />{d.name}</span>
+                                  <span className="text-[10px] text-text-muted">{d.category}{availableSpaces.length > 1 ? ` · ${d.space}` : ""}</span>
+                                </button>
+                              ))}
+                            {availableDocs.length === 0 && <div className="oc-assisted-empty">No documents found</div>}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="cl-field cl-field--full">
                 <label className="cl-label">Problem description *</label>
                 <MiniEditor placeholder="Describe the problem…" onChange={setDescription} />
               </div>
@@ -265,6 +356,12 @@ export default function OnCallModal({ isOpen, onClose, onSave, currentUser }: On
                 <div className="cl-confirm-row">
                   <span className="cl-confirm-label">Assisted by</span>
                   <span>{assistedBy.map((uname) => { const u = allUsers.find((x) => x.username === uname); return u?.fullName || uname; }).join(", ")}</span>
+                </div>
+              )}
+              {linkedDoc && (
+                <div className="cl-confirm-row">
+                  <span className="cl-confirm-label">Linked doc</span>
+                  <span className="flex items-center gap-1"><FileText className="w-3 h-3 text-accent" />{linkedDoc.name}</span>
                 </div>
               )}
               <div className="cl-confirm-row cl-confirm-row--block">
