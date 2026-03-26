@@ -81,7 +81,7 @@ const heatmapCounts = useMemo(() => getHeatmapCounts(entries, 90), [entries]);
 
   const totalMinutes = useMemo(() => entries.reduce((s, e) => s + e.workingMinutes, 0), [entries]);
 
-  const handleSave = async (data: { date: string; time: string; description: string; workingTime: string; solution: string }) => {
+  const handleSave = async (data: { date: string; time: string; description: string; workingTime: string; assistedBy: string[]; solution: string }) => {
     await fetch("/api/oncall", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -194,6 +194,7 @@ const heatmapCounts = useMemo(() => getHeatmapCounts(entries, 90), [entries]);
                     <th onClick={() => toggleSort("time")} className="cl-th cl-th--sort">Time <SortIcon col="time" /></th>
                     <th onClick={() => toggleSort("registrar")} className="cl-th cl-th--sort">Registrar <SortIcon col="registrar" /></th>
                     <th onClick={() => toggleSort("workingMinutes")} className="cl-th cl-th--sort">Working time <SortIcon col="workingMinutes" /></th>
+                    <th className="cl-th">Assisted by</th>
                     <th className="cl-th">Problem (summary)</th>
                     <th className="cl-th">Solution</th>
                   </tr>
@@ -210,6 +211,7 @@ const heatmapCounts = useMemo(() => getHeatmapCounts(entries, 90), [entries]);
                         <td className="cl-td">
                           <span className="oc-badge-time">{formatWorkingTime(e.workingMinutes)}</span>
                         </td>
+                        <td className="cl-td">{(e.assistedBy ?? []).join(", ") || "—"}</td>
                         <td className="cl-td cl-td--desc">{stripHtml(e.description).slice(0, 80)}{stripHtml(e.description).length > 80 ? "…" : ""}</td>
                         <td className="cl-td">
                           {hasSolution ? (

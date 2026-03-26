@@ -1,6 +1,6 @@
 # doc-it Documentation
 
-**doc-it** is a self-hosted, team-oriented documentation platform built with Next.js. It provides a rich Markdown editor, structured workspaces (Spaces), databases, tagging, document review workflows, NIS2-compliant audit logging, and a full REST API.
+**doc-it** is a self-hosted, team-oriented documentation platform built with Next.js. It provides a rich Markdown editor, structured workspaces (Spaces), enhanced tables, tagging, document review workflows, NIS2-compliant audit logging, and a full REST API.
 
 
 ---
@@ -14,7 +14,7 @@
   - [Spaces](features/spaces.md)
   - [Documents](features/documents.md)
   - [Templates](features/templates.md)
-  - [Databases](features/databases.md)
+  - [Enhanced Tables](features/enhanced-tables.md)
   - [Tags](features/tags.md)
   - [Review Workflow](features/review-workflow.md)
   - [Distraction-Free Mode](features/distraction-free.md)
@@ -26,6 +26,7 @@
   - [Asset Management](features/asset-management.md)
   - [Helpdesk & Ticketing](features/helpdesk.md)
   - [Backup & Recovery](features/backup.md)
+  - [Data Snapshots](features/snapshots.md)
   - [Crash Logging](features/crash-logging.md)
   - [Active Directory / LDAP](features/active-directory.md)
   - [Dashboard](features/dashboard.md)
@@ -35,7 +36,7 @@
   - [Spaces](api/spaces.md)
   - [Documents](api/documents.md)
   - [Users](api/users.md)
-  - [Databases](api/databases.md)
+  - [Enhanced Tables](api/enhanced-tables.md)
   - [Categories](api/categories.md)
   - [Audit](api/audit.md)
   - [Settings](api/settings.md)
@@ -84,11 +85,11 @@ Select your space from the top bar, click **New Document** in the sidebar, choos
 
 | Concept | Description |
 |---|---|
-| **Space** | An isolated workspace. Documents, databases, templates, and tags all live inside a space. |
+| **Space** | An isolated workspace. Documents, enhanced tables, templates, and tags all live inside a space. |
 | **Category** | A folder-like hierarchy inside a space to organise documents. |
 | **Document** | A Markdown file. Has status (draft / in-review / published), tags, revision history, and metadata. |
 | **Template** | A document blueprint with typed fields. Writers fill in the fields when creating a doc from the template. |
-| **Database** | A structured spreadsheet-style table with Table / Kanban / Calendar / Gallery views. |
+| **Enhanced Table** | A structured spreadsheet-style table with Table / Kanban / Calendar / Gallery views and drag-and-drop column reordering. |
 | **Service Key** | A long-lived bearer token for CI/CD or external integrations. |
 | **Audit Log** | An immutable, always-on JSONL log of every security-relevant event. Optional syslog forward. |
 | **Journal** | Personal (encrypted) or space-shared daily log entries with tags, mood, and templates. |

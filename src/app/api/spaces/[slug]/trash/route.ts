@@ -3,7 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import { requireSpaceRole } from "@/lib/permissions";
 import { ensureDir, readJsonConfig, getTrashDir, getCategoryDir } from "@/lib/config";
-import { getDatabaseDir } from "@/lib/database";
+import { getEnhancedTableDir } from "@/lib/enhanced-table";
 import { auditLog } from "@/lib/audit";
 import { invalidateSpaceCache } from "@/lib/space-cache";
 
@@ -124,7 +124,7 @@ export async function POST(request: NextRequest, { params }: Params) {
   if (action === "restore") {
     if (item.itemType === "database" && item.dbId) {
       // Restore database to .databases/ dir
-      const dbDir = getDatabaseDir(slug);
+      const dbDir = getEnhancedTableDir(slug);
       await ensureDir(dbDir);
       const destPath = path.join(dbDir, `${item.dbId}.db.json`);
       try {

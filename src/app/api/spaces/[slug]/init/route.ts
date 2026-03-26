@@ -14,7 +14,7 @@ import { requireSpaceRole } from "@/lib/permissions";
 import { getUsers } from "@/lib/auth";
 import { getSpaceDir } from "@/lib/config";
 import { readCustomization, readDocStatusMap } from "@/lib/config";
-import { listDatabases } from "@/lib/database";
+import { listEnhancedTables } from "@/lib/enhanced-table";
 import { scanDocs, buildCategoryTree, getTagsIndex, scanTemplates } from "@/lib/space-data";
 import { getSpaceCache, setSpaceCache } from "@/lib/space-cache";
 
@@ -48,7 +48,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
       scanTemplates(spaceDir, slug),
       getUsers(),
       readCustomization(slug),
-      listDatabases(slug),
+      listEnhancedTables(slug),
       readDocStatusMap(slug),
     ]);
 

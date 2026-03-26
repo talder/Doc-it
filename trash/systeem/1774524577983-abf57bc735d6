@@ -1,0 +1,91 @@
+{
+  "id": "abf57bc735d6",
+  "title": "sqdf",
+  "columns": [
+    {
+      "id": "cc28319ce877",
+      "name": "Title",
+      "type": "text",
+      "width": 220
+    },
+    {
+      "id": "9b1a2a84c17f",
+      "name": "Status",
+      "type": "select",
+      "options": [
+        "Open",
+        "In Progress",
+        "Resolved",
+        "Closed"
+      ],
+      "width": 120
+    },
+    {
+      "id": "b1580baa9db1",
+      "name": "Priority",
+      "type": "select",
+      "options": [
+        "Critical",
+        "High",
+        "Medium",
+        "Low"
+      ],
+      "width": 100
+    },
+    {
+      "id": "03b25b316c0a",
+      "name": "Assignee",
+      "type": "text",
+      "width": 120
+    },
+    {
+      "id": "15591d9959d6",
+      "name": "Due Date",
+      "type": "date",
+      "width": 120
+    }
+  ],
+  "rows": [
+    {
+      "id": "525156932f19",
+      "cells": {
+        "15591d9959d6": "2026-03-17"
+      },
+      "createdAt": "2026-03-26T08:42:32.877Z"
+    },
+    {
+      "id": "ff5ccc80f483",
+      "cells": {
+        "03b25b316c0a": "",
+        "15591d9959d6": "2026-03-13"
+      },
+      "createdAt": "2026-03-26T08:42:32.877Z"
+    },
+    {
+      "id": "cce5dfdd43bf",
+      "cells": {
+        "15591d9959d6": "2026-03-17"
+      },
+      "createdAt": "2026-03-26T08:42:32.877Z"
+    }
+  ],
+  "views": [
+    {
+      "id": "41616ee72a5a",
+      "name": "Table View",
+      "type": "table",
+      "filters": [],
+      "sorts": [],
+      "columnOrder": [
+        "cc28319ce877",
+        "9b1a2a84c17f",
+        "b1580baa9db1",
+        "03b25b316c0a",
+        "15591d9959d6"
+      ]
+    }
+  ],
+  "createdAt": "2026-03-26T08:42:32.877Z",
+  "createdBy": "ta4938",
+  "updatedAt": "2026-03-26T11:29:09.500Z"
+}

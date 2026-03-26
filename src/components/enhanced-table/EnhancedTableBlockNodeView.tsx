@@ -4,14 +4,14 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { NodeViewWrapper } from "@tiptap/react";
 import { Database as DbIcon, Pencil, Loader2, AlignJustify, CreditCard, Crop, Maximize2, X } from "lucide-react";
-import type { Database, DbColumn, DbRow, DbView, DbViewType, DbFilter, DbSort } from "@/lib/types";
-import DatabaseTable from "./DatabaseTable";
-import DatabaseKanban from "./DatabaseKanban";
-import DatabaseCalendar from "./DatabaseCalendar";
-import DatabaseGallery from "./DatabaseGallery";
-import DatabaseToolbar from "./DatabaseToolbar";
-import DatabaseFilter from "./DatabaseFilter";
-import DatabaseSort from "./DatabaseSort";
+import type { EnhancedTable, DbColumn, DbRow, DbView, DbViewType, DbFilter, DbSort } from "@/lib/types";
+import EnhancedTableGrid from "./EnhancedTableGrid";
+import EnhancedTableKanban from "./EnhancedTableKanban";
+import EnhancedTableCalendar from "./EnhancedTableCalendar";
+import EnhancedTableGallery from "./EnhancedTableGallery";
+import EnhancedTableToolbar from "./EnhancedTableToolbar";
+import EnhancedTableFilter from "./EnhancedTableFilter";
+import EnhancedTableSort from "./EnhancedTableSort";
 import { evaluateFormula } from "./FormulaEvaluator";
 
 interface NodeViewProps {
@@ -86,9 +86,9 @@ function applySearch(rows: DbRow[], search: string, columns: DbColumn[]): DbRow[
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps) {
+export function EnhancedTableBlockNodeView({ node, updateAttributes }: NodeViewProps) {
   const { dbId, viewId, spaceSlug } = node.attrs;
-  const [db, setDb] = useState<Database | null>(null);
+  const [db, setDb] = useState<EnhancedTable | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeViewId, setActiveViewId] = useState(viewId);
@@ -102,7 +102,7 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
   const [isModal, setIsModal] = useState(false);
   const displayMode = (node.attrs.displayMode as "inline" | "card" | "embed") || "inline";
 
-  const api = `/api/spaces/${encodeURIComponent(spaceSlug)}/databases/${encodeURIComponent(dbId)}`;
+  const api = `/api/spaces/${encodeURIComponent(spaceSlug)}/enhanced-tables/${encodeURIComponent(dbId)}`;
 
   const fetchDb = useCallback(async () => {
     try {
@@ -132,7 +132,7 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
     loadContext();
   }, [spaceSlug]);
 
-  const saveDb = useCallback(async (updated: Database) => {
+  const saveDb = useCallback(async (updated: EnhancedTable) => {
     setDb(updated);
     await fetch(api, {
       method: "PUT",
@@ -332,8 +332,8 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
   if (loading) {
     return (
       <NodeViewWrapper className="my-3">
-        <div className="db-block db-block-loading">
-          <Loader2 className="w-4 h-4 animate-spin" /> Loading database…
+        <div className="et-block et-block-loading">
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading enhanced table…
         </div>
       </NodeViewWrapper>
     );
@@ -342,8 +342,8 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
   if (error || !db) {
     return (
       <NodeViewWrapper className="my-3">
-        <div className="db-block db-block-error">
-          <DbIcon className="w-4 h-4" /> Database not found
+        <div className="et-block et-block-error">
+          <DbIcon className="w-4 h-4" /> Enhanced table not found
         </div>
       </NodeViewWrapper>
     );
@@ -354,12 +354,12 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
 
   // ── Shared header bar ────────────────────────────────────────────────────
   const headerBar = (
-    <div className="db-block-header">
+    <div className="et-block-header">
       <DbIcon className="w-4 h-4 text-accent" />
       {titleEdit ? (
         <input
           autoFocus
-          className="db-block-title-input"
+          className="et-block-title-input"
           value={titleValue}
           onChange={(e) => setTitleValue(e.target.value)}
           onBlur={() => {
@@ -376,37 +376,37 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
         />
       ) : (
         <span
-          className="db-block-title"
+          className="et-block-title"
           onDoubleClick={() => { setTitleValue(db.title); setTitleEdit(true); }}
         >
           {db.title}
         </span>
       )}
-      <div className="db-block-header-actions">
+      <div className="et-block-header-actions">
         <button
-          className={`db-display-btn${displayMode === "inline" ? " active" : ""}`}
+          className={`et-display-btn${displayMode === "inline" ? " active" : ""}`}
           onClick={() => handleSetDisplayMode("inline")}
           title="Inline – full table"
         >
           <AlignJustify className="w-3.5 h-3.5" />
         </button>
         <button
-          className={`db-display-btn${displayMode === "card" ? " active" : ""}`}
+          className={`et-display-btn${displayMode === "card" ? " active" : ""}`}
           onClick={() => handleSetDisplayMode("card")}
           title="Card – compact preview"
         >
           <CreditCard className="w-3.5 h-3.5" />
         </button>
         <button
-          className={`db-display-btn${displayMode === "embed" ? " active" : ""}`}
+          className={`et-display-btn${displayMode === "embed" ? " active" : ""}`}
           onClick={() => handleSetDisplayMode("embed")}
           title="Embed – scrollable frame"
         >
           <Crop className="w-3.5 h-3.5" />
         </button>
-        <span className="db-display-sep" />
+        <span className="et-display-sep" />
         <button
-          className="db-display-btn"
+          className="et-display-btn"
           onClick={() => setIsModal(true)}
           title="Open fullscreen"
         >
@@ -420,7 +420,7 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
   const dbViews = (
     <>
       {activeView && (
-        <DatabaseToolbar
+        <EnhancedTableToolbar
           db={db}
           activeViewId={activeView.id}
           onSwitchView={handleSwitchView}
@@ -441,7 +441,7 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
         />
       )}
       {showFilter && activeView && (
-        <DatabaseFilter
+        <EnhancedTableFilter
           columns={db.columns}
           filters={activeView.filters}
           filterLogic={activeView.filterLogic || "and"}
@@ -450,7 +450,7 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
         />
       )}
       {showSort && activeView && (
-        <DatabaseSort
+        <EnhancedTableSort
           columns={db.columns}
           sorts={activeView.sorts}
           onChange={handleSortChange}
@@ -458,7 +458,7 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
         />
       )}
       {activeView?.type === "table" && (
-        <DatabaseTable
+        <EnhancedTableGrid
           db={db}
           view={activeView}
           rows={computedRows}
@@ -476,7 +476,7 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
         />
       )}
       {activeView?.type === "kanban" && (
-        <DatabaseKanban
+        <EnhancedTableKanban
           db={db}
           view={activeView}
           rows={computedRows}
@@ -486,7 +486,7 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
         />
       )}
       {activeView?.type === "calendar" && (
-        <DatabaseCalendar
+        <EnhancedTableCalendar
           db={db}
           view={activeView}
           rows={computedRows}
@@ -495,7 +495,7 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
         />
       )}
       {activeView?.type === "gallery" && (
-        <DatabaseGallery
+        <EnhancedTableGallery
           db={db}
           view={activeView}
           rows={computedRows}
@@ -506,19 +506,19 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
 
   return (
     <NodeViewWrapper className="my-3" contentEditable={false}>
-      <div className={`db-block${displayMode === "embed" ? " db-block-embed-mode" : ""}`}>
+      <div className={`et-block${displayMode === "embed" ? " et-block-embed-mode" : ""}`}>
         {headerBar}
 
         {/* Card mode: compact meta bar only */}
         {displayMode === "card" && (
-          <div className="db-block-card-meta-bar">
+          <div className="et-block-card-meta-bar">
             <span>{db.rows.length} rows</span>
             <span>·</span>
             <span>{db.columns.length} fields</span>
             <span>·</span>
             <span>{activeView?.name || "Table"}</span>
             <button
-              className="db-block-card-open"
+              className="et-block-card-open"
               onClick={() => setIsModal(true)}
               title="Open fullscreen"
             >
@@ -529,7 +529,7 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
 
         {/* Embed mode: full content in a scrollable frame */}
         {displayMode === "embed" && (
-          <div className="db-embed-scroll">
+          <div className="et-embed-scroll">
             {dbViews}
           </div>
         )}
@@ -541,19 +541,19 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
       {/* Fullscreen modal */}
       {isModal && typeof document !== "undefined" && createPortal(
         <div
-          className="db-modal-overlay"
+          className="et-modal-overlay"
           onClick={(e) => { if (e.target === e.currentTarget) setIsModal(false); }}
         >
-          <div className="db-modal-content">
-            <div className="db-modal-header">
+          <div className="et-modal-content">
+            <div className="et-modal-header">
               <DbIcon className="w-4 h-4 text-accent" />
-              <span className="db-modal-title">{db.title}</span>
-              <button className="db-modal-close" onClick={() => setIsModal(false)}>
+              <span className="et-modal-title">{db.title}</span>
+              <button className="et-modal-close" onClick={() => setIsModal(false)}>
                 <X className="w-4 h-4" />
               </button>
             </div>
             {activeView && (
-              <DatabaseToolbar
+              <EnhancedTableToolbar
                 db={db}
                 activeViewId={activeView.id}
                 onSwitchView={handleSwitchView}
@@ -574,7 +574,7 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
               />
             )}
             {showFilter && activeView && (
-              <DatabaseFilter
+              <EnhancedTableFilter
                 columns={db.columns}
                 filters={activeView.filters}
                 filterLogic={activeView.filterLogic || "and"}
@@ -583,16 +583,16 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
               />
             )}
             {showSort && activeView && (
-              <DatabaseSort
+              <EnhancedTableSort
                 columns={db.columns}
                 sorts={activeView.sorts}
                 onChange={handleSortChange}
                 onClose={() => setShowSort(false)}
               />
             )}
-            <div className="db-modal-body">
+            <div className="et-modal-body">
               {activeView?.type === "table" && (
-                <DatabaseTable
+                <EnhancedTableGrid
                   db={db}
                   view={activeView}
                   rows={computedRows}
@@ -610,7 +610,7 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
                 />
               )}
               {activeView?.type === "kanban" && (
-                <DatabaseKanban
+                <EnhancedTableKanban
                   db={db}
                   view={activeView}
                   rows={computedRows}
@@ -620,7 +620,7 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
                 />
               )}
               {activeView?.type === "calendar" && (
-                <DatabaseCalendar
+                <EnhancedTableCalendar
                   db={db}
                   view={activeView}
                   rows={computedRows}
@@ -629,7 +629,7 @@ export function DatabaseBlockNodeView({ node, updateAttributes }: NodeViewProps)
                 />
               )}
               {activeView?.type === "gallery" && (
-                <DatabaseGallery
+                <EnhancedTableGallery
                   db={db}
                   view={activeView}
                   rows={computedRows}

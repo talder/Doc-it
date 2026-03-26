@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { date, time, description, workingTime, solution } = body;
+  const { date, time, description, workingTime, solution, assistedBy } = body;
 
   if (!date || !time || !description?.trim()) {
     return NextResponse.json(
@@ -53,6 +53,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Validate assistedBy if provided
+  const validAssisted: string[] = Array.isArray(assistedBy)
+    ? assistedBy.filter((v: unknown) => typeof v === "string" && v.trim().length > 0).map((v: string) => v.trim())
+    : [];
+
   // Registrar is always forced to the current user
   const entry = await addOnCallEntry({
     registrar: user.username,
@@ -60,6 +65,7 @@ export async function POST(request: NextRequest) {
     time,
     description: description.trim(),
     workingMinutes,
+    assistedBy: validAssisted,
     solution: solution ?? "",
   });
 

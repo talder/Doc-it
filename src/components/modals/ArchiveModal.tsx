@@ -34,7 +34,7 @@ export default function ArchiveModal({ isOpen, spaceSlug, onClose, onUnarchived 
     try {
       const [docsRes, dbsRes] = await Promise.all([
         fetch(`/api/spaces/${spaceSlug}/archive`),
-        fetch(`/api/spaces/${spaceSlug}/archive?type=databases`),
+        fetch(`/api/spaces/${spaceSlug}/archive?type=enhanced-tables`),
       ]);
       if (docsRes.ok) setDocs(await docsRes.json());
       if (dbsRes.ok) {
@@ -69,9 +69,9 @@ export default function ArchiveModal({ isOpen, spaceSlug, onClose, onUnarchived 
 
   const handleUnarchiveDb = async (db: ArchivedDb) => {
     if (!spaceSlug) return;
-    setRestoring(`db-${db.id}`);
+    setRestoring(`et-${db.id}`);
     try {
-      await fetch(`/api/spaces/${spaceSlug}/databases/${db.id}/archive`, {
+      await fetch(`/api/spaces/${spaceSlug}/enhanced-tables/${db.id}/archive`, {
         method: "DELETE",
       });
       await fetchArchive();
@@ -129,10 +129,10 @@ export default function ArchiveModal({ isOpen, spaceSlug, onClose, onUnarchived 
                         </div>
                         <button
                           onClick={() => handleUnarchiveDb(db)}
-                          disabled={restoring === `db-${db.id}`}
+                          disabled={restoring === `et-${db.id}`}
                           className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-accent hover:bg-accent-light rounded-md transition-colors flex-shrink-0"
                         >
-                          <RotateCcw className={`w-3 h-3${restoring === `db-${db.id}` ? " animate-spin" : ""}`} />
+                          <RotateCcw className={`w-3 h-3${restoring === `et-${db.id}` ? " animate-spin" : ""}`} />
                           Unarchive
                         </button>
                       </div>

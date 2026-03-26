@@ -2,9 +2,9 @@
 
 import { Node, mergeAttributes } from "@tiptap/core";
 import { ReactNodeViewRenderer } from "@tiptap/react";
-import { DatabaseBlockNodeView } from "../database/DatabaseBlockNodeView";
+import { EnhancedTableBlockNodeView } from "../enhanced-table/EnhancedTableBlockNodeView";
 
-export interface DatabaseBlockAttrs {
+export interface EnhancedTableBlockAttrs {
   dbId: string;
   viewId: string;
   spaceSlug: string;
@@ -14,12 +14,12 @@ export interface DatabaseBlockAttrs {
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     databaseBlock: {
-      insertDatabaseBlock: (attrs: DatabaseBlockAttrs) => ReturnType;
+      insertDatabaseBlock: (attrs: EnhancedTableBlockAttrs) => ReturnType;
     };
   }
 }
 
-export const DatabaseBlockExtension = Node.create({
+export const EnhancedTableBlockExtension = Node.create({
   name: "databaseBlock",
   group: "block",
   atom: true,
@@ -61,12 +61,12 @@ export const DatabaseBlockExtension = Node.create({
         "data-space-slug": node.attrs.spaceSlug || "",
         "data-display-mode": node.attrs.displayMode || "inline",
       }),
-      "[Database]",
+      "[Enhanced Table]",
     ];
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(DatabaseBlockNodeView as any);
+    return ReactNodeViewRenderer(EnhancedTableBlockNodeView as any);
   },
 
   addCommands() {

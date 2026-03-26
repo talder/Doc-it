@@ -113,6 +113,12 @@ export default function OnCallDetailModal({ entry, onClose, onSolutionSaved }: O
                 <span className="cl-confirm-label">Working time</span>
                 <span>{formatWorkingTime(entry.workingMinutes)}</span>
               </div>
+              {(entry.assistedBy ?? []).length > 0 && (
+                <div className="cl-confirm-row">
+                  <span className="cl-confirm-label">Assisted by</span>
+                  <span>{entry.assistedBy.join(", ")}</span>
+                </div>
+              )}
               <div className="cl-confirm-row cl-confirm-row--block">
                 <span className="cl-confirm-label">Problem</span>
                 <div dangerouslySetInnerHTML={{ __html: entry.description }} className="oc-confirm-html" />

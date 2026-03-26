@@ -23,7 +23,7 @@ A self-hosted documentation platform built with Next.js, TipTap, and Tailwind CS
 
 ### Editor
 - **Rich text editing** powered by TipTap (ProseMirror) with bubble menu toolbar
-- **Slash commands** (`/`) — headings H1–H4, lists, alignment, callouts, code blocks, tables, images, attachments, PDFs, drawings, diagrams, databases, linked docs, template fields, equations, emoji, date/time — sorted into logical groups
+- **Slash commands** (`/`) — headings H1–H4, lists, alignment, callouts, code blocks, tables, images, attachments, PDFs, drawings, diagrams, enhanced tables, linked docs, template fields, equations, emoji, date/time — sorted into logical groups
 - **Table of Contents** — floating TOC panel (H1–H4) with resizable panel, always-show preference, and a persistent tab toggle on the page edge
 - **Distraction-Free Mode** — full-screen writing mode that hides the sidebar, topbar, and all UI chrome; exit with `Esc` or the overlay button
 - **Excalidraw** — embedded whiteboard drawings stored as assets
@@ -47,25 +47,26 @@ A self-hosted documentation platform built with Next.js, TipTap, and Tailwind CS
 - **Global blobstore** — all uploaded attachments deduplicated by SHA-256 hash; identical files stored once in `config/blobstore/`. Duplicate uploads show an inline dialog to choose the canonical filename (applied system-wide). PDFs with a text layer are indexed for full-text search.
 - **Offline reader bundle** — export a self-contained, passphrase-protected HTML reader. PDFs and attachments are individually encrypted and decrypted on-demand in the browser, keeping unlock time under 1 second regardless of bundle size.
 
-### Databases
-- **Inline databases** — embed structured tables directly inside documents via `/database`
+### Enhanced Tables
+- **Inline enhanced tables** — embed structured tables directly inside documents via the `/` slash command
 - **Custom schemas** — define columns with types: text, number, date, checkbox, select, multi-select, URL, email, member, created-by
-- **Views** — switch between Table, Board (Kanban), and Gallery views per database
-- **Relation picker** — searchable modal for linking rows across databases; configurable display column per relation field
+- **Views** — switch between Table, Board (Kanban), Calendar, and Gallery views per table
+- **Column drag-and-drop reorder** — drag columns by the grip handle to rearrange them
 - **Column header sorting** — click any column header to cycle unsorted → ascending → descending
 - **Stable row numbers** — row numbers reflect insertion order, not display position
 - **Filtering & sorting** — filter rows and sort by any column via toolbar controls
-- **Per-space storage** — each database is stored as JSON within its space, versioned with the space
+- **Per-space storage** — each enhanced table is stored as JSON within its space, versioned with the space
 
 ### On-Call Reports
 - **On-call logging** — log on-call incidents with date, time, problem description, working time, and solution
 - **Auto-incrementing IDs** — ONC-000001, ONC-000002, etc.
+- **Assisted-by tracking** — multi-select user picker to record persons called for assistance on each call
 - **Solution tracking** — add or edit solutions after submission via a dedicated rich-text editor modal
 - **90-day activity heatmap** — visual heatmap in three 30-day blocks showing call volume over time
 - **Calendar & filtering** — calendar sidebar for date filtering, full-text search, and sortable table columns
 - **Working time tracking** — parse and display durations in `1h30m` format with per-view totals
 - **Access control** — admin-configurable list of allowed users
-- **Weekly email digest** — optional scheduled email report of the previous week's on-call entries
+- **Weekly email digest** — per-registrar weekly report with calls overview, time breakdown (Mon–Fri / Saturday / Sunday), and assistance tally
 
 ### Journal
 - **Personal journals** — per-user private journals with entries encrypted at rest (AES-256-GCM)
@@ -169,6 +170,7 @@ A self-hosted documentation platform built with Next.js, TipTap, and Tailwind CS
 
 ### Backup & Recovery
 - **Encrypted backups** — AES-256-GCM encrypted `.tar.gz.enc` archives of all data directories (config, docs, logs, archive, history)
+- **Data snapshots** — lightweight local snapshots for fast rollback; created automatically before every `--upgrade`; uses hard links on Linux for near-zero disk overhead; create, restore, and delete via Admin → Backup
 - **Backup targets** — local path (covers pre-mounted NFS shares), CIFS/SMB via `smbclient`, and SFTP via `ssh2` (password or private key)
 - **Scheduling** — manual or automated backups with configurable time and day-of-week
 - **Retention policy** — configurable retention count; old backups pruned automatically
@@ -262,7 +264,7 @@ bash install-linux.sh --upgrade
 powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Upgrade
 ```
 
-The upgrade path stops the running service, fetches and hard-resets to the latest commit, fixes file ownership, rebuilds as the service user, and restarts.
+The upgrade path automatically creates a **data snapshot** before pulling code, stops the running service, fetches and hard-resets to the latest commit, fixes file ownership, rebuilds as the service user, and restarts. If something goes wrong, restore from the snapshot via **Admin → Backup → Data Snapshots**.
 
 ### Manual Install
 
@@ -289,6 +291,7 @@ docs/                # Document storage (docs/{space}/{category}/{doc}.md)
 archive/             # Archived documents
 history/             # Revision snapshots
 backups/             # Encrypted backup archives (.tar.gz.enc)
+snapshots/           # Pre-upgrade data snapshots for fast rollback
 logs/                # Audit logs (audit-YYYY-MM-DD.jsonl) & crash logs (crash-YYYY-MM-DD.jsonl)
 src/
   app/
@@ -310,6 +313,7 @@ src/
   components/
     extensions/      # TipTap extensions (slash commands, callouts, excalidraw,
                      #   draw.io, collapsible lists, drag handle, tags, etc.)
+    enhanced-table/  # Enhanced table views (table, kanban, gallery, calendar)
     helpdesk/        # Helpdesk components (WidgetRenderer, PortalPageDesigner)
     modals/          # Modal dialogs
     sidebar/         # Sidebar with categories, docs, tags
@@ -327,6 +331,7 @@ src/
     helpdesk-portal.ts # Portal user auth (separate from main auth)
     assets.ts        # Asset management module
     changelog.ts     # Change log module
+    enhanced-table.ts # Enhanced table CRUD (JSON files per space)
     oncall.ts        # On-call reports module (server-side CRUD, filtering, email)
     oncall-shared.ts # Client-safe on-call types and pure helpers
     journal.ts       # Journal module (encrypted user journals)

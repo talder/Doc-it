@@ -21,7 +21,7 @@ Doc-it is a self-hosted documentation platform built as a single **Next.js 16 Ap
 
 - **Documents**: Markdown files with YAML frontmatter stored in `docs/{space}/{category}/{doc}.md`. Templates use `.mdt` extension. Frontmatter is parsed/serialized via `src/lib/frontmatter.ts` using `gray-matter`.
 - **Configuration**: SQLite KV store at `config/docit.db` (WAL mode, via `better-sqlite3`). Config entries are keyed by filename (e.g. `users.json`, `spaces.json`) and store JSON values. On first boot, existing JSON files in `config/` are auto-migrated into SQLite (`src/lib/config.ts`).
-- **Databases**: Per-space JSON files in `docs/{space}/.databases/{id}.db.json`.
+- **Enhanced Tables**: Per-space JSON files in `docs/{space}/.databases/{id}.db.json`.
 - **Audit logs**: Encrypted JSONL files at `logs/audit-YYYY-MM-DD.jsonl` with HMAC integrity chain.
 - **Backups**: AES-256-GCM encrypted `.tar.gz.enc` archives.
 
@@ -31,7 +31,7 @@ Doc-it is a self-hosted documentation platform built as a single **Next.js 16 Ap
 - **Auth flow**: Cookie-based sessions (`docit-session`) or Bearer tokens (user keys `dk_u_*`, service keys `dk_s_*`). Auth is checked in API routes via `getCurrentUser()` from `src/lib/auth.ts` or `requireSpaceRole()` from `src/lib/permissions.ts`. Route protection for pages is handled by `src/proxy.ts` (middleware-like redirect to `/login`).
 - **API routes**: All under `src/app/api/`. Space-scoped routes use the `[slug]` dynamic segment. Most routes call `requireSpaceRole(slug, "reader"|"writer"|"admin")` for authorization.
 - **Encryption**: Field-level AES-256-GCM encryption via `src/lib/crypto.ts`. Key stored in `config/docit.db` under `secret-key.json` or injected via `SECRET_FIELD_KEY` env var. Used for TOTP secrets, journal entries, audit logs, and backups.
-- **Editor**: TipTap/ProseMirror editor loaded via `next/dynamic` (no SSR). Extensions live in `src/components/extensions/`. Slash commands, callouts, Excalidraw, Draw.io, collapsible lists, drag handle, tags, mentions, databases, and template placeholders are all custom extensions.
+- **Editor**: TipTap/ProseMirror editor loaded via `next/dynamic` (no SSR). Extensions live in `src/components/extensions/`. Slash commands, callouts, Excalidraw, Draw.io, collapsible lists, drag handle, tags, mentions, enhanced tables, and template placeholders are all custom extensions.
 - **Instrumentation**: `src/instrumentation.ts` bootstraps Node.js-only logic (backup scheduler) via dynamic import to avoid Edge bundler issues.
 
 ### Module Responsibilities (`src/lib/`)
@@ -46,7 +46,7 @@ Doc-it is a self-hosted documentation platform built as a single **Next.js 16 Ap
 - `helpdesk.ts` / `helpdesk-portal.ts` — ticketing system and portal user auth (separate from main auth)
 - `audit.ts` — NIS2 audit logging with encryption and syslog forwarding
 - `crypto.ts` — AES-256-GCM field encryption and key rotation
-- `database.ts` — inline database CRUD (JSON files per space)
+- `enhanced-table.ts` — enhanced table CRUD (JSON files per space)
 - `journal.ts` — encrypted personal and space journals
 - `assets.ts` / `changelog.ts` — asset registry and change log modules
 - `oncall.ts` — on-call report CRUD, filtering, weekly email (server-only; imports `config.ts`)
@@ -55,9 +55,9 @@ Doc-it is a self-hosted documentation platform built as a single **Next.js 16 Ap
 ### Component Organization (`src/components/`)
 
 - `Editor.tsx` — main TipTap editor with bubble menu, markdown import/export via `marked`+`turndown`
-- `sidebar/Sidebar.tsx` — main sidebar with categories, docs, tags, databases, favorites
+- `sidebar/Sidebar.tsx` — main sidebar with categories, docs, tags, enhanced tables, favorites
 - `extensions/` — all custom TipTap node/mark extensions
-- `database/` — database views (table, kanban, gallery, calendar)
+- `enhanced-table/` — enhanced table views (table, kanban, gallery, calendar)
 - `helpdesk/` — helpdesk UI components (ticket panel, form designer, portal page designer, SLA/rule editors)
 - `modals/` — modal dialogs for CRUD operations
 

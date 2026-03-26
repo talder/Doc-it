@@ -26,28 +26,28 @@ export default function DatabaseSort({ columns, sorts, onChange, onClose }: Prop
   };
 
   return (
-    <div className="db-filter-panel">
-      <div className="db-filter-header">
+    <div className="et-filter-panel">
+      <div className="et-filter-header">
         <span className="text-xs font-semibold text-text-muted uppercase">Sort</span>
-        <button onClick={onClose} className="db-filter-close"><X className="w-3.5 h-3.5" /></button>
+        <button onClick={onClose} className="et-filter-close"><X className="w-3.5 h-3.5" /></button>
       </div>
-      <div className="db-filter-rows">
+      <div className="et-filter-rows">
         {sorts.map((s, idx) => (
-          <div key={idx} className="db-filter-row">
-            <select className="db-filter-select" value={s.columnId} onChange={(e) => updateSort(idx, { columnId: e.target.value })}>
+          <div key={idx} className="et-filter-row">
+            <select className="et-filter-select" value={s.columnId} onChange={(e) => updateSort(idx, { columnId: e.target.value })}>
               {columns.filter((c) => c.type !== "formula").map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
-            <select className="db-filter-select" value={s.dir} onChange={(e) => updateSort(idx, { dir: e.target.value as "asc" | "desc" })}>
+            <select className="et-filter-select" value={s.dir} onChange={(e) => updateSort(idx, { dir: e.target.value as "asc" | "desc" })}>
               <option value="asc">Ascending</option>
               <option value="desc">Descending</option>
             </select>
-            <button className="db-filter-remove" onClick={() => removeSort(idx)}><X className="w-3 h-3" /></button>
+            <button className="et-filter-remove" onClick={() => removeSort(idx)}><X className="w-3 h-3" /></button>
           </div>
         ))}
       </div>
-      <button className="db-filter-add" onClick={addSort}><Plus className="w-3.5 h-3.5" /> Add sort</button>
+      <button className="et-filter-add" onClick={addSort}><Plus className="w-3.5 h-3.5" /> Add sort</button>
     </div>
   );
 }

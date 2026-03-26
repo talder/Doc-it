@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Plus, Trash2, Shield, ShieldCheck, Users, Layout, Settings, Key, Copy, Check, ClipboardList, ChevronLeft, ChevronRight, Download, Lock, LockOpen, ChevronDown, ChevronUp, ShieldOff, HardDrive, RefreshCw, PlayCircle, XCircle, RotateCcw, Eye, EyeOff, UsersRound, X, Network, AlertTriangle } from "lucide-react";
 import PasswordStrengthMeter from "@/components/PasswordStrengthMeter";
 import { isPasswordValid } from "@/lib/password-policy";
-import type { SanitizedUser, Space, SpaceRole, AuditConfig, AuditEntry, UserGroup, AdConfig, AdGroupMapping, DashboardAccessConfig, CrashEntry } from "@/lib/types";
+import type { SanitizedUser, Space, SpaceRole, AuditConfig, AuditEntry, UserGroup, AdConfig, AdGroupMapping, DashboardAccessConfig, CrashEntry, SnapshotEntry } from "@/lib/types";
 import { copyToClipboard } from "@/lib/clipboard";
 type Tab = "users" | "spaces" | "service-keys" | "groups" | "settings" | "audit" | "backup" | "crash-logs";
 
@@ -122,6 +122,12 @@ function AdminContent() {
   const [newTarget, setNewTarget] = useState<BackupTargetForm>(EMPTY_TARGET());
   const [showNewTarget, setShowNewTarget] = useState(false);
   const [restoringFile, setRestoringFile] = useState<string | null>(null);
+
+  // Snapshot state
+  const [snapshotList, setSnapshotList] = useState<SnapshotEntry[]>([]);
+  const [snapshotCreating, setSnapshotCreating] = useState(false);
+  const [snapshotRestoring, setSnapshotRestoring] = useState<string | null>(null);
+  const [snapshotStatus, setSnapshotStatus] = useState("");
 
   // Storage settings state
   const [storageConfig, setStorageConfig] = useState<{ storageRoot: string | null; effectiveRoot: string; paths: Record<string, string> }>({
@@ -244,6 +250,14 @@ function AdminContent() {
       setBackupConfig(data.config);
       setBackupList(data.backups ?? []);
       setBackupLoaded(true);
+    }
+  }, []);
+
+  const fetchSnapshots = useCallback(async () => {
+    const res = await fetch("/api/admin/snapshots");
+    if (res.ok) {
+      const data = await res.json();
+      setSnapshotList(data.snapshots ?? []);
     }
   }, []);
 
@@ -691,7 +705,7 @@ function AdminContent() {
             Audit
           </button>
           <button
-            onClick={() => { setTab("backup"); if (!backupLoaded) fetchBackup(); }}
+            onClick={() => { setTab("backup"); if (!backupLoaded) fetchBackup(); fetchSnapshots(); }}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
               tab === "backup" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
             }`}
@@ -1874,6 +1888,79 @@ function AdminContent() {
                           const res = await fetch(`/api/admin/backup/${encodeURIComponent(b.filename)}`, { method: "DELETE" });
                           if (res.ok) fetchBackup();
                           else flash("Failed to delete backup", "error");
+                        }}
+                        className="p-1.5 rounded hover:bg-red-50 text-text-muted hover:text-red-600"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Snapshots card */}
+            <div className="bg-surface rounded-xl shadow-sm border border-border">
+              <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-semibold text-text-primary">Data Snapshots</h2>
+                  <p className="text-xs text-text-muted mt-0.5">Lightweight local snapshots for fast rollback. Created automatically before upgrades.</p>
+                </div>
+                <button
+                  disabled={snapshotCreating}
+                  onClick={async () => {
+                    setSnapshotCreating(true); setSnapshotStatus("");
+                    try {
+                      const res = await fetch("/api/admin/snapshots", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label: "manual" }) });
+                      const d = await res.json();
+                      if (res.ok) { setSnapshotStatus(`✅ Snapshot created: ${d.snapshot?.id}`); fetchSnapshots(); }
+                      else setSnapshotStatus(`❌ ${d.error || "Failed"}`);
+                    } catch { setSnapshotStatus("❌ Snapshot creation failed"); }
+                    finally { setSnapshotCreating(false); }
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50 transition-colors"
+                >
+                  <PlayCircle className="w-4 h-4" />
+                  {snapshotCreating ? "Creating…" : "Create Snapshot"}
+                </button>
+              </div>
+              {snapshotStatus && (
+                <div className={`mx-6 mt-4 px-3 py-2 rounded-lg text-sm ${snapshotStatus.startsWith("✅") ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-700 border border-red-200"}`}>{snapshotStatus}</div>
+              )}
+              {snapshotList.length === 0 ? (
+                <p className="px-6 py-4 text-sm text-text-muted">No snapshots yet.</p>
+              ) : (
+                <div className="divide-y divide-border">
+                  {snapshotList.map((s) => (
+                    <div key={s.id} className="flex items-center gap-4 px-6 py-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-text-primary font-mono">{s.id}</p>
+                        <p className="text-xs text-text-muted">{new Date(s.createdAt).toLocaleString()} · {s.label}</p>
+                      </div>
+                      <button
+                        disabled={snapshotRestoring === s.id}
+                        onClick={async () => {
+                          if (!confirm(`Restore snapshot "${s.id}"?\n\nThis will OVERWRITE current config, docs, logs, archive, and history directories.\n\nA pre-restore snapshot will be created automatically as a safety net.`)) return;
+                          setSnapshotRestoring(s.id);
+                          try {
+                            const res = await fetch(`/api/admin/snapshots/${encodeURIComponent(s.id)}/restore`, { method: "POST" });
+                            if (res.ok) { flash(`Restored from snapshot ${s.id}`, "success"); fetchSnapshots(); }
+                            else { const d = await res.json(); flash(d.error || "Restore failed", "error"); }
+                          } catch { flash("Restore failed", "error"); }
+                          finally { setSnapshotRestoring(null); }
+                        }}
+                        className="p-1.5 rounded hover:bg-blue-50 text-text-muted hover:text-blue-600 disabled:opacity-50"
+                        title="Restore this snapshot"
+                      >
+                        <RotateCcw className={`w-4 h-4 ${snapshotRestoring === s.id ? "animate-spin" : ""}`} />
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Delete snapshot "${s.id}"?`)) return;
+                          const res = await fetch(`/api/admin/snapshots/${encodeURIComponent(s.id)}`, { method: "DELETE" });
+                          if (res.ok) fetchSnapshots();
+                          else flash("Failed to delete snapshot", "error");
                         }}
                         className="p-1.5 rounded hover:bg-red-50 text-text-muted hover:text-red-600"
                         title="Delete"

@@ -13,7 +13,7 @@ import path from "path";
 import crypto from "crypto";
 import { marked } from "marked";
 import { getAccessibleSpaces } from "./permissions";
-import { listDatabases } from "./database";
+import { listEnhancedTables } from "./enhanced-table";
 import { parseFrontmatter } from "./frontmatter";
 import { getSpaceDir, getAttachmentsDir } from "./config";
 import { buildReaderHtml, type BundleMeta } from "./offline-reader-template";
@@ -102,7 +102,7 @@ export async function generateOfflineBundle(
     const spaceDir = getSpaceDir(space.slug);
     const categories = await scanCategories(spaceDir);
     const documents = await scanAndRenderDocs(space.slug, spaceDir, "", [], attachments);
-    const databases = await loadDatabases(space.slug);
+    const databases = await loadEnhancedTables(space.slug);
 
     totalDocs += documents.length;
     totalDbs += databases.length;
@@ -515,8 +515,8 @@ function mimeFromExt(filename: string, fallback?: string): string {
 
 // ── Database loader ───────────────────────────────────────────────────────────
 
-async function loadDatabases(spaceSlug: string): Promise<OfflineDb[]> {
-  const dbs = await listDatabases(spaceSlug);
+async function loadEnhancedTables(spaceSlug: string): Promise<OfflineDb[]> {
+  const dbs = await listEnhancedTables(spaceSlug);
   return dbs.map((db) => ({
     id: db.id,
     title: db.title,

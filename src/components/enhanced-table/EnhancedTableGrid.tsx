@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Plus, Trash2, MoreVertical, GripVertical, Copy, Eraser, X, ArrowUp, ArrowDown } from "lucide-react";
-import type { Database, DbColumn, DbRow, DbView, DbColumnType } from "@/lib/types";
+import type { EnhancedTable, DbColumn, DbRow, DbView, DbColumnType } from "@/lib/types";
 
 const COLUMN_TYPES: { value: DbColumnType; label: string }[] = [
   { value: "text", label: "Text" },
@@ -18,7 +18,7 @@ const COLUMN_TYPES: { value: DbColumnType; label: string }[] = [
 ];
 
 interface Props {
-  db: Database;
+  db: EnhancedTable;
   view: DbView;
   rows: DbRow[];          // already filtered+sorted
   canWrite: boolean;
@@ -177,6 +177,57 @@ export default function DatabaseTable({
     onAddColumn({ name: `Field ${db.columns.length + 1}`, type: "text" });
   };
 
+  // Column drag-and-drop reorder
+  const [dragColId, setDragColId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ colId: string; side: "left" | "right" } | null>(null);
+
+  const handleColDragStart = (e: React.DragEvent, colId: string) => {
+    if (!canWrite) return;
+    setDragColId(colId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", colId);
+    // Make the ghost slightly transparent
+    if (e.currentTarget instanceof HTMLElement) {
+      const el = e.currentTarget;
+      el.style.opacity = "0.5";
+      requestAnimationFrame(() => { el.style.opacity = ""; });
+    }
+  };
+
+  const handleColDragOver = (e: React.DragEvent, colId: string) => {
+    if (!dragColId || dragColId === colId) { setDropTarget(null); return; }
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    // Determine left/right side based on mouse position within the header cell
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const midX = rect.left + rect.width / 2;
+    const side = e.clientX < midX ? "left" : "right";
+    setDropTarget({ colId, side });
+  };
+
+  const handleColDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (!dragColId || !dropTarget) { setDragColId(null); setDropTarget(null); return; }
+    const order = view.columnOrder || db.columns.map((c) => c.id);
+    const fromIdx = order.indexOf(dragColId);
+    if (fromIdx === -1) { setDragColId(null); setDropTarget(null); return; }
+    // Remove the dragged column from the list
+    const newOrder = order.filter((id) => id !== dragColId);
+    // Find target index in the filtered list
+    let toIdx = newOrder.indexOf(dropTarget.colId);
+    if (toIdx === -1) { setDragColId(null); setDropTarget(null); return; }
+    if (dropTarget.side === "right") toIdx += 1;
+    newOrder.splice(toIdx, 0, dragColId);
+    onUpdateView({ columnOrder: newOrder });
+    setDragColId(null);
+    setDropTarget(null);
+  };
+
+  const handleColDragEnd = () => {
+    setDragColId(null);
+    setDropTarget(null);
+  };
+
   // Column resize
   const [resizing, setResizing] = useState<{ colId: string; startX: number; startW: number } | null>(null);
   useEffect(() => {
@@ -207,7 +258,7 @@ export default function DatabaseTable({
           type="checkbox"
           checked={!!value}
           disabled={!canWrite}
-          className="db-cell-checkbox"
+          className="et-cell-checkbox"
           onChange={(e) => onUpdateRow(row.id, { [col.id]: e.target.checked })}
           onKeyDown={(e) => {
             if (e.key === "Tab") tabToNextCell(e);
@@ -221,7 +272,7 @@ export default function DatabaseTable({
       return (
         <select
           autoFocus
-          className="db-cell-input"
+          className="et-cell-input"
           value={String(value || "")}
           onChange={(e) => { onUpdateRow(row.id, { [col.id]: e.target.value }); setEditCell(null); }}
           onBlur={() => { if (!tabNavigating.current) setEditCell(null); }}
@@ -238,15 +289,15 @@ export default function DatabaseTable({
 
     if (col.type === "select") {
       const v = String(value || "");
-      return v ? <span className="db-cell-tag">{v}</span> : <span className="db-cell-empty">—</span>;
+      return v ? <span className="et-cell-tag">{v}</span> : <span className="et-cell-empty">—</span>;
     }
 
     if (col.type === "multiSelect" && isEditing) {
       const vals = Array.isArray(value) ? (value as string[]) : [];
       return (
-        <div className="db-multiselect-dropdown" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Tab") tabToNextCell(e); else if (e.key === "Escape") setEditCell(null); }}>
+        <div className="et-multiselect-dropdown" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Tab") tabToNextCell(e); else if (e.key === "Escape") setEditCell(null); }}>
           {(col.options || []).map((o) => (
-            <label key={o} className="db-multiselect-option">
+            <label key={o} className="et-multiselect-option">
               <input
                 type="checkbox"
                 checked={vals.includes(o)}
@@ -258,7 +309,7 @@ export default function DatabaseTable({
               <span>{o}</span>
             </label>
           ))}
-          <button className="db-multiselect-done" onClick={() => setEditCell(null)}>Done</button>
+          <button className="et-multiselect-done" onClick={() => setEditCell(null)}>Done</button>
         </div>
       );
     }
@@ -266,25 +317,25 @@ export default function DatabaseTable({
     if (col.type === "multiSelect") {
       const vals = Array.isArray(value) ? value : [];
       return vals.length > 0
-        ? <div className="db-cell-tags">{vals.map((v: string) => <span key={v} className="db-cell-tag">{v}</span>)}</div>
-        : <span className="db-cell-empty">—</span>;
+        ? <div className="et-cell-tags">{vals.map((v: string) => <span key={v} className="et-cell-tag">{v}</span>)}</div>
+        : <span className="et-cell-empty">—</span>;
     }
 
     if (col.type === "createdBy") {
       const username = value ? String(value) : "";
       const member = members.find((m) => m.username === username);
       return username
-        ? <span className="db-member-chip">{member?.fullName || username}</span>
-        : <span className="db-cell-empty">—</span>;
+        ? <span className="et-member-chip">{member?.fullName || username}</span>
+        : <span className="et-cell-empty">—</span>;
     }
 
     if (col.type === "member") {
       const vals = Array.isArray(value) ? (value as string[]) : [];
       if (isEditing) {
         return (
-          <div className="db-multiselect-dropdown" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Tab") tabToNextCell(e); else if (e.key === "Escape") setEditCell(null); }}>
+          <div className="et-multiselect-dropdown" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Tab") tabToNextCell(e); else if (e.key === "Escape") setEditCell(null); }}>
             {members.map((m) => (
-              <label key={m.username} className="db-multiselect-option">
+              <label key={m.username} className="et-multiselect-option">
                 <input
                   type="checkbox"
                   checked={vals.includes(m.username)}
@@ -296,20 +347,20 @@ export default function DatabaseTable({
                 <span>{m.fullName || m.username}</span>
               </label>
             ))}
-            <button className="db-multiselect-done" onClick={() => setEditCell(null)}>Done</button>
+            <button className="et-multiselect-done" onClick={() => setEditCell(null)}>Done</button>
           </div>
         );
       }
       return vals.length > 0
-        ? <div className="db-cell-tags">{vals.map((u) => { const m = members.find((x) => x.username === u); return <span key={u} className="db-member-chip">{m?.fullName || u}</span>; })}</div>
-        : <span className="db-cell-empty">—</span>;
+        ? <div className="et-cell-tags">{vals.map((u) => { const m = members.find((x) => x.username === u); return <span key={u} className="et-member-chip">{m?.fullName || u}</span>; })}</div>
+        : <span className="et-cell-empty">—</span>;
     }
 
     if (isEditing) {
       return (
         <input
           autoFocus
-          className="db-cell-input"
+          className="et-cell-input"
           type={col.type === "number" ? "number" : col.type === "date" ? "date" : "text"}
           value={editValue}
           onChange={(e) => setEditValue(e.target.value)}
@@ -320,23 +371,23 @@ export default function DatabaseTable({
     }
 
     if (col.type === "url" && value) {
-      return <a href={String(value)} target="_blank" rel="noopener noreferrer" className="db-cell-link">{String(value)}</a>;
+      return <a href={String(value)} target="_blank" rel="noopener noreferrer" className="et-cell-link">{String(value)}</a>;
     }
 
     const display = value != null && value !== "" ? String(value) : "";
-    return display ? <span className="db-cell-text">{display}</span> : <span className="db-cell-empty">—</span>;
+    return display ? <span className="et-cell-text">{display}</span> : <span className="et-cell-empty">—</span>;
   };
 
   return (
     <>
-    <div className="db-table-wrap">
-      <div className="db-table" style={{ gridTemplateColumns: gridCols }}>
+    <div className="et-table-wrap">
+      <div className="et-table" style={{ gridTemplateColumns: gridCols }}>
         {/* Header */}
-        <div className="db-th db-th-rownum">
+        <div className="et-th et-th-rownum">
           <input
             ref={selectAllRef}
             type="checkbox"
-            className="db-select-all-check"
+            className="et-select-all-check"
             checked={allSelected}
             onChange={() => setSelectedRows(allSelected || someSelected ? new Set() : new Set(rows.map((r) => r.id)))}
           />
@@ -355,33 +406,44 @@ export default function DatabaseTable({
             onUpdateView({ sorts: newSorts });
           };
           return (
-          <div key={col.id} className={`db-th${currentSort ? " db-th-sorted" : ""}`} style={{ position: "relative" }}>
-            <span className="db-th-name db-th-name-sortable" onClick={handleHeaderClick}>
+          <div
+            key={col.id}
+            className={`et-th${currentSort ? " et-th-sorted" : ""}${dragColId === col.id ? " et-th-dragging" : ""}${dropTarget?.colId === col.id ? ` et-th-drop-${dropTarget.side}` : ""}`}
+            style={{ position: "relative" }}
+            draggable={canWrite}
+            onDragStart={(e) => handleColDragStart(e, col.id)}
+            onDragOver={(e) => handleColDragOver(e, col.id)}
+            onDrop={handleColDrop}
+            onDragEnd={handleColDragEnd}
+            onDragLeave={() => { if (dropTarget?.colId === col.id) setDropTarget(null); }}
+          >
+            {canWrite && <GripVertical className="et-th-grip" />}
+            <span className="et-th-name et-th-name-sortable" onClick={handleHeaderClick}>
               {col.name}
               {currentSort && (
-                <span className="db-th-sort-icon">
+                <span className="et-th-sort-icon">
                   {currentSort.dir === "asc" ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
                 </span>
               )}
             </span>
             {canWrite && (
-              <button className="db-th-menu-btn" onClick={() => setColMenu(colMenu === col.id ? null : col.id)}>
+              <button className="et-th-menu-btn" onClick={() => setColMenu(colMenu === col.id ? null : col.id)}>
                 <MoreVertical className="w-3 h-3" />
               </button>
             )}
             {canWrite && (
               <div
-                className="db-th-resize"
+                className="et-th-resize"
                 onMouseDown={(e) => { e.preventDefault(); setResizing({ colId: col.id, startX: e.clientX, startW: getWidth(col) }); }}
               />
             )}
             {colMenu === col.id && (
-              <div className="db-col-menu" ref={colMenuRef}>
+              <div className="et-col-menu" ref={colMenuRef}>
                 {colRename?.colId === col.id ? (
-                  <div className="db-col-menu-rename">
+                  <div className="et-col-menu-rename">
                     <input
                       autoFocus
-                      className="db-col-menu-input"
+                      className="et-col-menu-input"
                       value={colRename.name}
                       onChange={(e) => setColRename({ ...colRename, name: e.target.value })}
                       onKeyDown={(e) => {
@@ -392,9 +454,9 @@ export default function DatabaseTable({
                     />
                   </div>
                 ) : colTypeChange === col.id ? (
-                  <div className="db-col-menu-types">
+                  <div className="et-col-menu-types">
                     {COLUMN_TYPES.map((t) => (
-                      <button key={t.value} className={`db-col-menu-type-btn${col.type === t.value ? " active" : ""}`}
+                      <button key={t.value} className={`et-col-menu-type-btn${col.type === t.value ? " active" : ""}`}
                         onClick={() => {
                           onUpdateColumn(col.id, { type: t.value });
                           setColTypeChange(null);
@@ -405,10 +467,10 @@ export default function DatabaseTable({
                     ))}
                   </div>
                 ) : selectEditCol === col.id ? (
-                  <div className="db-col-menu-rename">
+                  <div className="et-col-menu-rename">
                     <textarea
                       autoFocus
-                      className="db-col-menu-input"
+                      className="et-col-menu-input"
                       placeholder="Option1, Option2, ..."
                       value={selectOptions}
                       onChange={(e) => setSelectOptions(e.target.value)}
@@ -425,24 +487,24 @@ export default function DatabaseTable({
                     <div className="text-[10px] text-text-muted mt-1">Comma-separated. Enter to save.</div>
                   </div>
                 ) : colDefaultPanel === col.id ? (
-                  <div className="db-col-default-panel">
-                    <div className="db-col-menu-item" style={{ opacity: 0.5, fontSize: "0.65rem", cursor: "default" }}>Default value</div>
+                  <div className="et-col-default-panel">
+                    <div className="et-col-menu-item" style={{ opacity: 0.5, fontSize: "0.65rem", cursor: "default" }}>Default value</div>
                     {col.type === "date" && (
-                      <label className="db-col-default-label">
+                      <label className="et-col-default-label">
                         <input type="checkbox" checked={!!col.defaultCurrentDate}
                           onChange={(e) => onUpdateColumn(col.id, { defaultCurrentDate: e.target.checked, defaultValue: undefined })} />
                         Use today's date
                       </label>
                     )}
                     {col.type === "checkbox" && (
-                      <label className="db-col-default-label">
+                      <label className="et-col-default-label">
                         <input type="checkbox" checked={!!col.defaultValue}
                           onChange={(e) => onUpdateColumn(col.id, { defaultValue: e.target.checked })} />
                         Checked by default
                       </label>
                     )}
                     {(col.type === "select" || col.type === "multiSelect") && (col.options || []).map((opt) => (
-                      <label key={opt} className="db-col-default-label">
+                      <label key={opt} className="et-col-default-label">
                         <input
                           type={col.type === "select" ? "radio" : "checkbox"}
                           name={`dflt-${col.id}`}
@@ -462,7 +524,7 @@ export default function DatabaseTable({
                       </label>
                     ))}
                     {col.type === "member" && members.map((m) => (
-                      <label key={m.username} className="db-col-default-label">
+                      <label key={m.username} className="et-col-default-label">
                         <input
                           type="checkbox"
                           checked={Array.isArray(col.defaultValue) && (col.defaultValue as string[]).includes(m.username)}
@@ -474,25 +536,25 @@ export default function DatabaseTable({
                         {m.fullName || m.username}
                       </label>
                     ))}
-                    <button className="db-col-menu-item" style={{ marginTop: 4 }} onClick={() => setColDefaultPanel(null)}>← Back</button>
+                    <button className="et-col-menu-item" style={{ marginTop: 4 }} onClick={() => setColDefaultPanel(null)}>← Back</button>
                   </div>
                 ) : (
                   <>
-                    <button className="db-col-menu-item" onClick={() => setColRename({ colId: col.id, name: col.name })}>Rename</button>
-                    <button className="db-col-menu-item" onClick={() => setColTypeChange(col.id)}>Change type</button>
+                    <button className="et-col-menu-item" onClick={() => setColRename({ colId: col.id, name: col.name })}>Rename</button>
+                    <button className="et-col-menu-item" onClick={() => setColTypeChange(col.id)}>Change type</button>
                     {(col.type === "select" || col.type === "multiSelect") && (
-                      <button className="db-col-menu-item" onClick={() => { setSelectEditCol(col.id); setSelectOptions((col.options || []).join(", ")); }}>Edit options</button>
+                      <button className="et-col-menu-item" onClick={() => { setSelectEditCol(col.id); setSelectOptions((col.options || []).join(", ")); }}>Edit options</button>
                     )}
                     {(col.type === "select" || col.type === "multiSelect" || col.type === "date" || col.type === "checkbox" || col.type === "member") && (
-                      <button className="db-col-menu-item" onClick={() => setColDefaultPanel(col.id)}>Set default…</button>
+                      <button className="et-col-menu-item" onClick={() => setColDefaultPanel(col.id)}>Set default…</button>
                     )}
-                    <button className="db-col-menu-item" onClick={() => {
+                    <button className="et-col-menu-item" onClick={() => {
                       const hidden = [...(view.hiddenColumns || []), col.id];
                       onUpdateView({ hiddenColumns: hidden });
                       setColMenu(null);
                     }}>Hide column</button>
-                    <div className="db-col-menu-sep" />
-                    <button className="db-col-menu-item danger" onClick={() => { onDeleteColumn(col.id); setColMenu(null); }}>Delete column</button>
+                    <div className="et-col-menu-sep" />
+                    <button className="et-col-menu-item danger" onClick={() => { onDeleteColumn(col.id); setColMenu(null); }}>Delete column</button>
                   </>
                 )}
               </div>
@@ -501,7 +563,7 @@ export default function DatabaseTable({
           );
         })}
         {canWrite && (
-          <div className="db-th db-th-add" style={{ cursor: "pointer" }} onClick={handleAddColumn}>
+          <div className="et-th et-th-add" style={{ cursor: "pointer" }} onClick={handleAddColumn}>
             <Plus className="w-3.5 h-3.5" />
           </div>
         )}
@@ -510,15 +572,15 @@ export default function DatabaseTable({
         {rows.map((row, rowIdx) => {
           const isSelected = selectedRows.has(row.id);
           return (
-          <div key={row.id} className="db-row contents">
+          <div key={row.id} className="et-row contents">
             <div
-              className={`db-td db-td-rownum${isSelected ? " is-selected" : ""}`}
+              className={`et-td et-td-rownum${isSelected ? " is-selected" : ""}`}
               onClick={(e) => { e.stopPropagation(); toggleRow(row.id); }}
             >
-              <span className="db-rownum-num">{rowNumMap.get(row.id) ?? rowIdx + 1}</span>
+              <span className="et-rownum-num">{rowNumMap.get(row.id) ?? rowIdx + 1}</span>
               <input
                 type="checkbox"
-                className="db-rownum-check"
+                className="et-rownum-check"
                 checked={isSelected}
                 onChange={() => toggleRow(row.id)}
                 onClick={(e) => e.stopPropagation()}
@@ -527,15 +589,15 @@ export default function DatabaseTable({
             {orderedCols.map((col) => (
               <div
                 key={col.id}
-                className={`db-td${isSelected ? " is-selected" : ""}`}
+                className={`et-td${isSelected ? " is-selected" : ""}`}
                 onClick={() => startEdit(row.id, col.id, row.cells[col.id])}
               >
                 {renderCell(row, col)}
               </div>
             ))}
             {canWrite && (
-              <div className={`db-td db-td-actions${isSelected ? " is-selected" : ""}`}>
-                <button className="db-row-delete" onClick={() => onDeleteRow(row.id)} title="Delete row">
+              <div className={`et-td et-td-actions${isSelected ? " is-selected" : ""}`}>
+                <button className="et-row-delete" onClick={() => onDeleteRow(row.id)} title="Delete row">
                   <Trash2 className="w-3 h-3" />
                 </button>
               </div>
@@ -546,33 +608,33 @@ export default function DatabaseTable({
       </div>
     </div>
 
-      {/* Add row / column buttons — outside db-table-wrap so the dropdown isn't clipped */}
+      {/* Add row / column buttons — outside et-table-wrap so the dropdown isn't clipped */}
       {canWrite && (
-        <div className="db-table-footer">
-          <button className="db-add-row" onClick={() => onAddRow()}>
+        <div className="et-table-footer">
+          <button className="et-add-row" onClick={() => onAddRow()}>
             <Plus className="w-3.5 h-3.5" /> New row
           </button>
-          <button className="db-add-col" onClick={handleAddColumn}>
+          <button className="et-add-col" onClick={handleAddColumn}>
             <Plus className="w-3.5 h-3.5" /> Add column
           </button>
         </div>
       )}
       {/* Selection action bar */}
       {selectedRows.size > 0 && (
-        <div className="db-selection-bar">
-          <span className="db-selection-count">{selectedRows.size} selected</span>
-          <div className="db-selection-sep" />
-          <button className="db-selection-btn" onClick={handleDuplicateSelected}>
+        <div className="et-selection-bar">
+          <span className="et-selection-count">{selectedRows.size} selected</span>
+          <div className="et-selection-sep" />
+          <button className="et-selection-btn" onClick={handleDuplicateSelected}>
             <Copy className="w-3.5 h-3.5" /> Duplicate
           </button>
-          <button className="db-selection-btn" onClick={handleClearSelected}>
+          <button className="et-selection-btn" onClick={handleClearSelected}>
             <Eraser className="w-3.5 h-3.5" /> Clear values
           </button>
-          <div className="db-selection-sep" />
-          <button className="db-selection-btn danger" onClick={handleDeleteSelected}>
+          <div className="et-selection-sep" />
+          <button className="et-selection-btn danger" onClick={handleDeleteSelected}>
             <Trash2 className="w-3.5 h-3.5" /> Delete
           </button>
-          <button className="db-selection-dismiss" onClick={() => setSelectedRows(new Set())} title="Deselect all">
+          <button className="et-selection-dismiss" onClick={() => setSelectedRows(new Set())} title="Deselect all">
             <X className="w-3.5 h-3.5" />
           </button>
         </div>

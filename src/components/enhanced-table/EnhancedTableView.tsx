@@ -2,14 +2,14 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Database as DbIcon, Loader2, ArrowLeft } from "lucide-react";
-import type { Database, DbColumn, DbRow, DbView, DbViewType, DbFilter, DbSort } from "@/lib/types";
-import DatabaseTable from "./DatabaseTable";
-import DatabaseKanban from "./DatabaseKanban";
-import DatabaseCalendar from "./DatabaseCalendar";
-import DatabaseGallery from "./DatabaseGallery";
-import DatabaseToolbar from "./DatabaseToolbar";
-import DatabaseFilter from "./DatabaseFilter";
-import DatabaseSort from "./DatabaseSort";
+import type { EnhancedTable, DbColumn, DbRow, DbView, DbViewType, DbFilter, DbSort } from "@/lib/types";
+import EnhancedTableGrid from "./EnhancedTableGrid";
+import EnhancedTableKanban from "./EnhancedTableKanban";
+import EnhancedTableCalendar from "./EnhancedTableCalendar";
+import EnhancedTableGallery from "./EnhancedTableGallery";
+import EnhancedTableToolbar from "./EnhancedTableToolbar";
+import EnhancedTableFilter from "./EnhancedTableFilter";
+import EnhancedTableSort from "./EnhancedTableSort";
 import { evaluateFormula } from "./FormulaEvaluator";
 
 // ── Filter / Sort / Search helpers ──────────────────────────────────────────
@@ -79,7 +79,7 @@ function applySearch(rows: DbRow[], search: string, columns: DbColumn[]): DbRow[
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-interface DatabaseViewProps {
+interface EnhancedTableViewProps {
   dbId: string;
   spaceSlug: string;
   canWrite: boolean;
@@ -88,8 +88,8 @@ interface DatabaseViewProps {
   onOpenDatabase?: (dbId: string, initialSearch?: string) => void;
 }
 
-export default function DatabaseView({ dbId, spaceSlug, canWrite, onClose, initialSearch, onOpenDatabase }: DatabaseViewProps) {
-  const [db, setDb] = useState<Database | null>(null);
+export default function EnhancedTableView({ dbId, spaceSlug, canWrite, onClose, initialSearch, onOpenDatabase }: EnhancedTableViewProps) {
+  const [db, setDb] = useState<EnhancedTable | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeViewId, setActiveViewId] = useState<string>("");
@@ -101,7 +101,7 @@ export default function DatabaseView({ dbId, spaceSlug, canWrite, onClose, initi
   const [currentUser, setCurrentUser] = useState<string>("");
   const [members, setMembers] = useState<{ username: string; fullName?: string }[]>([]);
 
-  const api = `/api/spaces/${encodeURIComponent(spaceSlug)}/databases/${encodeURIComponent(dbId)}`;
+  const api = `/api/spaces/${encodeURIComponent(spaceSlug)}/enhanced-tables/${encodeURIComponent(dbId)}`;
 
   const fetchDb = useCallback(async () => {
     try {
@@ -110,7 +110,7 @@ export default function DatabaseView({ dbId, spaceSlug, canWrite, onClose, initi
       const data = await res.json();
       setDb(data);
       if (!activeViewId && data.views.length > 0) setActiveViewId(data.views[0].id);
-    } catch { setError("Database not found"); }
+    } catch { setError("Enhanced table not found"); }
     finally { setLoading(false); }
   }, [api, activeViewId]);
 
@@ -130,7 +130,7 @@ export default function DatabaseView({ dbId, spaceSlug, canWrite, onClose, initi
     loadContext();
   }, [spaceSlug]);
 
-  const saveDb = useCallback(async (updated: Database) => {
+  const saveDb = useCallback(async (updated: EnhancedTable) => {
     setDb(updated);
     await fetch(api, {
       method: "PUT",
@@ -320,7 +320,7 @@ export default function DatabaseView({ dbId, spaceSlug, canWrite, onClose, initi
     return (
       <div className="flex flex-col h-full items-center justify-center text-text-muted gap-2">
         <Loader2 className="w-6 h-6 animate-spin" />
-        <span className="text-sm">Loading database…</span>
+        <span className="text-sm">Loading enhanced table…</span>
       </div>
     );
   }
@@ -329,7 +329,7 @@ export default function DatabaseView({ dbId, spaceSlug, canWrite, onClose, initi
     return (
       <div className="flex flex-col h-full items-center justify-center text-text-muted gap-2">
         <DbIcon className="w-6 h-6" />
-        <span className="text-sm">Database not found</span>
+        <span className="text-sm">Enhanced table not found</span>
       </div>
     );
   }
@@ -351,7 +351,7 @@ export default function DatabaseView({ dbId, spaceSlug, canWrite, onClose, initi
         {titleEdit ? (
           <input
             autoFocus
-            className="db-block-title-input"
+            className="et-block-title-input"
             value={titleValue}
             onChange={(e) => setTitleValue(e.target.value)}
             onBlur={() => {
@@ -368,7 +368,7 @@ export default function DatabaseView({ dbId, spaceSlug, canWrite, onClose, initi
           />
         ) : (
           <span
-            className="db-block-title font-semibold text-sm text-text-primary cursor-default select-none"
+            className="et-block-title font-semibold text-sm text-text-primary cursor-default select-none"
             onDoubleClick={() => { if (canWrite) { setTitleValue(db.title); setTitleEdit(true); } }}
             title={canWrite ? "Double-click to rename" : undefined}
           >
@@ -380,7 +380,7 @@ export default function DatabaseView({ dbId, spaceSlug, canWrite, onClose, initi
       {/* Toolbar + content */}
       <div className="flex-1 overflow-auto">
         {activeView && (
-          <DatabaseToolbar
+          <EnhancedTableToolbar
             db={db}
             activeViewId={activeView.id}
             onSwitchView={handleSwitchView}
@@ -401,7 +401,7 @@ export default function DatabaseView({ dbId, spaceSlug, canWrite, onClose, initi
           />
         )}
         {showFilter && activeView && (
-          <DatabaseFilter
+          <EnhancedTableFilter
             columns={db.columns}
             filters={activeView.filters}
             filterLogic={activeView.filterLogic || "and"}
@@ -410,7 +410,7 @@ export default function DatabaseView({ dbId, spaceSlug, canWrite, onClose, initi
           />
         )}
         {showSort && activeView && (
-          <DatabaseSort
+          <EnhancedTableSort
             columns={db.columns}
             sorts={activeView.sorts}
             onChange={handleSortChange}
@@ -418,7 +418,7 @@ export default function DatabaseView({ dbId, spaceSlug, canWrite, onClose, initi
           />
         )}
         {activeView?.type === "table" && (
-          <DatabaseTable
+          <EnhancedTableGrid
             db={db}
             view={activeView}
             rows={computedRows}
@@ -436,7 +436,7 @@ export default function DatabaseView({ dbId, spaceSlug, canWrite, onClose, initi
           />
         )}
         {activeView?.type === "kanban" && (
-          <DatabaseKanban
+          <EnhancedTableKanban
             db={db}
             view={activeView}
             rows={computedRows}
@@ -446,7 +446,7 @@ export default function DatabaseView({ dbId, spaceSlug, canWrite, onClose, initi
           />
         )}
         {activeView?.type === "calendar" && (
-          <DatabaseCalendar
+          <EnhancedTableCalendar
             db={db}
             view={activeView}
             rows={computedRows}
@@ -455,7 +455,7 @@ export default function DatabaseView({ dbId, spaceSlug, canWrite, onClose, initi
           />
         )}
         {activeView?.type === "gallery" && (
-          <DatabaseGallery
+          <EnhancedTableGallery
             db={db}
             view={activeView}
             rows={computedRows}

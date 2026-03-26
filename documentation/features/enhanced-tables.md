@@ -1,23 +1,23 @@
-# Databases
+# Enhanced Tables
 
-Databases provide structured, spreadsheet-style data storage within a space. Each database has a schema (columns) and rows. Data is rendered in four interchangeable views.
+Enhanced Tables provide structured, spreadsheet-style data storage within a space. Each enhanced table has a schema (columns) and rows. Data is rendered in four interchangeable views.
 
 
 ---
 
-## Creating a Database
+## Creating a Enhanced Table
 
-1. In the sidebar, scroll to the **Databases** section and click **+**.
+1. In the sidebar, scroll to the **Enhanced Tables** section and click **+**.
 2. Enter a title and optionally choose a template.
-3. Click **Create**. The database opens in table view.
+3. Click **Create**. The enhanced table opens in table view.
 
-Databases can also be created inline within a document using the `/database` slash command.
+Enhanced Tables can also be created inline within a document using the `/enhanced table` slash command.
 
 ---
 
 ## Views
 
-Switch between views using the view-type buttons in the database toolbar.
+Switch between views using the view-type buttons in the enhanced table toolbar.
 
 ### Table View
 A traditional spreadsheet grid. All rows and columns are visible. Click any cell to edit it inline.
@@ -49,7 +49,7 @@ Rows are shown as cards with a prominent image or summary field.
 | `checkbox` | Boolean |
 | `url` | Clickable link |
 | `email` | Email address |
-| `relation` | Link to a row in another database (see [Relations](#relations) below) |
+| `relation` | Link to a row in another enhanced table (see [Relations](#relations) below) |
 | `formula` | Computed value |
 | `attachment` | File upload |
 
@@ -83,11 +83,11 @@ Row numbers always reflect insertion order regardless of the current sort.
 
 ## Relations
 
-A `relation` column links each row to a row in another database within the same space.
+A `relation` column links each row to a row in another enhanced table within the same space.
 
-- **Linking a database**: click the column header → **Link to database …** and select the target database.
-- **Display column**: click the column header → **Display column …** to choose which field from the linked database is shown in the cell.
-- **Picking a related row**: click a relation cell to open the **Relation Picker** — a searchable modal that lists all rows in the linked database; already-selected rows appear at the top.
+- **Linking a enhanced table**: click the column header → **Link to enhanced table …** and select the target enhanced table.
+- **Display column**: click the column header → **Display column …** to choose which field from the linked enhanced table is shown in the cell.
+- **Picking a related row**: click a relation cell to open the **Relation Picker** — a searchable modal that lists all rows in the linked enhanced table; already-selected rows appear at the top.
 
 ---
 
@@ -99,17 +99,17 @@ Use the **Filter** and **Sort** controls in the toolbar to narrow the visible ro
 
 ## Search
 
-The database toolbar includes a **search** input that filters rows by any text column.
+The enhanced table toolbar includes a **search** input that filters rows by any text column.
 
 ---
 
-## Favouriting a Database
+## Favouriting a Enhanced Table
 
-Click the `…` menu on a database in the sidebar → **Favourite** to pin it in the Favourites section.
+Click the `…` menu on a enhanced table in the sidebar → **Favourite** to pin it in the Favourites section.
 
 ---
 
-## Deleting a Database
+## Deleting a Enhanced Table
 
 Click the `…` menu in the sidebar → **Delete**. This action is permanent.
 
@@ -117,4 +117,4 @@ Click the `…` menu in the sidebar → **Delete**. This action is permanent.
 
 ## Storage
 
-Each database (schema + all rows) is stored as a single JSON file at `docs/{space}/.databases/{id}.db.json`.
+Each enhanced table (schema + all rows) is stored as a single JSON file at `docs/{space}/.enhanced tables/{id}.db.json`.

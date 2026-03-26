@@ -2,10 +2,10 @@
 
 import { useState, useRef } from "react";
 import { Plus } from "lucide-react";
-import type { Database, DbColumn, DbRow, DbView } from "@/lib/types";
+import type { EnhancedTable, DbColumn, DbRow, DbView } from "@/lib/types";
 
 interface Props {
-  db: Database;
+  db: EnhancedTable;
   view: DbView;
   rows: DbRow[];
   canWrite: boolean;
@@ -21,7 +21,7 @@ export default function DatabaseKanban({ db, view, rows, canWrite, onAddRow, onU
 
   if (!groupCol || (groupCol.type !== "select" && groupCol.type !== "multiSelect")) {
     return (
-      <div className="db-kanban-empty">
+      <div className="et-kanban-empty">
         <p className="text-sm text-text-muted">Kanban view requires a Select column to group by.</p>
         <p className="text-xs text-text-muted">Set the &quot;Group By&quot; column in view settings.</p>
       </div>
@@ -48,37 +48,37 @@ export default function DatabaseKanban({ db, view, rows, canWrite, onAddRow, onU
   };
 
   return (
-    <div className="db-kanban">
+    <div className="et-kanban">
       {lanes.map((lane, i) => (
         <div
           key={lane || "__none"}
-          className={`db-kanban-lane${dragOverLane === lane ? " drag-over" : ""}`}
+          className={`et-kanban-lane${dragOverLane === lane ? " drag-over" : ""}`}
           onDragOver={(e) => { e.preventDefault(); setDragOverLane(lane); }}
           onDragLeave={() => setDragOverLane(null)}
           onDrop={(e) => { e.preventDefault(); onDrop(lane); }}
         >
-          <div className="db-kanban-lane-header">
-            <span className="db-kanban-lane-title">{laneLabels[i]}</span>
-            <span className="db-kanban-lane-count">{getLaneRows(lane).length}</span>
+          <div className="et-kanban-lane-header">
+            <span className="et-kanban-lane-title">{laneLabels[i]}</span>
+            <span className="et-kanban-lane-count">{getLaneRows(lane).length}</span>
           </div>
-          <div className="db-kanban-cards">
+          <div className="et-kanban-cards">
             {getLaneRows(lane).map((row) => (
               <div
                 key={row.id}
-                className={`db-kanban-card${dragRowId === row.id ? " dragging" : ""}`}
+                className={`et-kanban-card${dragRowId === row.id ? " dragging" : ""}`}
                 draggable={canWrite}
                 onDragStart={() => onDragStart(row.id)}
                 onDragEnd={onDragEnd}
               >
-                <div className="db-kanban-card-title">{String(row.cells[titleCol?.id || ""] || "Untitled")}</div>
-                <div className="db-kanban-card-fields">
+                <div className="et-kanban-card-title">{String(row.cells[titleCol?.id || ""] || "Untitled")}</div>
+                <div className="et-kanban-card-fields">
                   {db.columns.filter((c) => c.id !== groupCol.id && c.id !== titleCol?.id).slice(0, 3).map((c) => {
                     const v = row.cells[c.id];
                     if (v == null || v === "") return null;
                     return (
-                      <div key={c.id} className="db-kanban-card-field">
-                        <span className="db-kanban-field-label">{c.name}</span>
-                        <span className="db-kanban-field-value">{c.type === "checkbox" ? (v ? "✓" : "✗") : String(v)}</span>
+                      <div key={c.id} className="et-kanban-card-field">
+                        <span className="et-kanban-field-label">{c.name}</span>
+                        <span className="et-kanban-field-value">{c.type === "checkbox" ? (v ? "✓" : "✗") : String(v)}</span>
                       </div>
                     );
                   })}
@@ -87,7 +87,7 @@ export default function DatabaseKanban({ db, view, rows, canWrite, onAddRow, onU
             ))}
           </div>
           {canWrite && (
-            <button className="db-kanban-add" onClick={() => onAddRow({ [groupCol.id]: lane })}>
+            <button className="et-kanban-add" onClick={() => onAddRow({ [groupCol.id]: lane })}>
               <Plus className="w-3 h-3" /> Add
             </button>
           )}

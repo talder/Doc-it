@@ -2,25 +2,25 @@ import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
 import { getSpaceDir, getStorageRoot, ensureDir } from "./config";
-import type { Database } from "./types";
+import type { EnhancedTable } from "./types";
 
 export function generateId(): string {
   return crypto.randomBytes(6).toString("hex");
 }
 
-export function getDatabaseDir(spaceSlug: string): string {
+export function getEnhancedTableDir(spaceSlug: string): string {
   return path.join(getSpaceDir(spaceSlug), ".databases");
 }
 
 function dbPath(spaceSlug: string, dbId: string): string {
-  return path.join(getDatabaseDir(spaceSlug), `${dbId}.db.json`);
+  return path.join(getEnhancedTableDir(spaceSlug), `${dbId}.db.json`);
 }
 
-export async function listDatabases(spaceSlug: string): Promise<Database[]> {
-  const dir = getDatabaseDir(spaceSlug);
+export async function listEnhancedTables(spaceSlug: string): Promise<EnhancedTable[]> {
+  const dir = getEnhancedTableDir(spaceSlug);
   await ensureDir(dir);
   const files = await fs.readdir(dir);
-  const dbs: Database[] = [];
+  const dbs: EnhancedTable[] = [];
   for (const f of files) {
     if (!f.endsWith(".db.json")) continue;
     try {
@@ -31,7 +31,7 @@ export async function listDatabases(spaceSlug: string): Promise<Database[]> {
   return dbs.sort((a, b) => a.title.localeCompare(b.title));
 }
 
-export async function readDatabase(spaceSlug: string, dbId: string): Promise<Database | null> {
+export async function readEnhancedTable(spaceSlug: string, dbId: string): Promise<EnhancedTable | null> {
   try {
     const raw = await fs.readFile(dbPath(spaceSlug, dbId), "utf-8");
     return JSON.parse(raw);
@@ -40,13 +40,13 @@ export async function readDatabase(spaceSlug: string, dbId: string): Promise<Dat
   }
 }
 
-export async function writeDatabase(spaceSlug: string, dbId: string, db: Database): Promise<void> {
-  const dir = getDatabaseDir(spaceSlug);
+export async function writeEnhancedTable(spaceSlug: string, dbId: string, db: EnhancedTable): Promise<void> {
+  const dir = getEnhancedTableDir(spaceSlug);
   await ensureDir(dir);
   await fs.writeFile(dbPath(spaceSlug, dbId), JSON.stringify(db, null, 2), "utf-8");
 }
 
-export async function deleteDatabase(spaceSlug: string, dbId: string): Promise<boolean> {
+export async function deleteEnhancedTable(spaceSlug: string, dbId: string): Promise<boolean> {
   try {
     await fs.unlink(dbPath(spaceSlug, dbId));
     return true;
@@ -55,8 +55,8 @@ export async function deleteDatabase(spaceSlug: string, dbId: string): Promise<b
   }
 }
 
-/** Move a database .db.json file to archive/.databases/ */
-export async function archiveDatabase(spaceSlug: string, dbId: string): Promise<boolean> {
+/** Move an enhanced table .db.json file to archive/.databases/ */
+export async function archiveEnhancedTable(spaceSlug: string, dbId: string): Promise<boolean> {
   const src = dbPath(spaceSlug, dbId);
   const archiveDir = path.join(getStorageRoot(), "archive", spaceSlug, ".databases");
   await ensureDir(archiveDir);
@@ -69,12 +69,12 @@ export async function archiveDatabase(spaceSlug: string, dbId: string): Promise<
   }
 }
 
-/** List archived databases */
-export async function listArchivedDatabases(spaceSlug: string): Promise<Database[]> {
+/** List archived enhanced tables */
+export async function listArchivedEnhancedTables(spaceSlug: string): Promise<EnhancedTable[]> {
   const archiveDir = path.join(getStorageRoot(), "archive", spaceSlug, ".databases");
   try {
     const files = await fs.readdir(archiveDir);
-    const dbs: Database[] = [];
+    const dbs: EnhancedTable[] = [];
     for (const f of files) {
       if (!f.endsWith(".db.json")) continue;
       try {
@@ -88,11 +88,11 @@ export async function listArchivedDatabases(spaceSlug: string): Promise<Database
   }
 }
 
-/** Unarchive a database (move archive -> active) */
-export async function unarchiveDatabase(spaceSlug: string, dbId: string): Promise<boolean> {
+/** Unarchive an enhanced table (move archive -> active) */
+export async function unarchiveEnhancedTable(spaceSlug: string, dbId: string): Promise<boolean> {
   const archiveDir = path.join(getStorageRoot(), "archive", spaceSlug, ".databases");
   const src = path.join(archiveDir, `${dbId}.db.json`);
-  const destDir = getDatabaseDir(spaceSlug);
+  const destDir = getEnhancedTableDir(spaceSlug);
   await ensureDir(destDir);
   const dest = path.join(destDir, `${dbId}.db.json`);
   try {

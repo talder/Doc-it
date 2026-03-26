@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Filter, ArrowUpDown, Plus, LayoutGrid, Columns3, Calendar, GalleryHorizontalEnd, Search, Eye, Pencil, X } from "lucide-react";
-import type { Database, DbView, DbViewType } from "@/lib/types";
+import type { EnhancedTable, DbView, DbViewType } from "@/lib/types";
 
 const VIEW_ICONS: Record<DbViewType, typeof LayoutGrid> = {
   table: LayoutGrid,
@@ -12,7 +12,7 @@ const VIEW_ICONS: Record<DbViewType, typeof LayoutGrid> = {
 };
 
 interface Props {
-  db: Database;
+  db: EnhancedTable;
   activeViewId: string;
   onSwitchView: (viewId: string) => void;
   onAddView: (type: DbViewType, name: string) => void;
@@ -52,9 +52,9 @@ export default function DatabaseToolbar({
   const activeView = db.views.find((v) => v.id === activeViewId);
 
   return (
-    <div className="db-toolbar">
+    <div className="et-toolbar">
       {/* View tabs */}
-      <div className="db-toolbar-views">
+      <div className="et-toolbar-views">
         {db.views.map((v) => {
           const Icon = VIEW_ICONS[v.type] || LayoutGrid;
           const isActive = v.id === activeViewId;
@@ -63,7 +63,7 @@ export default function DatabaseToolbar({
               <input
                 key={v.id}
                 autoFocus
-                className="db-toolbar-view-rename"
+                className="et-toolbar-view-rename"
                 value={renameName}
                 onChange={(e) => setRenameName(e.target.value)}
                 onBlur={() => { if (renameName.trim()) onRenameView(v.id, renameName.trim()); setRenameId(null); }}
@@ -77,7 +77,7 @@ export default function DatabaseToolbar({
           return (
             <button
               key={v.id}
-              className={`db-toolbar-view-tab${isActive ? " active" : ""}`}
+              className={`et-toolbar-view-tab${isActive ? " active" : ""}`}
               onClick={() => onSwitchView(v.id)}
               onDoubleClick={() => { setRenameId(v.id); setRenameName(v.name); }}
               title={`${v.name} (${v.type})`}
@@ -85,24 +85,24 @@ export default function DatabaseToolbar({
               <Icon className="w-3 h-3" />
               <span>{v.name}</span>
               {isActive && db.views.length > 1 && canWrite && (
-                <button className="db-toolbar-view-delete" onClick={(e) => { e.stopPropagation(); onDeleteView(v.id); }} title="Delete view">
+                <span role="button" tabIndex={0} className="et-toolbar-view-delete" onClick={(e) => { e.stopPropagation(); onDeleteView(v.id); }} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); onDeleteView(v.id); } }} title="Delete view">
                   <X className="w-2.5 h-2.5" />
-                </button>
+                </span>
               )}
             </button>
           );
         })}
         {canWrite && (
           <div className="relative" ref={addRef}>
-            <button className="db-toolbar-add-view" onClick={() => setAddOpen(!addOpen)} title="Add view">
+            <button className="et-toolbar-add-view" onClick={() => setAddOpen(!addOpen)} title="Add view">
               <Plus className="w-3 h-3" />
             </button>
             {addOpen && (
-              <div className="db-toolbar-add-view-dropdown">
+              <div className="et-toolbar-add-view-dropdown">
                 {(["table", "kanban", "calendar", "gallery"] as DbViewType[]).map((type) => {
                   const Icon = VIEW_ICONS[type];
                   return (
-                    <button key={type} className="db-toolbar-add-view-item" onClick={() => { onAddView(type, `${type.charAt(0).toUpperCase() + type.slice(1)} View`); setAddOpen(false); }}>
+                    <button key={type} className="et-toolbar-add-view-item" onClick={() => { onAddView(type, `${type.charAt(0).toUpperCase() + type.slice(1)} View`); setAddOpen(false); }}>
                       <Icon className="w-3.5 h-3.5" /> {type.charAt(0).toUpperCase() + type.slice(1)}
                     </button>
                   );
@@ -114,24 +114,24 @@ export default function DatabaseToolbar({
       </div>
 
       {/* Actions */}
-      <div className="db-toolbar-actions">
+      <div className="et-toolbar-actions">
         {hiddenCount > 0 && (
-          <button className="db-toolbar-btn" onClick={onShowHidden} title="Show hidden columns">
+          <button className="et-toolbar-btn" onClick={onShowHidden} title="Show hidden columns">
             <Eye className="w-3.5 h-3.5" /> {hiddenCount} hidden
           </button>
         )}
-        <button className={`db-toolbar-btn${showFilter ? " active" : ""}`} onClick={onToggleFilter}>
+        <button className={`et-toolbar-btn${showFilter ? " active" : ""}`} onClick={onToggleFilter}>
           <Filter className="w-3.5 h-3.5" />
-          Filter{filterCount > 0 && <span className="db-toolbar-badge">{filterCount}</span>}
+          Filter{filterCount > 0 && <span className="et-toolbar-badge">{filterCount}</span>}
         </button>
-        <button className={`db-toolbar-btn${showSort ? " active" : ""}`} onClick={onToggleSort}>
+        <button className={`et-toolbar-btn${showSort ? " active" : ""}`} onClick={onToggleSort}>
           <ArrowUpDown className="w-3.5 h-3.5" />
-          Sort{sortCount > 0 && <span className="db-toolbar-badge">{sortCount}</span>}
+          Sort{sortCount > 0 && <span className="et-toolbar-badge">{sortCount}</span>}
         </button>
-        <div className="db-toolbar-search">
+        <div className="et-toolbar-search">
           <Search className="w-3 h-3 text-text-muted" />
           <input
-            className="db-toolbar-search-input"
+            className="et-toolbar-search-input"
             placeholder="Search…"
             value={search}
             onChange={(e) => onSearch(e.target.value)}

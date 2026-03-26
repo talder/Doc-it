@@ -4,6 +4,25 @@ All notable changes to Doc-it are documented here.
 
 ---
 
+## [0.2.18] — 2026-03-26
+
+### Added
+- **On-Call assisted-by field** — registrars can now select persons they called for assistance via a multi-select user picker. The field is immutable after submission. Shown in the table, detail modal, and weekly report.
+- **On-Call enhanced weekly report** — the weekly email digest is now grouped per registrar with a calls overview table (including an Assisted By column), a time breakdown (Mon–Fri / Saturday / Sunday), and an assistance overview tallying how many calls each person helped with.
+- **Enhanced table column reorder** — drag columns by their grip handle to reorder them. Drop indicators show where the column will land.
+- **Pre-update data snapshots** — new lightweight snapshot system that copies all data directories (`config/`, `docs/`, `logs/`, `archive/`, `history/`) into `snapshots/` for fast rollback. Snapshots are created automatically before every `--upgrade` in all three installers (Linux, macOS, Windows). Uses hard links on Linux for near-zero disk overhead. Admin UI in Backup tab to create, list, restore, and delete snapshots. Restore auto-creates a safety snapshot first.
+
+### Changed
+- **Database → Enhanced Tables rename** — all user-facing labels, component files, API routes (`/api/spaces/:slug/enhanced-tables/...`), CSS classes (`et-` prefix), types (`EnhancedTable`), and documentation now use "Enhanced Tables" instead of "Databases" to avoid confusion with TipTap's built-in table extension.
+
+### Fixed
+- **2FA "Back to login" not working** — clicking "← Back to login" on the two-factor authentication screen now clears the pending 2FA cookie and resets the form, allowing a fresh login attempt instead of looping back to the 2FA screen.
+- **Enhanced table drag-start crash** — accessing `e.currentTarget.style` inside a `requestAnimationFrame` callback threw a TypeError because React nullifies synthetic event properties after the handler returns. Captured the element reference before the async callback.
+- **Nested `<button>` hydration error in toolbar** — the view tab delete button was a `<button>` nested inside another `<button>`, which is invalid HTML and caused a React hydration mismatch. Replaced with a `<span role="button">`.
+- **Empty-save data loss guard** — `handleSave` and `handleUpdateMetadata` now reject saves with empty or whitespace-only content. Prevents a race condition in TipTap’s `flushSync` / React 19 interaction that could overwrite documents with empty content during rapid navigation.
+
+---
+
 ## [0.2.16] — 2026-03-25
 
 ### Added

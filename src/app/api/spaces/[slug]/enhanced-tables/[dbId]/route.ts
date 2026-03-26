@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
 import { requireSpaceRole } from "@/lib/permissions";
-import { readDatabase, writeDatabase, getDatabaseDir } from "@/lib/database";
+import { readEnhancedTable, writeEnhancedTable, getEnhancedTableDir } from "@/lib/enhanced-table";
 import { ensureDir, getTrashDir } from "@/lib/config";
 import { auditLog } from "@/lib/audit";
 import { invalidateSpaceCache } from "@/lib/space-cache";
@@ -14,7 +14,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
   try { await requireSpaceRole(slug, "reader"); }
   catch (err) { return NextResponse.json({ error: String(err) }, { status: 403 }); }
 
-  const db = await readDatabase(slug, dbId);
+  const db = await readEnhancedTable(slug, dbId);
   if (!db) return NextResponse.json({ error: "Database not found" }, { status: 404 });
   return NextResponse.json(db);
 }
@@ -24,7 +24,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
   try { await requireSpaceRole(slug, "writer"); }
   catch (err) { return NextResponse.json({ error: String(err) }, { status: 403 }); }
 
-  const db = await readDatabase(slug, dbId);
+  const db = await readEnhancedTable(slug, dbId);
   if (!db) return NextResponse.json({ error: "Database not found" }, { status: 404 });
 
   const updates = await request.json();
@@ -37,7 +37,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
   if (updates.rows !== undefined) db.rows = updates.rows;
   db.updatedAt = new Date().toISOString();
 
-  await writeDatabase(slug, dbId, db);
+  await writeEnhancedTable(slug, dbId, db);
   invalidateSpaceCache(slug);
   return NextResponse.json(db);
 }
@@ -48,14 +48,14 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
   try { ({ user } = await requireSpaceRole(slug, "writer")); }
   catch (err) { return NextResponse.json({ error: String(err) }, { status: 403 }); }
 
-  const db = await readDatabase(slug, dbId);
+  const db = await readEnhancedTable(slug, dbId);
   if (!db) return NextResponse.json({ error: "Database not found" }, { status: 404 });
 
   // Move to trash instead of permanent delete
   const trashDir = path.join(getTrashDir(), slug);
   await ensureDir(trashDir);
   const trashId = `${Date.now()}-${dbId}`;
-  const srcPath = path.join(getDatabaseDir(slug), `${dbId}.db.json`);
+  const srcPath = path.join(getEnhancedTableDir(slug), `${dbId}.db.json`);
   const trashFile = path.join(trashDir, trashId);
 
   try {

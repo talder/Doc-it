@@ -334,7 +334,14 @@ export default function LoginPage() {
 
               <button
                 type="button"
-                onClick={() => { setStep("credentials"); setError(""); setTotpCode(""); }}
+                onClick={() => {
+                  // Clear the pending 2FA cookie so re-login starts fresh
+                  fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+                  setStep("credentials");
+                  setError("");
+                  setTotpCode("");
+                  setPassword("");
+                }}
                 className="w-full py-2 text-sm text-text-muted hover:text-text-secondary transition-colors"
               >
               ← Back to login

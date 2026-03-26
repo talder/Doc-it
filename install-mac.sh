@@ -208,6 +208,24 @@ if $UPGRADE; then
   [[ -d "$INSTALL_DIR/.git" ]] || die "--upgrade: $INSTALL_DIR is not a git repo. Run without --upgrade to install first."
   info "Stopping service before upgrade (if running)..."
   sudo launchctl unload "$SERVICE_PLIST" 2>/dev/null || true
+  # ── Pre-upgrade data snapshot ──────────────────────────────────
+  info "Creating pre-upgrade data snapshot..."
+  SNAP_TS=$(date -u +"%Y-%m-%dT%H-%M-%S")
+  SNAP_DIR="$INSTALL_DIR/snapshots/${SNAP_TS}_pre-upgrade"
+  mkdir -p "$SNAP_DIR"
+  for _src in config docs logs archive history; do
+    [[ -d "$INSTALL_DIR/$_src" ]] || continue
+    cp -R "$INSTALL_DIR/$_src" "$SNAP_DIR/$_src"
+  done
+  ok "Snapshot saved to snapshots/${SNAP_TS}_pre-upgrade"
+  # Keep only 5 most recent snapshots
+  SNAP_COUNT=$(ls -1d "$INSTALL_DIR/snapshots/"*/ 2>/dev/null | wc -l | tr -d ' ')
+  if [[ "$SNAP_COUNT" -gt 5 ]]; then
+    ls -1d "$INSTALL_DIR/snapshots/"*/ | head -n $(( SNAP_COUNT - 5 )) | while read -r old; do
+      rm -rf "$old"
+    done
+  fi
+
   info "Pulling latest from GitHub..."
   git $GIT_SSL -C "$INSTALL_DIR" pull --rebase origin main
 else

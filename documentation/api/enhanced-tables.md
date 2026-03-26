@@ -1,12 +1,12 @@
-# API — Databases
+# API — Enhanced Tables
 
-Base path: `/api/spaces/:slug/databases`
+Base path: `/api/spaces/:slug/enhanced tables`
 
 ---
 
-## GET /api/spaces/:slug/databases
+## GET /api/spaces/:slug/enhanced tables
 
-List all databases in the space.
+List all enhanced tables in the space.
 
 **Response `200`**
 ```json
@@ -17,9 +17,9 @@ List all databases in the space.
 
 ---
 
-## POST /api/spaces/:slug/databases
+## POST /api/spaces/:slug/enhanced tables
 
-Create a new database.
+Create a new enhanced table.
 
 **Request body**
 ```json
@@ -33,15 +33,15 @@ Create a new database.
 
 ---
 
-## GET /api/spaces/:slug/databases/:id
+## GET /api/spaces/:slug/enhanced tables/:id
 
-Get the schema and metadata for a database.
+Get the schema and metadata for a enhanced table.
 
 ---
 
-## PUT /api/spaces/:slug/databases/:id
+## PUT /api/spaces/:slug/enhanced tables/:id
 
-Update the database title.
+Update the enhanced table title.
 
 **Request body**
 ```json
@@ -50,13 +50,13 @@ Update the database title.
 
 ---
 
-## DELETE /api/spaces/:slug/databases/:id
+## DELETE /api/spaces/:slug/enhanced tables/:id
 
-Delete a database and all its rows. Irreversible.
+Delete a enhanced table and all its rows. Irreversible.
 
 ---
 
-## GET /api/spaces/:slug/databases/:id/schema
+## GET /api/spaces/:slug/enhanced tables/:id/schema
 
 Return the column definitions.
 
@@ -71,13 +71,13 @@ Return the column definitions.
 
 ---
 
-## PUT /api/spaces/:slug/databases/:id/schema
+## PUT /api/spaces/:slug/enhanced tables/:id/schema
 
 Replace the column definitions.
 
 ---
 
-## GET /api/spaces/:slug/databases/:id/rows
+## GET /api/spaces/:slug/enhanced tables/:id/rows
 
 List all rows. Supports filtering, sorting, and search via query params.
 
@@ -88,7 +88,7 @@ List all rows. Supports filtering, sorting, and search via query params.
 
 ---
 
-## POST /api/spaces/:slug/databases/:id/rows
+## POST /api/spaces/:slug/enhanced tables/:id/rows
 
 Create a new row.
 
@@ -99,7 +99,7 @@ Create a new row.
 
 ---
 
-## PUT /api/spaces/:slug/databases/:id/rows/:rowId
+## PUT /api/spaces/:slug/enhanced tables/:id/rows/:rowId
 
 Update a row.
 
@@ -110,6 +110,6 @@ Update a row.
 
 ---
 
-## DELETE /api/spaces/:slug/databases/:id/rows/:rowId
+## DELETE /api/spaces/:slug/enhanced tables/:id/rows/:rowId
 
 Delete a row.

@@ -89,3 +89,9 @@ All backup archives are encrypted at rest using the same AES-256-GCM key used fo
 ## Storage
 
 Backup configuration is stored in the SQLite KV store under the key `backup.json`. Backup run state (last run timestamp) is stored under `backup-state.json`. CIFS and SFTP credentials are stored AES-256-GCM encrypted within the backup configuration.
+
+---
+
+## See Also
+
+- [Data Snapshots](snapshots.md) — lightweight local snapshots for fast rollback (e.g. before upgrades). Unlike encrypted backups, snapshots are unencrypted directory copies optimised for speed.

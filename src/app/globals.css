@@ -3668,11 +3668,11 @@ select.modal-input {
   opacity: 1;
 }
 
-.db-section-header {
+.et-section-header {
   color: #14b8a6;
   opacity: 0.85;
 }
-.db-section-header:hover {
+.et-section-header:hover {
   opacity: 1;
 }
 
@@ -4760,15 +4760,15 @@ textarea.modal-input {
    Database block
    ═══════════════════════════════════════════════════════════════════════════ */
 
-.db-block {
+.et-block {
   border: 1px solid var(--color-border);
   border-radius: 10px;
   background: var(--color-surface);
   overflow: visible;
 }
 
-.db-block-loading,
-.db-block-error {
+.et-block-loading,
+.et-block-error {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -4777,25 +4777,25 @@ textarea.modal-input {
   color: var(--color-text-muted);
 }
 
-.db-block-error {
+.et-block-error {
   color: #ef4444;
 }
 
-.db-block-header {
+.et-block-header {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 12px 16px 4px;
 }
 
-.db-block-title {
+.et-block-title {
   font-weight: 600;
   font-size: 0.9rem;
   color: var(--color-text-primary);
   cursor: default;
 }
 
-.db-block-title-input {
+.et-block-title-input {
   font-weight: 600;
   font-size: 0.9rem;
   color: var(--color-text-primary);
@@ -4808,7 +4808,7 @@ textarea.modal-input {
 
 /* ── Display mode controls ─────────────────────────────────────────────── */
 
-.db-block-header-actions {
+.et-block-header-actions {
   display: flex;
   align-items: center;
   gap: 2px;
@@ -4817,12 +4817,12 @@ textarea.modal-input {
   transition: opacity 0.15s;
 }
 
-.db-block:hover .db-block-header-actions,
-.db-block-header-actions:focus-within {
+.et-block:hover .et-block-header-actions,
+.et-block-header-actions:focus-within {
   opacity: 1;
 }
 
-.db-display-btn {
+.et-display-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -4837,17 +4837,17 @@ textarea.modal-input {
   padding: 0;
 }
 
-.db-display-btn:hover {
+.et-display-btn:hover {
   background: var(--color-muted);
   color: var(--color-text-primary);
 }
 
-.db-display-btn.active {
+.et-display-btn.active {
   background: var(--color-accent-light);
   color: var(--color-accent-text);
 }
 
-.db-display-sep {
+.et-display-sep {
   display: inline-block;
   width: 1px;
   height: 14px;
@@ -4857,7 +4857,7 @@ textarea.modal-input {
 
 /* ── Card mode ─────────────────────────────────────────────────────────── */
 
-.db-block-card-meta-bar {
+.et-block-card-meta-bar {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -4866,7 +4866,7 @@ textarea.modal-input {
   color: var(--color-text-muted);
 }
 
-.db-block-card-open {
+.et-block-card-open {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -4882,19 +4882,19 @@ textarea.modal-input {
   transition: all 0.12s;
 }
 
-.db-block-card-open:hover {
+.et-block-card-open:hover {
   border-color: var(--color-accent);
   color: var(--color-accent);
 }
 
 /* ── Embed mode ────────────────────────────────────────────────────────── */
 
-.db-block-embed-mode {
+.et-block-embed-mode {
   border: 2px solid var(--color-border);
   border-radius: 10px;
 }
 
-.db-embed-scroll {
+.et-embed-scroll {
   max-height: 380px;
   overflow-y: auto;
   overflow-x: auto;
@@ -4902,7 +4902,7 @@ textarea.modal-input {
 
 /* ── Fullscreen modal ──────────────────────────────────────────────────── */
 
-.db-modal-overlay {
+.et-modal-overlay {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.5);
@@ -4914,7 +4914,7 @@ textarea.modal-input {
   backdrop-filter: blur(2px);
 }
 
-.db-modal-content {
+.et-modal-content {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 12px;
@@ -4924,15 +4924,15 @@ textarea.modal-input {
   flex-direction: column;
   overflow: hidden;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
-  animation: db-modal-in 0.15s ease;
+  animation: et-modal-in 0.15s ease;
 }
 
-@keyframes db-modal-in {
+@keyframes et-modal-in {
   from { opacity: 0; transform: scale(0.97) translateY(6px); }
   to   { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-.db-modal-header {
+.et-modal-header {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -4941,14 +4941,14 @@ textarea.modal-input {
   flex-shrink: 0;
 }
 
-.db-modal-title {
+.et-modal-title {
   font-weight: 600;
   font-size: 0.95rem;
   color: var(--color-text-primary);
   flex: 1;
 }
 
-.db-modal-close {
+.et-modal-close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -4962,12 +4962,12 @@ textarea.modal-input {
   transition: background 0.1s, color 0.1s;
 }
 
-.db-modal-close:hover {
+.et-modal-close:hover {
   background: var(--color-muted);
   color: var(--color-text-primary);
 }
 
-.db-modal-body {
+.et-modal-body {
   flex: 1;
   overflow: auto;
   display: flex;
@@ -4976,7 +4976,7 @@ textarea.modal-input {
 
 /* ── Toolbar ───────────────────────────────────────────────────────────── */
 
-.db-toolbar {
+.et-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -4986,13 +4986,13 @@ textarea.modal-input {
   flex-wrap: wrap;
 }
 
-.db-toolbar-views {
+.et-toolbar-views {
   display: flex;
   align-items: center;
   gap: 2px;
 }
 
-.db-toolbar-view-tab {
+.et-toolbar-view-tab {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -5007,17 +5007,17 @@ textarea.modal-input {
   transition: all 0.12s;
 }
 
-.db-toolbar-view-tab:hover {
+.et-toolbar-view-tab:hover {
   background: var(--color-muted);
   color: var(--color-text-primary);
 }
 
-.db-toolbar-view-tab.active {
+.et-toolbar-view-tab.active {
   background: var(--color-accent-light);
   color: var(--color-accent-text);
 }
 
-.db-toolbar-view-delete {
+.et-toolbar-view-delete {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -5031,17 +5031,17 @@ textarea.modal-input {
   transition: opacity 0.12s;
 }
 
-.db-toolbar-view-tab:hover .db-toolbar-view-delete,
-.db-toolbar-view-tab.active .db-toolbar-view-delete {
+.et-toolbar-view-tab:hover .et-toolbar-view-delete,
+.et-toolbar-view-tab.active .et-toolbar-view-delete {
   opacity: 0.6;
 }
 
-.db-toolbar-view-delete:hover {
+.et-toolbar-view-delete:hover {
   opacity: 1 !important;
   color: #ef4444;
 }
 
-.db-toolbar-view-rename {
+.et-toolbar-view-rename {
   font-size: 0.72rem;
   font-weight: 500;
   padding: 4px 8px;
@@ -5053,7 +5053,7 @@ textarea.modal-input {
   width: 100px;
 }
 
-.db-toolbar-add-view {
+.et-toolbar-add-view {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -5067,12 +5067,12 @@ textarea.modal-input {
   transition: all 0.12s;
 }
 
-.db-toolbar-add-view:hover {
+.et-toolbar-add-view:hover {
   border-color: var(--color-accent);
   color: var(--color-accent);
 }
 
-.db-toolbar-add-view-dropdown {
+.et-toolbar-add-view-dropdown {
   position: absolute;
   top: 100%;
   left: 0;
@@ -5086,7 +5086,7 @@ textarea.modal-input {
   min-width: 140px;
 }
 
-.db-toolbar-add-view-item {
+.et-toolbar-add-view-item {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -5101,17 +5101,17 @@ textarea.modal-input {
   transition: background 0.1s;
 }
 
-.db-toolbar-add-view-item:hover {
+.et-toolbar-add-view-item:hover {
   background: var(--color-muted);
 }
 
-.db-toolbar-actions {
+.et-toolbar-actions {
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
-.db-toolbar-btn {
+.et-toolbar-btn {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -5126,17 +5126,17 @@ textarea.modal-input {
   transition: all 0.12s;
 }
 
-.db-toolbar-btn:hover {
+.et-toolbar-btn:hover {
   background: var(--color-muted);
   color: var(--color-text-primary);
 }
 
-.db-toolbar-btn.active {
+.et-toolbar-btn.active {
   background: var(--color-accent-light);
   color: var(--color-accent-text);
 }
 
-.db-toolbar-badge {
+.et-toolbar-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -5150,7 +5150,7 @@ textarea.modal-input {
   color: #fff;
 }
 
-.db-toolbar-search {
+.et-toolbar-search {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -5160,7 +5160,7 @@ textarea.modal-input {
   background: var(--color-input-bg);
 }
 
-.db-toolbar-search-input {
+.et-toolbar-search-input {
   border: none;
   background: transparent;
   outline: none;
@@ -5169,26 +5169,26 @@ textarea.modal-input {
   width: 80px;
 }
 
-.db-toolbar-search-input::placeholder {
+.et-toolbar-search-input::placeholder {
   color: var(--color-text-muted);
 }
 
 /* ── Filter / Sort panels ──────────────────────────────────────────────── */
 
-.db-filter-panel {
+.et-filter-panel {
   padding: 10px 16px;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
 }
 
-.db-filter-header {
+.et-filter-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 8px;
 }
 
-.db-filter-close {
+.et-filter-close {
   border: none;
   background: none;
   color: var(--color-text-muted);
@@ -5198,17 +5198,17 @@ textarea.modal-input {
   transition: color 0.12s;
 }
 
-.db-filter-close:hover {
+.et-filter-close:hover {
   color: var(--color-text-primary);
 }
 
-.db-filter-logic {
+.et-filter-logic {
   display: flex;
   gap: 2px;
   margin-bottom: 8px;
 }
 
-.db-filter-logic-btn {
+.et-filter-logic-btn {
   padding: 2px 10px;
   font-size: 0.65rem;
   font-weight: 600;
@@ -5220,26 +5220,26 @@ textarea.modal-input {
   transition: all 0.12s;
 }
 
-.db-filter-logic-btn.active {
+.et-filter-logic-btn.active {
   background: var(--color-accent-light);
   border-color: var(--color-accent);
   color: var(--color-accent-text);
 }
 
-.db-filter-rows {
+.et-filter-rows {
   display: flex;
   flex-direction: column;
   gap: 4px;
   margin-bottom: 8px;
 }
 
-.db-filter-row {
+.et-filter-row {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.db-filter-select {
+.et-filter-select {
   padding: 4px 6px;
   font-size: 0.72rem;
   border: 1px solid var(--color-border);
@@ -5249,11 +5249,11 @@ textarea.modal-input {
   outline: none;
 }
 
-.db-filter-select:focus {
+.et-filter-select:focus {
   border-color: var(--color-accent);
 }
 
-.db-filter-input {
+.et-filter-input {
   padding: 4px 6px;
   font-size: 0.72rem;
   border: 1px solid var(--color-border);
@@ -5264,11 +5264,11 @@ textarea.modal-input {
   width: 100px;
 }
 
-.db-filter-input:focus {
+.et-filter-input:focus {
   border-color: var(--color-accent);
 }
 
-.db-filter-remove {
+.et-filter-remove {
   border: none;
   background: none;
   color: var(--color-text-muted);
@@ -5278,11 +5278,11 @@ textarea.modal-input {
   transition: color 0.12s;
 }
 
-.db-filter-remove:hover {
+.et-filter-remove:hover {
   color: #ef4444;
 }
 
-.db-filter-add {
+.et-filter-add {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -5297,25 +5297,25 @@ textarea.modal-input {
   transition: all 0.12s;
 }
 
-.db-filter-add:hover {
+.et-filter-add:hover {
   background: var(--color-muted);
   color: var(--color-text-primary);
 }
 
 /* ── Table ──────────────────────────────────────────────────────────────── */
 
-.db-table-wrap {
+.et-table-wrap {
   overflow-x: auto;
   overflow-y: visible;
   min-height: 240px;
 }
 
-.db-table {
+.et-table {
   display: grid;
   min-width: 100%;
 }
 
-.db-th {
+.et-th {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -5330,18 +5330,18 @@ textarea.modal-input {
   position: relative;
 }
 
-.db-th:last-child {
+.et-th:last-child {
   border-right: none;
 }
 
-.db-th-name {
+.et-th-name {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.db-th-name-sortable {
+.et-th-name-sortable {
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -5352,29 +5352,59 @@ textarea.modal-input {
   transition: color 0.12s;
 }
 
-.db-th-name-sortable:hover {
+.et-th-name-sortable:hover {
   color: var(--color-text-primary);
 }
 
-.db-th-sorted .db-th-name {
+.et-th-sorted .et-th-name {
   color: var(--color-accent-text);
 }
 
-.db-th-sort-icon {
+.et-th-sort-icon {
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
   color: var(--color-accent);
 }
 
-.db-th-type {
+.et-th-type {
   font-size: 0.6rem;
   font-weight: 400;
   opacity: 0.6;
   text-transform: uppercase;
 }
 
-.db-th-menu-btn {
+.et-th-grip {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+  opacity: 0;
+  cursor: grab;
+  transition: opacity 0.12s;
+}
+
+.et-th:hover .et-th-grip {
+  opacity: 0.5;
+}
+
+.et-th-grip:hover {
+  opacity: 1 !important;
+}
+
+.et-th-dragging {
+  opacity: 0.4;
+}
+
+.et-th-drop-left {
+  box-shadow: inset 3px 0 0 0 var(--color-accent);
+}
+
+.et-th-drop-right {
+  box-shadow: inset -3px 0 0 0 var(--color-accent);
+}
+
+.et-th-menu-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -5388,15 +5418,15 @@ textarea.modal-input {
   transition: opacity 0.12s;
 }
 
-.db-th:hover .db-th-menu-btn {
+.et-th:hover .et-th-menu-btn {
   opacity: 1;
 }
 
-.db-th-menu-btn:hover {
+.et-th-menu-btn:hover {
   background: var(--color-muted);
 }
 
-.db-th-resize {
+.et-th-resize {
   position: absolute;
   right: 0;
   top: 0;
@@ -5407,12 +5437,12 @@ textarea.modal-input {
   transition: background 0.12s;
 }
 
-.db-th-resize:hover,
-.db-th-resize:active {
+.et-th-resize:hover,
+.et-th-resize:active {
   background: var(--color-accent);
 }
 
-.db-th-add {
+.et-th-add {
   justify-content: center;
   color: var(--color-text-muted);
   border-right: none;
@@ -5420,25 +5450,25 @@ textarea.modal-input {
   transition: color 0.12s;
 }
 
-.db-th-add:hover {
+.et-th-add:hover {
   color: var(--color-accent);
 }
 
-.db-th-rownum {
+.et-th-rownum {
   justify-content: center;
   font-size: 0.62rem;
   color: var(--color-text-muted);
   opacity: 0.6;
 }
 
-.db-select-all-check {
+.et-select-all-check {
   accent-color: var(--color-accent);
   cursor: pointer;
   width: 13px;
   height: 13px;
 }
 
-.db-td-rownum {
+.et-td-rownum {
   justify-content: center;
   font-size: 0.68rem;
   color: var(--color-text-muted);
@@ -5447,12 +5477,12 @@ textarea.modal-input {
   cursor: pointer;
 }
 
-.db-rownum-num {
+.et-rownum-num {
   display: block;
   line-height: 1;
 }
 
-.db-rownum-check {
+.et-rownum-check {
   display: none;
   accent-color: var(--color-accent);
   cursor: pointer;
@@ -5460,21 +5490,21 @@ textarea.modal-input {
   height: 13px;
 }
 
-.db-td-rownum:hover .db-rownum-num,
-.db-td-rownum.is-selected .db-rownum-num {
+.et-td-rownum:hover .et-rownum-num,
+.et-td-rownum.is-selected .et-rownum-num {
   display: none;
 }
 
-.db-td-rownum:hover .db-rownum-check,
-.db-td-rownum.is-selected .db-rownum-check {
+.et-td-rownum:hover .et-rownum-check,
+.et-td-rownum.is-selected .et-rownum-check {
   display: block;
 }
 
-.db-td.is-selected {
+.et-td.is-selected {
   background: var(--color-accent-light, rgba(59, 130, 246, 0.07)) !important;
 }
 
-.db-td {
+.et-td {
   padding: 4px 10px;
   font-size: 0.78rem;
   color: var(--color-text-primary);
@@ -5487,20 +5517,20 @@ textarea.modal-input {
   transition: background 0.08s;
 }
 
-.db-td:last-child {
+.et-td:last-child {
   border-right: none;
 }
 
-.db-td:hover {
+.et-td:hover {
   background: var(--color-muted);
 }
 
-.db-td-actions {
+.et-td-actions {
   justify-content: center;
   padding: 0;
 }
 
-.db-row-delete {
+.et-row-delete {
   border: none;
   background: none;
   color: var(--color-text-muted);
@@ -5511,16 +5541,16 @@ textarea.modal-input {
   transition: all 0.12s;
 }
 
-.db-td-actions:hover .db-row-delete {
+.et-td-actions:hover .et-row-delete {
   opacity: 1;
 }
 
-.db-row-delete:hover {
+.et-row-delete:hover {
   color: #ef4444;
   background: rgba(239, 68, 68, 0.1);
 }
 
-.db-cell-input {
+.et-cell-input {
   width: 100%;
   border: 1px solid var(--color-accent);
   border-radius: 3px;
@@ -5531,23 +5561,23 @@ textarea.modal-input {
   outline: none;
 }
 
-.db-cell-checkbox {
+.et-cell-checkbox {
   accent-color: var(--color-accent);
   cursor: pointer;
 }
 
-.db-cell-text {
+.et-cell-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.db-cell-empty {
+.et-cell-empty {
   color: var(--color-text-muted);
   opacity: 0.4;
 }
 
-.db-cell-link {
+.et-cell-link {
   color: var(--color-accent);
   text-decoration: underline;
   overflow: hidden;
@@ -5555,7 +5585,7 @@ textarea.modal-input {
   white-space: nowrap;
 }
 
-.db-cell-tag {
+.et-cell-tag {
   display: inline-block;
   padding: 1px 8px;
   font-size: 0.68rem;
@@ -5566,13 +5596,13 @@ textarea.modal-input {
   white-space: nowrap;
 }
 
-.db-cell-tags {
+.et-cell-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 3px;
 }
 
-.db-multiselect-dropdown {
+.et-multiselect-dropdown {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -5580,7 +5610,7 @@ textarea.modal-input {
   width: 100%;
 }
 
-.db-multiselect-option {
+.et-multiselect-option {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -5590,15 +5620,15 @@ textarea.modal-input {
   border-radius: 3px;
 }
 
-.db-multiselect-option:hover {
+.et-multiselect-option:hover {
   background: var(--color-muted);
 }
 
-.db-multiselect-option input[type="checkbox"] {
+.et-multiselect-option input[type="checkbox"] {
   accent-color: var(--color-accent);
 }
 
-.db-multiselect-done {
+.et-multiselect-done {
   margin-top: 2px;
   padding: 2px 8px;
   font-size: 0.65rem;
@@ -5611,13 +5641,13 @@ textarea.modal-input {
   align-self: flex-end;
 }
 
-.db-multiselect-done:hover {
+.et-multiselect-done:hover {
   opacity: 0.85;
 }
 
 /* ── Column context menu ───────────────────────────────────────────────── */
 
-.db-col-menu {
+.et-col-menu {
   position: absolute;
   top: 100%;
   left: 0;
@@ -5631,7 +5661,7 @@ textarea.modal-input {
   min-width: 140px;
 }
 
-.db-col-menu-item {
+.et-col-menu-item {
   display: block;
   width: 100%;
   padding: 5px 10px;
@@ -5645,29 +5675,29 @@ textarea.modal-input {
   transition: background 0.1s;
 }
 
-.db-col-menu-item:hover {
+.et-col-menu-item:hover {
   background: var(--color-muted);
 }
 
-.db-col-menu-item.danger {
+.et-col-menu-item.danger {
   color: #ef4444;
 }
 
-.db-col-menu-item.danger:hover {
+.et-col-menu-item.danger:hover {
   background: rgba(239, 68, 68, 0.1);
 }
 
-.db-col-menu-sep {
+.et-col-menu-sep {
   height: 1px;
   background: var(--color-border);
   margin: 3px 4px;
 }
 
-.db-col-menu-rename {
+.et-col-menu-rename {
   padding: 6px;
 }
 
-.db-col-menu-input {
+.et-col-menu-input {
   width: 100%;
   padding: 4px 8px;
   font-size: 0.75rem;
@@ -5678,17 +5708,17 @@ textarea.modal-input {
   outline: none;
 }
 
-.db-col-menu-input:focus {
+.et-col-menu-input:focus {
   border-color: var(--color-accent);
 }
 
-.db-col-menu-types {
+.et-col-menu-types {
   display: flex;
   flex-direction: column;
   padding: 2px;
 }
 
-.db-col-menu-type-btn {
+.et-col-menu-type-btn {
   padding: 4px 10px;
   font-size: 0.72rem;
   border: none;
@@ -5700,11 +5730,11 @@ textarea.modal-input {
   transition: background 0.1s;
 }
 
-.db-col-menu-type-btn:hover {
+.et-col-menu-type-btn:hover {
   background: var(--color-muted);
 }
 
-.db-col-menu-type-btn.active {
+.et-col-menu-type-btn.active {
   background: var(--color-accent-light);
   color: var(--color-accent-text);
   font-weight: 600;
@@ -5712,7 +5742,7 @@ textarea.modal-input {
 
 /* ── Table footer / add column ─────────────────────────────────────────── */
 
-.db-table-footer {
+.et-table-footer {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -5720,8 +5750,8 @@ textarea.modal-input {
   border-top: 1px solid var(--color-border);
 }
 
-.db-add-row,
-.db-add-col {
+.et-add-row,
+.et-add-col {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -5736,13 +5766,13 @@ textarea.modal-input {
   transition: all 0.12s;
 }
 
-.db-add-row:hover,
-.db-add-col:hover {
+.et-add-row:hover,
+.et-add-col:hover {
   background: var(--color-muted);
   color: var(--color-text-primary);
 }
 
-.db-add-col-dropdown {
+.et-add-col-dropdown {
   position: absolute;
   top: 100%;
   left: 0;
@@ -5756,7 +5786,7 @@ textarea.modal-input {
   min-width: 200px;
 }
 
-.db-add-col-input {
+.et-add-col-input {
   width: 100%;
   padding: 5px 8px;
   font-size: 0.75rem;
@@ -5768,18 +5798,18 @@ textarea.modal-input {
   margin-bottom: 8px;
 }
 
-.db-add-col-input:focus {
+.et-add-col-input:focus {
   border-color: var(--color-accent);
 }
 
-.db-add-col-types {
+.et-add-col-types {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
   margin-bottom: 8px;
 }
 
-.db-type-chip {
+.et-type-chip {
   padding: 2px 8px;
   font-size: 0.65rem;
   font-weight: 500;
@@ -5791,18 +5821,18 @@ textarea.modal-input {
   transition: all 0.12s;
 }
 
-.db-type-chip:hover {
+.et-type-chip:hover {
   border-color: var(--color-accent);
   color: var(--color-accent);
 }
 
-.db-type-chip.active {
+.et-type-chip.active {
   background: var(--color-accent-light);
   border-color: var(--color-accent);
   color: var(--color-accent-text);
 }
 
-.db-add-col-submit {
+.et-add-col-submit {
   width: 100%;
   padding: 5px 0;
   font-size: 0.72rem;
@@ -5815,18 +5845,18 @@ textarea.modal-input {
   transition: opacity 0.12s;
 }
 
-.db-add-col-submit:disabled {
+.et-add-col-submit:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
-.db-add-col-submit:not(:disabled):hover {
+.et-add-col-submit:not(:disabled):hover {
   opacity: 0.85;
 }
 
 /* ── Member / CreatedBy / Relation cells ────────────────────────── */
 
-.db-member-chip {
+.et-member-chip {
   display: inline-flex;
   align-items: center;
   padding: 1px 8px;
@@ -5839,7 +5869,7 @@ textarea.modal-input {
   white-space: nowrap;
 }
 
-.db-relation-chip {
+.et-relation-chip {
   display: inline-block;
   padding: 1px 8px;
   font-size: 0.68rem;
@@ -5852,17 +5882,17 @@ textarea.modal-input {
   white-space: nowrap;
 }
 
-.db-relation-chip-link {
+.et-relation-chip-link {
   cursor: pointer;
   transition: opacity 0.12s, box-shadow 0.12s;
 }
 
-.db-relation-chip-link:hover {
+.et-relation-chip-link:hover {
   opacity: 1;
   box-shadow: 0 0 0 2px var(--color-accent);
 }
 
-.db-relation-loading {
+.et-relation-loading {
   padding: 6px 8px;
   font-size: 0.72rem;
   color: var(--color-text-muted);
@@ -5871,7 +5901,7 @@ textarea.modal-input {
 
 /* ── Default value & relation config panels in column menu ────────── */
 
-.db-col-default-panel {
+.et-col-default-panel {
   padding: 4px 2px;
   display: flex;
   flex-direction: column;
@@ -5879,7 +5909,7 @@ textarea.modal-input {
   min-width: 140px;
 }
 
-.db-col-default-label {
+.et-col-default-label {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -5891,17 +5921,17 @@ textarea.modal-input {
   transition: background 0.1s;
 }
 
-.db-col-default-label:hover {
+.et-col-default-label:hover {
   background: var(--color-muted);
 }
 
-.db-col-default-label input[type="checkbox"],
-.db-col-default-label input[type="radio"] {
+.et-col-default-label input[type="checkbox"],
+.et-col-default-label input[type="radio"] {
   accent-color: var(--color-accent);
   flex-shrink: 0;
 }
 
-.db-col-menu-item.active {
+.et-col-menu-item.active {
   background: var(--color-accent-light);
   color: var(--color-accent-text);
   font-weight: 600;
@@ -5909,7 +5939,7 @@ textarea.modal-input {
 
 /* ── Relation cell layout ────────────────────────────────────────── */
 
-.db-relation-cell {
+.et-relation-cell {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -5917,23 +5947,23 @@ textarea.modal-input {
   min-height: 100%;
 }
 
-.db-relation-cell .db-cell-tags {
+.et-relation-cell .et-cell-tags {
   flex: 1;
   min-width: 0;
 }
 
-.db-relation-hint {
+.et-relation-hint {
   cursor: pointer;
   color: var(--color-accent) !important;
   opacity: 0.7;
   transition: opacity 0.12s;
 }
 
-.db-relation-hint:hover {
+.et-relation-hint:hover {
   opacity: 1;
 }
 
-.db-relation-edit-btn {
+.et-relation-edit-btn {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
@@ -5949,11 +5979,11 @@ textarea.modal-input {
   transition: opacity 0.12s, background 0.12s, color 0.12s;
 }
 
-.db-td:hover .db-relation-edit-btn {
+.et-td:hover .et-relation-edit-btn {
   opacity: 1;
 }
 
-.db-relation-edit-btn:hover {
+.et-relation-edit-btn:hover {
   background: var(--color-muted);
   color: var(--color-accent);
 }
@@ -6190,7 +6220,7 @@ textarea.modal-input {
 
 /* ── Selection action bar ─────────────────────────────────────────────────────────────── */
 
-.db-selection-bar {
+.et-selection-bar {
   position: fixed;
   bottom: 32px;
   left: 50%;
@@ -6214,13 +6244,13 @@ textarea.modal-input {
   to   { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 
-.db-selection-count {
+.et-selection-count {
   font-weight: 600;
   padding: 0 6px;
   color: rgba(255, 255, 255, 0.9);
 }
 
-.db-selection-sep {
+.et-selection-sep {
   width: 1px;
   height: 18px;
   background: rgba(255, 255, 255, 0.15);
@@ -6228,7 +6258,7 @@ textarea.modal-input {
   flex-shrink: 0;
 }
 
-.db-selection-btn {
+.et-selection-btn {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -6242,21 +6272,21 @@ textarea.modal-input {
   transition: background 0.12s, color 0.12s;
 }
 
-.db-selection-btn:hover {
+.et-selection-btn:hover {
   background: rgba(255, 255, 255, 0.1);
   color: #fff;
 }
 
-.db-selection-btn.danger {
+.et-selection-btn.danger {
   color: #f87171;
 }
 
-.db-selection-btn.danger:hover {
+.et-selection-btn.danger:hover {
   background: rgba(248, 113, 113, 0.15);
   color: #fca5a5;
 }
 
-.db-selection-dismiss {
+.et-selection-dismiss {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -6270,26 +6300,26 @@ textarea.modal-input {
   transition: background 0.12s, color 0.12s;
 }
 
-.db-selection-dismiss:hover {
+.et-selection-dismiss:hover {
   background: rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.9);
 }
 
 /* ── Kanban ─────────────────────────────────────────────────────────────── */
 
-.db-kanban {
+.et-kanban {
   display: flex;
   gap: 12px;
   padding: 12px 16px;
   overflow-x: auto;
 }
 
-.db-kanban-empty {
+.et-kanban-empty {
   padding: 24px 16px;
   text-align: center;
 }
 
-.db-kanban-lane {
+.et-kanban-lane {
   flex: 0 0 240px;
   background: var(--color-muted);
   border-radius: 8px;
@@ -6297,24 +6327,24 @@ textarea.modal-input {
   transition: box-shadow 0.15s;
 }
 
-.db-kanban-lane.drag-over {
+.et-kanban-lane.drag-over {
   box-shadow: inset 0 0 0 2px var(--color-accent);
 }
 
-.db-kanban-lane-header {
+.et-kanban-lane-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 4px 6px 8px;
 }
 
-.db-kanban-lane-title {
+.et-kanban-lane-title {
   font-size: 0.72rem;
   font-weight: 600;
   color: var(--color-text-primary);
 }
 
-.db-kanban-lane-count {
+.et-kanban-lane-count {
   font-size: 0.65rem;
   color: var(--color-text-muted);
   background: var(--color-surface);
@@ -6322,14 +6352,14 @@ textarea.modal-input {
   border-radius: 8px;
 }
 
-.db-kanban-cards {
+.et-kanban-cards {
   display: flex;
   flex-direction: column;
   gap: 6px;
   min-height: 20px;
 }
 
-.db-kanban-card {
+.et-kanban-card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 6px;
@@ -6338,40 +6368,40 @@ textarea.modal-input {
   transition: box-shadow 0.12s, opacity 0.12s;
 }
 
-.db-kanban-card:hover {
+.et-kanban-card:hover {
   box-shadow: 0 2px 8px var(--color-shadow);
 }
 
-.db-kanban-card.dragging {
+.et-kanban-card.dragging {
   opacity: 0.4;
 }
 
-.db-kanban-card-title {
+.et-kanban-card-title {
   font-size: 0.78rem;
   font-weight: 500;
   color: var(--color-text-primary);
   margin-bottom: 4px;
 }
 
-.db-kanban-card-fields {
+.et-kanban-card-fields {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.db-kanban-card-field {
+.et-kanban-card-field {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.db-kanban-field-label {
+.et-kanban-field-label {
   font-size: 0.62rem;
   color: var(--color-text-muted);
   flex-shrink: 0;
 }
 
-.db-kanban-field-value {
+.et-kanban-field-value {
   font-size: 0.68rem;
   color: var(--color-text-secondary);
   overflow: hidden;
@@ -6379,7 +6409,7 @@ textarea.modal-input {
   white-space: nowrap;
 }
 
-.db-kanban-add {
+.et-kanban-add {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -6397,18 +6427,18 @@ textarea.modal-input {
   transition: all 0.12s;
 }
 
-.db-kanban-add:hover {
+.et-kanban-add:hover {
   border-color: var(--color-accent);
   color: var(--color-accent);
 }
 
 /* ── Calendar ───────────────────────────────────────────────────────────── */
 
-.db-calendar {
+.et-calendar {
   padding: 12px 16px;
 }
 
-.db-calendar-header {
+.et-calendar-header {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -6416,7 +6446,7 @@ textarea.modal-input {
   margin-bottom: 10px;
 }
 
-.db-calendar-nav {
+.et-calendar-nav {
   border: none;
   background: none;
   color: var(--color-text-muted);
@@ -6426,11 +6456,11 @@ textarea.modal-input {
   transition: color 0.12s;
 }
 
-.db-calendar-nav:hover {
+.et-calendar-nav:hover {
   color: var(--color-text-primary);
 }
 
-.db-calendar-today {
+.et-calendar-today {
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--color-text-primary);
@@ -6439,11 +6469,11 @@ textarea.modal-input {
   cursor: pointer;
 }
 
-.db-calendar-today:hover {
+.et-calendar-today:hover {
   text-decoration: underline;
 }
 
-.db-calendar-grid {
+.et-calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 1px;
@@ -6453,7 +6483,7 @@ textarea.modal-input {
   overflow: hidden;
 }
 
-.db-calendar-day-name {
+.et-calendar-day-name {
   text-align: center;
   font-size: 0.65rem;
   font-weight: 600;
@@ -6462,32 +6492,32 @@ textarea.modal-input {
   background: var(--color-muted);
 }
 
-.db-calendar-cell {
+.et-calendar-cell {
   min-height: 70px;
   padding: 4px;
   background: var(--color-surface);
   position: relative;
 }
 
-.db-calendar-cell.empty {
+.et-calendar-cell.empty {
   background: var(--color-muted);
   opacity: 0.4;
 }
 
-.db-calendar-date {
+.et-calendar-date {
   font-size: 0.68rem;
   font-weight: 500;
   color: var(--color-text-muted);
 }
 
-.db-calendar-items {
+.et-calendar-items {
   display: flex;
   flex-direction: column;
   gap: 2px;
   margin-top: 2px;
 }
 
-.db-calendar-item {
+.et-calendar-item {
   font-size: 0.6rem;
   padding: 2px 4px;
   border-radius: 3px;
@@ -6498,13 +6528,13 @@ textarea.modal-input {
   white-space: nowrap;
 }
 
-.db-calendar-more {
+.et-calendar-more {
   font-size: 0.58rem;
   color: var(--color-text-muted);
   padding: 1px 4px;
 }
 
-.db-calendar-add {
+.et-calendar-add {
   position: absolute;
   bottom: 3px;
   right: 3px;
@@ -6518,24 +6548,24 @@ textarea.modal-input {
   transition: opacity 0.12s;
 }
 
-.db-calendar-cell:hover .db-calendar-add {
+.et-calendar-cell:hover .et-calendar-add {
   opacity: 1;
 }
 
-.db-calendar-add:hover {
+.et-calendar-add:hover {
   color: var(--color-accent);
 }
 
 /* ── Gallery ────────────────────────────────────────────────────────────── */
 
-.db-gallery {
+.et-gallery {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 12px;
   padding: 12px 16px;
 }
 
-.db-gallery-card {
+.et-gallery-card {
   border: 1px solid var(--color-border);
   border-radius: 8px;
   overflow: hidden;
@@ -6543,47 +6573,47 @@ textarea.modal-input {
   transition: box-shadow 0.12s;
 }
 
-.db-gallery-card:hover {
+.et-gallery-card:hover {
   box-shadow: 0 2px 12px var(--color-shadow);
 }
 
-.db-gallery-cover {
+.et-gallery-cover {
   width: 100%;
   height: 120px;
   overflow: hidden;
 }
 
-.db-gallery-cover img {
+.et-gallery-cover img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.db-gallery-body {
+.et-gallery-body {
   padding: 10px;
 }
 
-.db-gallery-title {
+.et-gallery-title {
   font-size: 0.82rem;
   font-weight: 600;
   color: var(--color-text-primary);
   margin-bottom: 6px;
 }
 
-.db-gallery-field {
+.et-gallery-field {
   display: flex;
   align-items: center;
   gap: 6px;
   margin-bottom: 2px;
 }
 
-.db-gallery-field-label {
+.et-gallery-field-label {
   font-size: 0.62rem;
   color: var(--color-text-muted);
   flex-shrink: 0;
 }
 
-.db-gallery-field-value {
+.et-gallery-field-value {
   font-size: 0.7rem;
   color: var(--color-text-secondary);
   overflow: hidden;

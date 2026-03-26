@@ -5,7 +5,7 @@ import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import Underline from "@tiptap/extension-underline";
-import { X, AlertTriangle, Bold, Italic, UnderlineIcon, List, ListOrdered, Link2 } from "lucide-react";
+import { X, AlertTriangle, Bold, Italic, UnderlineIcon, List, ListOrdered, Link2, ChevronDown, Check } from "lucide-react";
 
 // ── Minimal rich-text toolbar + editor ───────────────────────────────────────
 
@@ -71,6 +71,7 @@ export interface OnCallFormData {
   time: string;
   description: string;
   workingTime: string;
+  assistedBy: string[];
   solution: string;
 }
 
@@ -88,8 +89,14 @@ export default function OnCallModal({ isOpen, onClose, onSave, currentUser }: On
   const [description, setDescription] = useState("");
   const [solution, setSolution] = useState("");
   const [workingTime, setWorkingTime] = useState("");
+  const [assistedBy, setAssistedBy] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [wtError, setWtError] = useState("");
+
+  // User list for the assisted-by picker
+  const [allUsers, setAllUsers] = useState<{ username: string; fullName: string | null }[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerFilter, setPickerFilter] = useState("");
 
   useEffect(() => {
     if (isOpen) {
@@ -99,8 +106,16 @@ export default function OnCallModal({ isOpen, onClose, onSave, currentUser }: On
       setDescription("");
       setSolution("");
       setWorkingTime("");
+      setAssistedBy([]);
       setSaving(false);
       setWtError("");
+      setPickerOpen(false);
+      setPickerFilter("");
+      // Fetch user list
+      fetch("/api/oncall/users")
+        .then((r) => r.ok ? r.json() : { users: [] })
+        .then((d) => setAllUsers(d.users ?? []))
+        .catch(() => {});
     }
   }, [isOpen]);
 
@@ -117,10 +132,27 @@ export default function OnCallModal({ isOpen, onClose, onSave, currentUser }: On
 
   const handleConfirm = async () => {
     setSaving(true);
-    await onSave({ date, time, description, workingTime, solution });
+    await onSave({ date, time, description, workingTime, assistedBy, solution });
     setSaving(false);
     onClose();
   };
+
+  const toggleAssisted = (username: string) => {
+    setAssistedBy((prev) =>
+      prev.includes(username) ? prev.filter((u) => u !== username) : [...prev, username],
+    );
+  };
+
+  const displayName = (u: { username: string; fullName: string | null }) =>
+    u.fullName ? `${u.fullName} (${u.username})` : u.username;
+
+  const selectableUsers = allUsers
+    .filter((u) => u.username !== currentUser)
+    .filter((u) => {
+      if (!pickerFilter) return true;
+      const q = pickerFilter.toLowerCase();
+      return u.username.toLowerCase().includes(q) || (u.fullName ?? "").toLowerCase().includes(q);
+    });
 
   const isValid = date && time && workingTime.trim() && stripHtml(description).length > 0;
 
@@ -153,6 +185,58 @@ export default function OnCallModal({ isOpen, onClose, onSave, currentUser }: On
                 {wtError && <span className="oc-field-error">{wtError}</span>}
               </div>
               <div className="cl-field cl-field--full">
+                <label className="cl-label">Assisted by</label>
+                <div className="oc-assisted-picker">
+                  {assistedBy.length > 0 && (
+                    <div className="oc-assisted-chips">
+                      {assistedBy.map((uname) => {
+                        const u = allUsers.find((x) => x.username === uname);
+                        return (
+                          <span key={uname} className="oc-assisted-chip">
+                            {u?.fullName || uname}
+                            <button type="button" onClick={() => toggleAssisted(uname)} className="oc-assisted-chip-x"><X className="w-3 h-3" /></button>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div className="oc-assisted-dropdown-wrap">
+                    <button type="button" className="cl-input oc-assisted-trigger" onClick={() => setPickerOpen((v) => !v)}>
+                      <span className="text-text-muted text-xs">Select persons…</span>
+                      <ChevronDown className="w-3.5 h-3.5 text-text-muted" />
+                    </button>
+                    {pickerOpen && (
+                      <div className="oc-assisted-dropdown">
+                        <input
+                          type="text"
+                          className="oc-assisted-search"
+                          placeholder="Filter…"
+                          value={pickerFilter}
+                          onChange={(e) => setPickerFilter(e.target.value)}
+                          autoFocus
+                        />
+                        <div className="oc-assisted-options">
+                          {selectableUsers.length === 0 && (
+                            <div className="oc-assisted-empty">No users found</div>
+                          )}
+                          {selectableUsers.map((u) => (
+                            <button
+                              key={u.username}
+                              type="button"
+                              className={`oc-assisted-option${assistedBy.includes(u.username) ? " oc-assisted-option--selected" : ""}`}
+                              onClick={() => toggleAssisted(u.username)}
+                            >
+                              <span>{displayName(u)}</span>
+                              {assistedBy.includes(u.username) && <Check className="w-3.5 h-3.5 text-accent" />}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="cl-field cl-field--full">
                 <label className="cl-label">Problem description *</label>
                 <MiniEditor placeholder="Describe the problem…" onChange={setDescription} />
               </div>
@@ -177,6 +261,12 @@ export default function OnCallModal({ isOpen, onClose, onSave, currentUser }: On
               <div className="cl-confirm-row"><span className="cl-confirm-label">Date</span><span>{date}</span></div>
               <div className="cl-confirm-row"><span className="cl-confirm-label">Time</span><span>{time}</span></div>
               <div className="cl-confirm-row"><span className="cl-confirm-label">Working time</span><span>{workingTime}</span></div>
+              {assistedBy.length > 0 && (
+                <div className="cl-confirm-row">
+                  <span className="cl-confirm-label">Assisted by</span>
+                  <span>{assistedBy.map((uname) => { const u = allUsers.find((x) => x.username === uname); return u?.fullName || uname; }).join(", ")}</span>
+                </div>
+              )}
               <div className="cl-confirm-row cl-confirm-row--block">
                 <span className="cl-confirm-label">Problem</span>
                 <div dangerouslySetInnerHTML={{ __html: description }} className="oc-confirm-html" />

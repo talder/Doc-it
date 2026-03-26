@@ -232,6 +232,26 @@ if $UPGRADE; then
   # Capture current commit before pulling so we can show what changed
   OLD_HEAD=$($SUDO git -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR" rev-parse HEAD 2>/dev/null || echo "")
 
+  # ── Pre-upgrade data snapshot ──────────────────────────────────
+  info "Creating pre-upgrade data snapshot..."
+  SNAP_TS=$(date -u +"%Y-%m-%dT%H-%M-%S")
+  SNAP_DIR="$INSTALL_DIR/snapshots/${SNAP_TS}_pre-upgrade"
+  $SUDO mkdir -p "$SNAP_DIR"
+  for _src in config docs logs archive history; do
+    [[ -d "$INSTALL_DIR/$_src" ]] || continue
+    # cp -al uses hard links (fast, no extra disk) — falls back to regular copy
+    $SUDO cp -al "$INSTALL_DIR/$_src" "$SNAP_DIR/$_src" 2>/dev/null \
+      || $SUDO cp -R "$INSTALL_DIR/$_src" "$SNAP_DIR/$_src"
+  done
+  ok "Snapshot saved to snapshots/${SNAP_TS}_pre-upgrade"
+  # Keep only 5 most recent snapshots
+  SNAP_COUNT=$($SUDO ls -1d "$INSTALL_DIR/snapshots/"*/ 2>/dev/null | wc -l)
+  if [[ "$SNAP_COUNT" -gt 5 ]]; then
+    $SUDO ls -1d "$INSTALL_DIR/snapshots/"*/ | head -n -5 | while read -r old; do
+      $SUDO rm -rf "$old"
+    done
+  fi
+
   info "Pulling latest from GitHub..."
   $SUDO git $GIT_SSL -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR" fetch origin main
   $SUDO git $GIT_SSL -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR" reset --hard origin/main

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSpaceRole } from "@/lib/permissions";
-import { listDatabases, writeDatabase, generateId } from "@/lib/database";
+import { listEnhancedTables, writeEnhancedTable, generateId } from "@/lib/enhanced-table";
 import { invalidateSpaceCache } from "@/lib/space-cache";
-import type { Database, DbColumn, DbView } from "@/lib/types";
+import type { EnhancedTable, DbColumn, DbView } from "@/lib/types";
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -11,7 +11,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
   try { await requireSpaceRole(slug, "reader"); }
   catch (err) { return NextResponse.json({ error: String(err) }, { status: 403 }); }
 
-  const dbs = await listDatabases(slug);
+  const dbs = await listEnhancedTables(slug);
   // Return lightweight list (no rows) for perf
   return NextResponse.json(dbs.map(({ rows, ...rest }) => ({ ...rest, rowCount: rows.length })));
 }
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest, { params }: Params) {
     createdAt: now,
   }));
 
-  const db: Database = {
+  const db: EnhancedTable = {
     id: dbId,
     title: title.trim(),
     columns,
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest, { params }: Params) {
     updatedAt: now,
   };
 
-  await writeDatabase(slug, dbId, db);
+  await writeEnhancedTable(slug, dbId, db);
   invalidateSpaceCache(slug);
   return NextResponse.json(db, { status: 201 });
 }

@@ -212,6 +212,27 @@ if ($Upgrade) {
   if (-not (Test-Path "$Dir\.git")) { Write-Fail "-Upgrade: $Dir is not a git repo. Run without -Upgrade to install first." }
   Write-Info "Stopping service before upgrade..."
   try { Stop-Service $ServiceName -Force -ErrorAction SilentlyContinue } catch {}
+
+  # ── Pre-upgrade data snapshot ──────────────────────────────────
+  Write-Info "Creating pre-upgrade data snapshot..."
+  $snapTs  = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH-mm-ss")
+  $snapDir = "$Dir\snapshots\${snapTs}_pre-upgrade"
+  New-Item -ItemType Directory -Path $snapDir -Force | Out-Null
+  foreach ($src in @("config","docs","logs","archive","history")) {
+    $srcPath = "$Dir\$src"
+    if (Test-Path $srcPath) {
+      Copy-Item -Path $srcPath -Destination "$snapDir\$src" -Recurse -Force
+    }
+  }
+  Write-Ok "Snapshot saved to snapshots\${snapTs}_pre-upgrade"
+  # Keep only 5 most recent snapshots
+  $allSnaps = Get-ChildItem -Path "$Dir\snapshots" -Directory | Sort-Object Name
+  if ($allSnaps.Count -gt 5) {
+    $allSnaps | Select-Object -First ($allSnaps.Count - 5) | ForEach-Object {
+      Remove-Item $_.FullName -Recurse -Force
+    }
+  }
+
   Write-Info "Pulling latest from GitHub..."
   git -C $Dir pull --rebase origin main
 } else {

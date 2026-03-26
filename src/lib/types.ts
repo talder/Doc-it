@@ -234,7 +234,7 @@ export interface DocMetadata {
   custom?: Record<string, CustomProperty>;
 }
 
-// === Database Tables ===
+// === Enhanced Tables ===
 
 export type DbColumnType =
   | "text" | "number" | "select" | "multiSelect"
@@ -292,7 +292,7 @@ export interface DbView {
   columnWidths?: Record<string, number>;
 }
 
-export interface Database {
+export interface EnhancedTable {
   id: string;
   title: string;
   columns: DbColumn[];
@@ -409,7 +409,10 @@ export type AuditEventType =
   | "auth.sudo"
   | "user.group.create"
   | "user.group.update"
-  | "user.group.delete";
+  | "user.group.delete"
+  | "snapshot.create"
+  | "snapshot.restore"
+  | "snapshot.delete";
 
 export interface AuditEntry {
   eventId: string;
@@ -527,6 +530,15 @@ export interface BackupResult {
   filename?: string;
   error?: string;
   targetResults: { label: string; success: boolean; error?: string }[];
+}
+
+// === Snapshots ===
+
+export interface SnapshotEntry {
+  id: string;
+  label: string;
+  createdAt: string;
+  sizeBytes: number;
 }
 
 // === User Groups ===

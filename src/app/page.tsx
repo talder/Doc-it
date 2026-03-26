@@ -19,10 +19,10 @@ import MoveDocModal from "@/components/modals/MoveDocModal";
 import TemplateFormModal from "@/components/modals/TemplateFormModal";
 import RenameDocModal from "@/components/modals/RenameDocModal";
 import NewTemplateModal from "@/components/modals/NewTemplateModal";
-import DatabaseCreateModal from "@/components/modals/DatabaseCreateModal";
+import DatabaseCreateModal from "@/components/modals/EnhancedTableCreateModal";
 import TrashBinModal from "@/components/modals/TrashBinModal";
 import TagManagerModal from "@/components/modals/TagManagerModal";
-import DatabaseView from "@/components/database/DatabaseView";
+import DatabaseView from "@/components/enhanced-table/EnhancedTableView";
 import type { Space, SanitizedUser, Category, DocFile, TagsIndex, TemplateInfo, DocStatusEntry, DocStatusMap, ReviewItem, SpaceCustomization, DocMetadata, DocClassification, FavoriteItem, DashboardRole } from "@/lib/types";
 import DocStatsFooter from "@/components/DocStatsFooter";
 import DocStatusPopover from "@/components/DocStatusPopover";
@@ -637,6 +637,12 @@ export default function Home() {
   // Save (auto-save while editing) — stores latest content for revision on Done
   const handleSave = useCallback(async (content: string) => {
     if (!activeDoc || !currentSpace) return;
+    // Safety guard: never save empty content — prevents data loss from
+    // race conditions during navigation, unmount flushes, or timing bugs.
+    if (!content || !content.trim()) {
+      console.warn("[doc-it] Blocked empty save for", activeDoc.name);
+      return;
+    }
     // Key from the closure's activeDoc — NOT docKeyRef which may already point to a new doc
     const saveKey = `${currentSpace.slug}/${activeDoc.category}/${activeDoc.name}`;
     setSaveStatus("saving");
@@ -732,11 +738,17 @@ export default function Home() {
     if (!activeDoc || !currentSpace) return;
     const metaKey = `${currentSpace.slug}/${activeDoc.category}/${activeDoc.name}`;
     setDocMetadata(newMeta);
+    const contentToSave = lastSavedMarkdown ?? markdown;
+    // Safety guard: never save empty content during metadata update
+    if (!contentToSave || !contentToSave.trim()) {
+      console.warn("[doc-it] Blocked metadata save with empty content for", activeDoc.name);
+      return;
+    }
     const res = await fetch(`/api/spaces/${currentSpace.slug}/docs/${encodeURIComponent(activeDoc.name)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        content: lastSavedMarkdown ?? markdown,
+        content: contentToSave,
         category: activeDoc.category,
         metadata: newMeta,
         ...(activeDoc.isTemplate ? { isTemplate: true } : {}),
@@ -1292,7 +1304,7 @@ export default function Home() {
 
   const handleConfirmEditDatabase = async (title: string) => {
     if (!currentSpace || !editDbTarget) return;
-    await fetch(`/api/spaces/${encodeURIComponent(currentSpace.slug)}/databases/${editDbTarget.id}`, {
+    await fetch(`/api/spaces/${encodeURIComponent(currentSpace.slug)}/enhanced-tables/${editDbTarget.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title }),
@@ -1307,7 +1319,7 @@ export default function Home() {
 
   const handleArchiveDatabase = async () => {
     if (!currentSpace || !deleteDbTarget) return;
-    await fetch(`/api/spaces/${encodeURIComponent(currentSpace.slug)}/databases/${deleteDbTarget.id}/archive`, {
+    await fetch(`/api/spaces/${encodeURIComponent(currentSpace.slug)}/enhanced-tables/${deleteDbTarget.id}/archive`, {
       method: "POST",
     });
     if (activeDatabase === deleteDbTarget.id) {
@@ -1319,7 +1331,7 @@ export default function Home() {
 
   const handleConfirmDeleteDatabase = async () => {
     if (!currentSpace || !deleteDbTarget) return;
-    await fetch(`/api/spaces/${encodeURIComponent(currentSpace.slug)}/databases/${deleteDbTarget.id}`, {
+    await fetch(`/api/spaces/${encodeURIComponent(currentSpace.slug)}/enhanced-tables/${deleteDbTarget.id}`, {
       method: "DELETE",
     });
     if (activeDatabase === deleteDbTarget.id) {
@@ -1526,7 +1538,7 @@ export default function Home() {
               spaceSlug={currentSpace.slug}
               canWrite={canWrite}
               initialSearch={activeDatabaseSearch}
-              onOpenDatabase={(dbId, search) => {
+              onOpenDatabase={(dbId: string, search?: string) => {
                 setActiveDatabase(dbId);
                 setActiveDatabaseSearch(search || "");
               }}
@@ -2121,7 +2133,7 @@ export default function Home() {
         onCreate={async (title, templateId) => {
           if (!currentSpace) return;
           try {
-            await fetch(`/api/spaces/${encodeURIComponent(currentSpace.slug)}/databases`, {
+            await fetch(`/api/spaces/${encodeURIComponent(currentSpace.slug)}/enhanced-tables`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ title, templateId: templateId || undefined }),

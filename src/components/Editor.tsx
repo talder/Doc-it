@@ -55,8 +55,8 @@ import { PDFEmbedExtension } from "./extensions/PDFEmbedExtension";
 import type { PDFEmbedAttrs } from "./extensions/PDFEmbedExtension";
 import { TemplatePlaceholderExtension } from "./extensions/TemplatePlaceholderExtension";
 import { EmojiShortcodeExtension } from "./extensions/EmojiShortcodeExtension";
-import { DatabaseBlockExtension } from "./extensions/DatabaseBlockExtension";
-import type { DatabaseBlockAttrs } from "./extensions/DatabaseBlockExtension";
+import { EnhancedTableBlockExtension } from "./extensions/EnhancedTableBlockExtension";
+import type { EnhancedTableBlockAttrs } from "./extensions/EnhancedTableBlockExtension";
 import { Extension } from "@tiptap/core";
 import { Plugin as PmPlugin, PluginKey as PmPluginKey, NodeSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
@@ -68,7 +68,7 @@ import emojiPickerData from "@emoji-mart/data";
 import { toSafeB64, fromSafeB64 } from "@/lib/base64";
 import type { TplField, DocFile } from "@/lib/types";
 import TemplateFieldModal from "@/components/modals/TemplateFieldModal";
-import DatabaseCreateModal from "@/components/modals/DatabaseCreateModal";
+import DatabaseCreateModal from "@/components/modals/EnhancedTableCreateModal";
 import { Search, FileText as FileTextIcon, Database as DatabaseIcon } from "lucide-react";
 import UrlInputModal from "@/components/modals/UrlInputModal";
 import MathEditorModal from "@/components/modals/MathEditorModal";
@@ -87,7 +87,7 @@ function DatabasePicker({
   const [query, setQuery] = useState("");
 
   useEffect(() => {
-    fetch(`/api/spaces/${encodeURIComponent(spaceSlug)}/databases`)
+    fetch(`/api/spaces/${encodeURIComponent(spaceSlug)}/enhanced-tables`)
       .then((r) => r.json())
       .then(setDbs)
       .catch(() => {});
@@ -106,7 +106,7 @@ function DatabasePicker({
           <input
             autoFocus
             className="flex-1 bg-transparent outline-none text-sm text-text-primary placeholder:text-text-muted"
-            placeholder="Search databases…"
+            placeholder="Search enhanced tables…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
@@ -115,7 +115,7 @@ function DatabasePicker({
         <div className="max-h-72 overflow-y-auto p-2 space-y-0.5">
           {filtered.length === 0 && (
             <div className="px-2 py-6 text-center text-sm text-text-muted">
-              {dbs.length === 0 ? "No databases yet" : "No databases found"}
+              {dbs.length === 0 ? "No enhanced tables yet" : "No enhanced tables found"}
             </div>
           )}
           {filtered.map((db) => (
@@ -1143,7 +1143,7 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
       EmojiShortcodeExtension,
       MentionNode,
       MentionSuggestion,
-      DatabaseBlockExtension,
+      EnhancedTableBlockExtension,
       Extension.create({
         name: "tabHandler",
         addKeyboardShortcuts() {
@@ -1247,6 +1247,9 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
     }
     isLoadingRef.current = true;
     const html = marked.parse(initialMarkdown, { async: false }) as string;
+    // TipTap's setContent internally calls flushSync which logs a warning
+    // when called from useEffect. This is harmless — deferring with setTimeout
+    // causes the editor to briefly render empty content, which is worse.
     editor.commands.setContent(html);
     // Reset scroll to top after TipTap's internal scrollIntoView runs
     requestAnimationFrame(() => {
@@ -2322,7 +2325,7 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
           if (!spaceSlug) return;
           try {
             const res = await fetch(
-              `/api/spaces/${encodeURIComponent(spaceSlug)}/databases`,
+              `/api/spaces/${encodeURIComponent(spaceSlug)}/enhanced-tables`,
               {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },

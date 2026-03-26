@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
-import type { Database, DbRow, DbView } from "@/lib/types";
+import type { EnhancedTable, DbRow, DbView } from "@/lib/types";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 interface Props {
-  db: Database;
+  db: EnhancedTable;
   view: DbView;
   rows: DbRow[];
   canWrite: boolean;
@@ -24,7 +24,7 @@ export default function DatabaseCalendar({ db, view, rows, canWrite, onAddRow }:
 
   if (!dateCol) {
     return (
-      <div className="db-kanban-empty">
+      <div className="et-kanban-empty">
         <p className="text-sm text-text-muted">Calendar view requires a Date column to group by.</p>
       </div>
     );
@@ -52,30 +52,30 @@ export default function DatabaseCalendar({ db, view, rows, canWrite, onAddRow }:
   const monthLabel = currentMonth.toLocaleDateString(undefined, { year: "numeric", month: "long" });
 
   return (
-    <div className="db-calendar">
-      <div className="db-calendar-header">
-        <button className="db-calendar-nav" onClick={prev}><ChevronLeft className="w-4 h-4" /></button>
-        <button className="db-calendar-today" onClick={today}>{monthLabel}</button>
-        <button className="db-calendar-nav" onClick={next}><ChevronRight className="w-4 h-4" /></button>
+    <div className="et-calendar">
+      <div className="et-calendar-header">
+        <button className="et-calendar-nav" onClick={prev}><ChevronLeft className="w-4 h-4" /></button>
+        <button className="et-calendar-today" onClick={today}>{monthLabel}</button>
+        <button className="et-calendar-nav" onClick={next}><ChevronRight className="w-4 h-4" /></button>
       </div>
-      <div className="db-calendar-grid">
-        {DAYS.map((d) => <div key={d} className="db-calendar-day-name">{d}</div>)}
+      <div className="et-calendar-grid">
+        {DAYS.map((d) => <div key={d} className="et-calendar-day-name">{d}</div>)}
         {cells.map((day, i) => (
-          <div key={i} className={`db-calendar-cell${day === null ? " empty" : ""}`}>
+          <div key={i} className={`et-calendar-cell${day === null ? " empty" : ""}`}>
             {day !== null && (
               <>
-                <span className="db-calendar-date">{day}</span>
-                <div className="db-calendar-items">
+                <span className="et-calendar-date">{day}</span>
+                <div className="et-calendar-items">
                   {getRowsForDay(day).slice(0, 3).map((r) => (
-                    <div key={r.id} className="db-calendar-item">{String(r.cells[titleCol?.id || ""] || "")}</div>
+                    <div key={r.id} className="et-calendar-item">{String(r.cells[titleCol?.id || ""] || "")}</div>
                   ))}
                   {getRowsForDay(day).length > 3 && (
-                    <div className="db-calendar-more">+{getRowsForDay(day).length - 3} more</div>
+                    <div className="et-calendar-more">+{getRowsForDay(day).length - 3} more</div>
                   )}
                 </div>
                 {canWrite && (
                   <button
-                    className="db-calendar-add"
+                    className="et-calendar-add"
                     onClick={() => onAddRow({ [dateCol.id]: `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}` })}
                   >
                     <Plus className="w-2.5 h-2.5" />

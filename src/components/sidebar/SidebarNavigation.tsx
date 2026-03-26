@@ -2,7 +2,7 @@
 
 import { FileText, Hash, LayoutTemplate, Database, Star } from "lucide-react";
 
-export type SidebarMode = "documents" | "tags" | "templates" | "databases" | "favorites";
+export type SidebarMode = "documents" | "tags" | "templates" | "enhanced-tables" | "favorites";
 
 interface SidebarNavigationProps {
   mode: SidebarMode;
@@ -42,9 +42,9 @@ export default function SidebarNavigation({ mode, onModeChange, tagCount, templa
       )}
       {databaseCount > 0 && (
         <button
-          onClick={() => onModeChange("databases")}
+          onClick={() => onModeChange("enhanced-tables")}
           className={`flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
-            mode === "databases"
+            mode === "enhanced-tables"
               ? "bg-[#14b8a6] text-white"
               : "text-text-muted hover:bg-muted hover:text-text-secondary"
           }`}

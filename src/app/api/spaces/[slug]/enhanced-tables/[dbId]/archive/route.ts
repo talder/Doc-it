@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSpaceRole } from "@/lib/permissions";
-import { archiveDatabase, unarchiveDatabase } from "@/lib/database";
+import { archiveEnhancedTable, unarchiveEnhancedTable } from "@/lib/enhanced-table";
 import { auditLog } from "@/lib/audit";
 import { invalidateSpaceCache } from "@/lib/space-cache";
 
@@ -16,7 +16,7 @@ export async function POST(_request: NextRequest, { params }: Params) {
     return NextResponse.json({ error: String(err) }, { status: 403 });
   }
 
-  const ok = await archiveDatabase(slug, dbId);
+  const ok = await archiveEnhancedTable(slug, dbId);
   if (!ok) return NextResponse.json({ error: "Database not found" }, { status: 404 });
 
   invalidateSpaceCache(slug);
@@ -34,7 +34,7 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
     return NextResponse.json({ error: String(err) }, { status: 403 });
   }
 
-  const ok = await unarchiveDatabase(slug, dbId);
+  const ok = await unarchiveEnhancedTable(slug, dbId);
   if (!ok) return NextResponse.json({ error: "Archived database not found" }, { status: 404 });
 
   invalidateSpaceCache(slug);

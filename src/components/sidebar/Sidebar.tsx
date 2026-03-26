@@ -5,7 +5,7 @@ import { ChevronRight, ChevronDown, LayoutTemplate, Database as DbIcon } from "l
 import SidebarNavigation, { type SidebarMode } from "./SidebarNavigation";
 import CategoryRenderer from "./CategoryRenderer";
 import TagsList from "./TagsList";
-import DatabasesList from "./DatabasesList";
+import EnhancedTablesList from "./EnhancedTablesList";
 import FavoritesList from "./FavoritesList";
 import SidebarActions from "./SidebarActions";
 import type { Category, DocFile, TagsIndex, SpaceCustomization, DocStatusMap, FavoriteItem } from "@/lib/types";
@@ -223,8 +223,8 @@ export default function Sidebar({
             onRemove={(item) => onToggleFavorite?.(item)}
             currentSpaceSlug={currentSpaceSlug}
           />
-        ) : mode === "databases" ? (
-          <DatabasesList
+        ) : mode === "enhanced-tables" ? (
+          <EnhancedTablesList
             databases={databases}
             onSelectDatabase={(dbId) => onSelectDatabase?.(dbId)}
             canWrite={canWrite}
@@ -306,7 +306,7 @@ export default function Sidebar({
               <div className="flex items-center justify-between px-3 py-1">
                 <button
                   onClick={() => setDatabasesCollapsed(!databasesCollapsed)}
-                  className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider db-section-header"
+                  className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider et-section-header"
                 >
                   {databasesCollapsed ? (
                     <ChevronRight className="w-3 h-3" />
@@ -327,7 +327,7 @@ export default function Sidebar({
                 )}
               </div>
             {!databasesCollapsed && (
-                <DatabasesList
+                <EnhancedTablesList
                   databases={databases}
                   onSelectDatabase={(dbId) => onSelectDatabase?.(dbId)}
                   canWrite={canWrite}
