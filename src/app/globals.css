@@ -8541,6 +8541,41 @@ textarea.modal-input {
 .oc-mini-editor-content a { color: var(--color-accent); text-decoration: underline; }
 .oc-mini-placeholder { position: absolute; top: 8px; left: 10px; font-size: 0.875rem; color: var(--color-text-muted); pointer-events: none; }
 
+/* Assisted-by picker */
+.oc-assisted-picker { display: flex; flex-direction: column; gap: 6px; }
+.oc-assisted-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.oc-assisted-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 500;
+  background: var(--color-accent-light); color: var(--color-accent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 25%, transparent);
+}
+.oc-assisted-chip-x { display: inline-flex; align-items: center; background: none; border: none; cursor: pointer; color: var(--color-accent); padding: 0; opacity: 0.6; transition: opacity 0.1s; }
+.oc-assisted-chip-x:hover { opacity: 1; }
+.oc-assisted-dropdown-wrap { position: relative; }
+.oc-assisted-trigger { display: flex; align-items: center; justify-content: space-between; cursor: pointer; width: 100%; }
+.oc-assisted-dropdown {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 50;
+  margin-top: 4px; border: 1px solid var(--color-border); border-radius: 8px;
+  background: var(--color-surface); box-shadow: 0 4px 16px var(--color-shadow);
+  overflow: hidden;
+}
+.oc-assisted-search {
+  width: 100%; padding: 8px 10px; font-size: 0.8125rem;
+  border: none; border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-alt); color: var(--color-text-primary); outline: none;
+}
+.oc-assisted-options { max-height: 180px; overflow-y: auto; }
+.oc-assisted-option {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: 7px 10px; font-size: 0.8125rem;
+  background: none; border: none; cursor: pointer; text-align: left;
+  color: var(--color-text-primary); transition: background 0.08s;
+}
+.oc-assisted-option:hover { background: var(--color-muted); }
+.oc-assisted-option--selected { background: var(--color-accent-light); font-weight: 500; }
+.oc-assisted-empty { padding: 10px; font-size: 0.75rem; color: var(--color-text-muted); text-align: center; }
+
 /* Form helpers */
 .oc-input-error { border-color: #ef4444 !important; }
 .oc-field-error { font-size: 0.6875rem; color: #ef4444; margin-top: 2px; }
