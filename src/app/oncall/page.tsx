@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Phone, Plus, ChevronUp, ChevronDown, Search } from "lucide-react";
+import { ArrowLeft, Phone, Plus, ChevronUp, ChevronDown, Search, FileBarChart } from "lucide-react";
 import JournalCalendar from "@/components/JournalCalendar";
 import OnCallHeatmap from "@/components/OnCallHeatmap";
 import OnCallModal from "@/components/OnCallModal";
 import OnCallDetailModal from "@/components/OnCallDetailModal";
+import OnCallReportModal from "@/components/OnCallReportModal";
 import type { OnCallEntry } from "@/lib/oncall-shared";
 import { getHeatmapCounts, formatWorkingTime } from "@/lib/oncall-shared";
 
@@ -30,6 +31,7 @@ export default function OnCallPage() {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   const [showNewModal, setShowNewModal] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
   const [detailEntry, setDetailEntry] = useState<OnCallEntry | null>(null);
 
   // Fetch current user
@@ -56,7 +58,7 @@ export default function OnCallPage() {
   useEffect(() => { fetchEntries(); }, [fetchEntries]);
 
   const entryDates = useMemo(() => new Set(entries.map((e) => e.date)), [entries]);
-const heatmapCounts = useMemo(() => getHeatmapCounts(entries, 90), [entries]);
+  const heatmapCounts = useMemo(() => getHeatmapCounts(entries), [entries]);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -136,6 +138,9 @@ const heatmapCounts = useMemo(() => getHeatmapCounts(entries, 90), [entries]);
               onChange={(e) => setSearchQ(e.target.value)}
             />
           </div>
+          <button className="jp-action-btn" onClick={() => setShowReportModal(true)}>
+            <FileBarChart className="w-4 h-4" /> Report
+          </button>
           <button className="jp-action-btn jp-action-btn--primary" onClick={() => setShowNewModal(true)}>
             <Plus className="w-4 h-4" /> Log Call
           </button>
@@ -241,6 +246,11 @@ const heatmapCounts = useMemo(() => getHeatmapCounts(entries, 90), [entries]);
         entry={detailEntry}
         onClose={() => setDetailEntry(null)}
         onSolutionSaved={handleSolutionSaved}
+      />
+      <OnCallReportModal
+        isOpen={showReportModal}
+        onClose={() => setShowReportModal(false)}
+        entries={entries}
       />
     </div>
   );

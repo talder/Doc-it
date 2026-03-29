@@ -43,11 +43,11 @@ export default function TicketCreateModal({ isOpen, onClose, categories, groups,
     }
   }, [isOpen, forms]);
 
-  // Asset search
+  // CmdbItem search
   useEffect(() => {
     if (assetSearch.length < 2) { setAssetResults([]); return; }
     const t = setTimeout(() => {
-      fetch(`/api/assets?q=${encodeURIComponent(assetSearch)}`)
+      fetch(`/api/cmdb?q=${encodeURIComponent(assetSearch)}`)
         .then((r) => r.ok ? r.json() : { assets: [] })
         .then((d) => setAssetResults((d.assets || []).slice(0, 6)))
         .catch(() => setAssetResults([]));
@@ -161,9 +161,9 @@ export default function TicketCreateModal({ isOpen, onClose, categories, groups,
               </select>
             </div>
 
-            {/* Asset picker */}
+            {/* CmdbItem picker */}
             <div className="cl-field cl-field--full relative">
-              <label className="cl-label">Linked Asset</label>
+              <label className="cl-label">Linked CmdbItem</label>
               <div className="flex items-center gap-2">
                 <input
                   className="cl-input" placeholder="Search assets..."

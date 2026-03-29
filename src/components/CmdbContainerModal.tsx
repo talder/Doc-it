@@ -2,20 +2,20 @@
 
 import { useEffect, useState } from "react";
 import { X, Trash2 } from "lucide-react";
-import type { AssetContainer } from "@/lib/assets";
+import type { CmdbContainer } from "@/lib/cmdb";
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  containers: AssetContainer[];
-  editContainer?: AssetContainer | null;
+  containers: CmdbContainer[];
+  editContainer?: CmdbContainer | null;
   onSave: (name: string, parentId: string | null) => Promise<void>;
   onDelete?: (id: string) => Promise<void>;
 }
 
 /** Build indented options for parent selector */
-function buildOptions(containers: AssetContainer[], excludeId?: string): { id: string; label: string }[] {
-  const childrenOf = (pid: string | null): AssetContainer[] =>
+function buildOptions(containers: CmdbContainer[], excludeId?: string): { id: string; label: string }[] {
+  const childrenOf = (pid: string | null): CmdbContainer[] =>
     containers.filter((c) => c.parentId === pid && c.id !== excludeId).sort((a, b) => a.order - b.order);
 
   const result: { id: string; label: string }[] = [];
@@ -29,7 +29,7 @@ function buildOptions(containers: AssetContainer[], excludeId?: string): { id: s
   return result;
 }
 
-export default function AssetContainerModal({ isOpen, onClose, containers, editContainer, onSave, onDelete }: Props) {
+export default function CmdbContainerModal({ isOpen, onClose, containers, editContainer, onSave, onDelete }: Props) {
   const [name, setName] = useState("");
   const [parentId, setParentId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);

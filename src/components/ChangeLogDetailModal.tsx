@@ -47,7 +47,7 @@ export default function ChangeLogDetailModal({ entry, onClose }: ChangeLogDetail
             </div>
             <div className="cl-confirm-row">
               <span className="cl-confirm-label">System</span>
-              <a href="/assets" className="cl-link font-medium">{entry.system}</a>
+              <a href="/cmdb" className="cl-link font-medium">{entry.system}</a>
             </div>
             <div className="cl-confirm-row">
               <span className="cl-confirm-label">Category</span>

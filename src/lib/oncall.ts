@@ -202,9 +202,10 @@ export function getPreviousWeekRange(now: Date): { from: string; to: string } {
   };
 }
 
-/** Build the HTML body for the weekly digest email (per-registrar breakdown).
- *  `nameMap` maps username → display name (full name); falls back to username. */
-export function buildWeeklyReportHtml(entries: OnCallEntry[], from: string, to: string, nameMap: Record<string, string> = {}): string {
+/** Build the HTML body for a report email (per-registrar breakdown).
+ *  `nameMap` maps username → display name (full name); falls back to username.
+ *  `title` overrides the heading (default "On-Call Report"). */
+export function buildWeeklyReportHtml(entries: OnCallEntry[], from: string, to: string, nameMap: Record<string, string> = {}, title = "On-Call Report"): string {
   const totalMinutes = entries.reduce((s, e) => s + e.workingMinutes, 0);
   const dn = (username: string) => nameMap[username] || username;
   const plain = (html: string) =>
@@ -216,7 +217,7 @@ export function buildWeeklyReportHtml(entries: OnCallEntry[], from: string, to: 
   if (entries.length === 0) {
     return `
 <div style="font-family:sans-serif;max-width:900px;margin:0 auto;color:#111827">
-  <h2 style="color:#1d4ed8;margin-bottom:4px">📞 On-Call Weekly Report</h2>
+  <h2 style="color:#1d4ed8;margin-bottom:4px">📞 ${title}</h2>
   <p style="color:#6b7280;margin-top:0">Period: <strong>${from}</strong> – <strong>${to}</strong></p>
   <p style="color:#6b7280">No on-call entries registered for this period.</p>
 </div>`;
@@ -334,9 +335,9 @@ export function buildWeeklyReportHtml(entries: OnCallEntry[], from: string, to: 
 
   return `
 <div style="font-family:sans-serif;max-width:900px;margin:0 auto;color:#111827">
-  <h2 style="color:#1d4ed8;margin-bottom:4px">📞 On-Call Weekly Report</h2>
+  <h2 style="color:#1d4ed8;margin-bottom:4px">📞 ${title}</h2>
   <p style="color:#6b7280;margin-top:0">Period: <strong>${from}</strong> – <strong>${to}</strong></p>
-  <p style="color:#374151">Total calls: <strong>${entries.length}</strong> &nbsp;|&nbsp; Total working time: <strong>${formatWorkingTime(totalMinutes)}</strong></p>
+  <p style="color:#374151">Total calls: <strong>${entries.length}</strong>
   ${registrarSections}
 </div>`;
 }

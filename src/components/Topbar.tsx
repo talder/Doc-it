@@ -248,11 +248,11 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
           <ClipboardList className="w-4 h-4" />
         </button>
 
-        {/* Assets */}
+        {/* CMDB */}
         <button
-          onClick={() => router.push("/assets")}
+          onClick={() => router.push("/cmdb")}
           className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
-          data-tip="Assets"
+          data-tip="CMDB"
         >
           <Monitor className="w-4 h-4" />
         </button>

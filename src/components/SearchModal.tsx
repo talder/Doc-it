@@ -87,7 +87,7 @@ export default function SearchModal({
   const [contentResults, setContentResults] = useState<ContentResult[]>([]);
   // Changelog results
   const [changeResults, setChangeResults] = useState<{ id: string; date: string; system: string; category: string; description: string; risk: string }[]>([]);
-  // Asset results
+  // CmdbItem results
   const [assetResults, setAssetResults] = useState<{ id: string; name: string; type: string; status: string; location: string }[]>([]);
   // Ticket results
   const [ticketResults, setTicketResults] = useState<{ id: string; subject: string; status: string; priority: string; requester: string }[]>([]);
@@ -195,7 +195,7 @@ export default function SearchModal({
   // Fetch asset results
   const fetchAssetResults = useCallback((q: string) => {
     if (q.length < 2) { setAssetResults([]); return; }
-    fetch(`/api/assets?q=${encodeURIComponent(q)}`)
+    fetch(`/api/cmdb?q=${encodeURIComponent(q)}`)
       .then((r) => r.ok ? r.json() : { assets: [] })
       .then((data) => setAssetResults((data.assets || []).slice(0, 5)))
       .catch(() => setAssetResults([]));
@@ -500,17 +500,17 @@ export default function SearchModal({
             </div>
           )}
 
-          {/* Asset results */}
+          {/* CmdbItem results */}
           {assetResults.length > 0 && (
             <div className="search-section">
               <div className="search-section-header">
                 <Monitor className="w-3.5 h-3.5" />
-                Assets
+                CMDB
               </div>
               {assetResults.map((a) => (
                 <a
                   key={a.id}
-                  href="/assets"
+                  href="/cmdb"
                   className="search-result-item"
                   onClick={() => onClose()}
                 >

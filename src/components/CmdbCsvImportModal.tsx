@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { X, Upload, FileSpreadsheet } from "lucide-react";
-import type { AssetContainer, CustomFieldDef } from "@/lib/assets";
+import type { CmdbContainer, CustomFieldDef } from "@/lib/cmdb";
 
 const STANDARD_FIELDS = [
   { key: "name", label: "Name / Hostname *" },
@@ -38,8 +38,8 @@ function parseCsv(text: string): { headers: string[]; rows: string[][] } {
 }
 
 /** Build indented container options */
-function containerOptions(containers: AssetContainer[]): { id: string; label: string }[] {
-  const childrenOf = (pid: string | null): AssetContainer[] =>
+function containerOptions(containers: CmdbContainer[]): { id: string; label: string }[] {
+  const childrenOf = (pid: string | null): CmdbContainer[] =>
     containers.filter((c) => c.parentId === pid).sort((a, b) => a.order - b.order);
   const result: { id: string; label: string }[] = [];
   const walk = (pid: string | null, depth: number) => {
@@ -55,12 +55,12 @@ function containerOptions(containers: AssetContainer[]): { id: string; label: st
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  containers: AssetContainer[];
+  containers: CmdbContainer[];
   customFieldDefs: CustomFieldDef[];
   onImport: (rows: Record<string, unknown>[]) => Promise<{ created: number; errors: string[] }>;
 }
 
-export default function AssetCsvImportModal({ isOpen, onClose, containers, customFieldDefs, onImport }: Props) {
+export default function CmdbCsvImportModal({ isOpen, onClose, containers, customFieldDefs, onImport }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<string[][]>([]);

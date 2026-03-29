@@ -101,14 +101,33 @@ A self-hosted documentation platform built with Next.js, TipTap, and Tailwind CS
 - **CRL generation** — generate and download Certificate Revocation Lists per CA
 - **Import** — drag-and-drop or browse to import certificate files (PEM, DER, PKCS7, PKCS12) and private key PEMs
 
-### Asset Management
-- **IT asset registry** — track hardware, software, and infrastructure assets
-- **Auto-incrementing IDs** — AST-0001, AST-0002, etc.
-- **Container tree** — organize assets in nested groups (racks, locations, departments)
-- **Asset statuses** — Active, Maintenance, Decommissioned, Ordered
+### CMDB (Configuration Management Database)
+- **IT asset registry** — track hardware, software, and infrastructure CIs with auto-incrementing IDs (AST-0001, etc.)
+- **Container tree** — organize CIs in nested groups (racks, locations, departments)
+- **CI types** — configurable types (Server, Laptop, Switch, Printer, etc.) with per-type custom fields and icons
+- **Lifecycle workflows** — configurable state machines (Requested → Approved → Deployed → In Use → Retired → Disposed) with role-gated transitions
+- **Tags & labels** — free-form tags on CIs for cross-cutting categorization with tag-based filtering
+- **Saved views** — save and recall named filter presets (container, tags, type, status, search)
+- **Bulk operations** — multi-select CIs and mass-update status, owner, type, container, tags, or delete
+- **CI templates** — pre-filled templates for common CI setups; "New CI" dropdown selects blank or template
+- **Relationships** — configurable relationship types (Runs on, Depends on, Connected to, etc.) between CIs with visual relationship diagram
+- **Business services** — define services composed of member CIs with criticality and status tracking
+- **Impact analysis** — BFS-based upstream/downstream impact graph showing affected CIs and services
+- **Maintenance windows** — scheduled maintenance periods per CI or service; active maintenance shown as 🔧 badge in table
+- **Software licenses** — license tracking with compliance monitoring (compliant, over-licensed, under-licensed, expired)
+- **Locations** — hierarchical location tree (site → building → floor → room → rack → slot)
+- **Compliance checklists** — per-CI compliance checks (Patched, Backed up, Documented, Antivirus, Monitored) with scoring and aggregate dashboard
+- **Vulnerability tracking** — CVE-linked vulnerabilities with severity, affected CIs, status workflow (open → mitigated → resolved)
+- **Change requests** — formal RFC workflow (draft → pending → approved → implemented) with risk level, affected CIs/services, rollback plan
+- **Cost / TCO tracking** — purchase cost, monthly cost, depreciation, vendor, contract renewal per CI with aggregate cost summary
+- **SLA monitoring** — per-service uptime targets with breach tracking and resolution
+- **Data quality scoring** — per-CI completeness score (owner, type, location, IP, OS, dates, tags) with aggregate dashboard widget
+- **Duplicate detection** — automatic flagging of CIs with matching hostnames or IP addresses
+- **Expiry alerts** — warranty, license, and contract expiry alerts within 90 days, sorted by urgency
+- **Network discovery** — TCP port scanning of IP ranges (CIDR or range notation) with device type heuristics, reverse DNS, and one-click import of discovered devices
+- **Automatic inventory** — downloadable agent scripts (Linux/macOS/Windows) that collect hostname, OS, IPs, hardware, installed software and POST to the agent-report API; agent coverage and stale inventory tracking in dashboard
+- **CSV import/export** — bulk import from CSV, export filtered results with tags
 - **Custom field definitions** — define additional fields per install (text, number, date, boolean, select, URL)
-- **CSV import** — bulk-import assets from CSV files
-- **Sortable table** — sort by name, type, status, location, owner; full-text search across all fields
 
 ### Helpdesk & Ticketing
 - **Full ticketing system** — create, assign, and track support tickets with statuses (Open, In Progress, Waiting, Resolved, Closed) and priorities (Low, Medium, High, Critical)
@@ -298,7 +317,8 @@ src/
     api/             # API routes (auth, spaces, docs, settings, assets,
                      #   helpdesk, portal, journal, changelog, audit, backup)
     admin/           # Admin panel
-    assets/          # Asset management page
+    cmdb/            # CMDB page
+    assets/          # Redirect to /cmdb
     changelog/       # Change log page
     helpdesk/        # Helpdesk agent UI + admin config
     journal/         # Personal & space journal
@@ -329,7 +349,9 @@ src/
     notifications.ts # In-app + email notifications with SSE push
     helpdesk.ts      # Helpdesk module (tickets, groups, SLA, rules, forms, portal pages)
     helpdesk-portal.ts # Portal user auth (separate from main auth)
-    assets.ts        # Asset management module
+    cmdb.ts          # CMDB module (CI registry, compliance, vulnerabilities, change requests, SLA, cost)
+    cmdb-shared.ts   # Client-safe CMDB helpers (lifecycle state, location path)
+    cmdb-scanner.ts  # Network discovery scanner (TCP port probe, DNS lookup)
     changelog.ts     # Change log module
     enhanced-table.ts # Enhanced table CRUD (JSON files per space)
     oncall.ts        # On-call reports module (server-side CRUD, filtering, email)
@@ -361,7 +383,7 @@ Key configuration entries (stored as JSON values):
 - `smtp.json` — SMTP email settings (configurable in Admin → Settings)
 - `helpdesk.json` — helpdesk configuration (groups, categories, fields, forms, rules, SLA, portal pages)
 - `helpdesk-tickets.json` — ticket storage
-- `assets.json` — asset registry
+- `assets.json` — CMDB data (CIs, types, relationships, services, compliance, vulnerabilities, change requests, SLA, templates, scan configs)
 - `changelog.json` — change log entries
 - `changelog-settings.json` — changelog retention period (default 5 years)
 - `oncall.json` — on-call report entries

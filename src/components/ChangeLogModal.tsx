@@ -63,7 +63,7 @@ export default function ChangeLogModal({ isOpen, onClose, onSave, knownSystems, 
       setShowConfirm(false);
       setSaving(false);
       // Fetch asset names for system autocomplete
-      fetch("/api/assets")
+      fetch("/api/cmdb")
         .then((r) => r.ok ? r.json() : { assets: [] })
         .then((data) => setAssetNames((data.assets || []).map((a: { name: string }) => a.name)))
         .catch(() => setAssetNames([]));
@@ -110,7 +110,7 @@ export default function ChangeLogModal({ isOpen, onClose, onSave, knownSystems, 
               </div>
 
               <div className="cl-field relative">
-                <label className="cl-label">System / Asset *</label>
+                <label className="cl-label">System / CmdbItem *</label>
                 <input
                   ref={systemRef}
                   type="text"

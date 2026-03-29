@@ -48,7 +48,10 @@ Doc-it is a self-hosted documentation platform built as a single **Next.js 16 Ap
 - `crypto.ts` — AES-256-GCM field encryption and key rotation
 - `enhanced-table.ts` — enhanced table CRUD (JSON files per space)
 - `journal.ts` — encrypted personal and space journals
-- `assets.ts` / `changelog.ts` — asset registry and change log modules
+- `cmdb.ts` — CMDB module (CI registry, types, relationships, services, compliance, vulnerabilities, change requests, SLA, cost, templates, maintenance windows, scanning)
+- `cmdb-shared.ts` — client-safe CMDB helpers (lifecycle state, location path)
+- `cmdb-scanner.ts` — network discovery scanner (TCP port probe, DNS reverse lookup, device type heuristics)
+- `changelog.ts` — change log module
 - `oncall.ts` — on-call report CRUD, filtering, weekly email (server-only; imports `config.ts`)
 - `oncall-shared.ts` — client-safe on-call types and pure helpers (no server deps; safe to import from `"use client"` components)
 

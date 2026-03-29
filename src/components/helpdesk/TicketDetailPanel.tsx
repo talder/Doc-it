@@ -101,7 +101,7 @@ export default function TicketDetailPanel({ ticketId, groups, categories, fieldD
                   <span>by <strong>{ticket.requester}</strong></span>
                   <span>{new Date(ticket.createdAt).toLocaleString()}</span>
                   {ticket.assetId && (
-                    <a href="/assets" className="hd-detail-asset"><Monitor className="w-3 h-3" /> {ticket.assetId}</a>
+                    <a href="/cmdb" className="hd-detail-asset"><Monitor className="w-3 h-3" /> {ticket.assetId}</a>
                   )}
                 </div>
 

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { X, Plus, Trash2, Pencil } from "lucide-react";
-import type { CustomFieldDef, CustomFieldType } from "@/lib/assets";
+import type { CustomFieldDef, CustomFieldType } from "@/lib/cmdb";
 
 const FIELD_TYPES: { value: CustomFieldType; label: string }[] = [
   { value: "text", label: "Text" },
@@ -22,7 +22,7 @@ interface Props {
   onDelete: (id: string) => Promise<void>;
 }
 
-export default function AssetFieldDefsModal({ isOpen, onClose, fieldDefs, onAdd, onUpdate, onDelete }: Props) {
+export default function CmdbFieldDefsModal({ isOpen, onClose, fieldDefs, onAdd, onUpdate, onDelete }: Props) {
   const [addMode, setAddMode] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [name, setName] = useState("");
