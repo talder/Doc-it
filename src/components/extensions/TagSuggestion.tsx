@@ -122,7 +122,8 @@ export const TagSuggestion = Extension.create({
 
             onKeyDown(props: any) {
               if (props.event.key === "Escape") {
-                popup[0].hide();
+                const inst = popup?.[0] ?? popup;
+                inst?.hide?.();
                 return true;
               }
               return (component.ref as any)?.onKeyDown?.(props.event);
