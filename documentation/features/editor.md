@@ -36,7 +36,8 @@ While editing, type `/` anywhere in the document to open the slash-command menu.
 | `/divider` | Horizontal rule |
 | `/drawing` | Embed an Excalidraw drawing |
 | `/diagram` | Embed a Draw.io diagram |
-| `/database` | Embed a database block |
+|| `/toc` | Insert an auto-updating Table of Contents |
+|| `/database` | Embed a database block |
 | `/attachment` | Upload a file attachment |
 | `/linkpreview` | Rich link preview card |
 
@@ -61,9 +62,31 @@ Click the **Book** icon in the document bar (when not editing) to open a full-sc
 
 ---
 
-## Table of Contents
+## Document Title
 
-Click the **TOC** tab on the far right edge of the editor area to open a Table of Contents panel, generated automatically from the headings in the document.
+Every document has a dedicated **title field** at the top of the editor, displayed as large bold text. The title is synced with the document's filename.
+
+- **Click to edit** — in edit mode, click the title to activate editing. Press **Enter** to confirm or **Escape** to cancel.
+- **Rename on save** — when the title is changed and the document saves (autosave or Done), the file is renamed automatically.
+- **Reverse sync** — renaming a document via the sidebar context menu updates the title field.
+- **Cannot be empty** — if you clear the title and blur, it reverts to the current filename.
+
+---
+
+## Inline Table of Contents
+
+Use the `/toc` slash command to insert an **auto-updating Table of Contents** block anywhere in the document.
+
+- The TOC scans all headings (H1–H4) and renders clickable entries that scroll to the corresponding heading.
+- **Number headings** — toggle the checkbox in the TOC block header to add hierarchical numbering (1., 1.1, 1.1.1, 1.1.1.1) to headings. Numbering is CSS-only and does not modify the stored Markdown.
+- The TOC block is persisted as a Markdown comment (`<!-- toc -->` or `<!-- toc:numbered -->`).
+- The offline reader export renders the TOC with clickable anchor links.
+
+---
+
+## Sidebar Table of Contents
+
+Click the **TOC** tab on the far right edge of the editor area to open a Table of Contents panel, generated automatically from the headings in the document. When the inline TOC’s "Number headings" toggle is enabled, the sidebar panel also shows hierarchical numbers.
 
 
 ---

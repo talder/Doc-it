@@ -115,6 +115,18 @@ Click the `…` menu in the sidebar → **Delete**. This action is permanent.
 
 ---
 
+## Tags
+
+Enhanced tables support the same tagging system as documents.
+
+- **Adding tags** — click the **+** button in the database view header to add a tag. The autocomplete suggests existing tags from the space.
+- **Removing tags** — click the **×** on any tag chip to remove it.
+- **Tag colours** — tag chips use the same colours configured in the Tag Manager.
+- **Tag view** — enhanced tables with tags appear under their respective tags in the sidebar tag view, alongside documents.
+- **Global tag index** — enhanced table tags are included in the space tag index. Tag rename and delete operations in the Tag Manager propagate to enhanced tables.
+
+---
+
 ## Storage
 
 Each enhanced table (schema + all rows) is stored as a single JSON file at `docs/{space}/.enhanced tables/{id}.db.json`.

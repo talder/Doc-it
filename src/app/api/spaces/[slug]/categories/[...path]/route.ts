@@ -6,8 +6,140 @@ import { requireSpaceRole } from "@/lib/permissions";
 import { getSpaceDir, getArchiveCategoryDir, getTrashDir, ensureDir } from "@/lib/config";
 import { invalidateSpaceCache } from "@/lib/space-cache";
 import { auditLog } from "@/lib/audit";
+import { parseFrontmatter } from "@/lib/frontmatter";
+import { listEnhancedTables } from "@/lib/enhanced-table";
 
 type Params = { params: Promise<{ slug: string; path: string[] }> };
+
+// ── Category details (GET) ──────────────────────────────────────────────────
+
+const EXCLUDED_SCAN = ["attachments", ".git", ".DS_Store", ".databases"];
+
+interface DocDetail {
+  name: string;
+  category: string;
+  tags: string[];
+  status?: string;
+  createdBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+  isTemplate?: boolean;
+}
+
+async function scanDocsInDir(
+  dir: string,
+  categoryPath: string,
+): Promise<DocDetail[]> {
+  const docs: DocDetail[] = [];
+  let entries;
+  try { entries = await fs.readdir(dir, { withFileTypes: true }); }
+  catch { return docs; }
+
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const isMd = entry.name.endsWith(".md");
+    const isMdt = entry.name.endsWith(".mdt");
+    if (!isMd && !isMdt) continue;
+
+    const name = entry.name.replace(/\.(md|mdt)$/, "");
+    const doc: DocDetail = { name, category: categoryPath, tags: [], isTemplate: isMdt || undefined };
+
+    try {
+      const raw = await fs.readFile(path.join(dir, entry.name), "utf-8");
+      const { metadata } = parseFrontmatter(raw);
+      doc.tags = metadata.tags || [];
+      doc.createdBy = metadata.createdBy;
+      doc.createdAt = metadata.createdAt;
+      doc.updatedAt = metadata.updatedAt;
+      doc.updatedBy = metadata.updatedBy;
+    } catch { /* skip unreadable */ }
+
+    docs.push(doc);
+  }
+  return docs.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function countDocsRecursive(dir: string): Promise<number> {
+  let count = 0;
+  let entries;
+  try { entries = await fs.readdir(dir, { withFileTypes: true }); }
+  catch { return 0; }
+  for (const e of entries) {
+    if (e.isFile() && (e.name.endsWith(".md") || e.name.endsWith(".mdt"))) count++;
+    else if (e.isDirectory() && !EXCLUDED_SCAN.includes(e.name)) count += await countDocsRecursive(path.join(dir, e.name));
+  }
+  return count;
+}
+
+export async function GET(_req: NextRequest, { params }: Params) {
+  const { slug, path: pathParts } = await params;
+  const categoryPath = pathParts.join("/");
+
+  try { await requireSpaceRole(slug, "reader"); }
+  catch (err) { return NextResponse.json({ error: String(err) }, { status: 403 }); }
+
+  const spaceDir = getSpaceDir(slug);
+  const catDir = path.join(spaceDir, categoryPath);
+
+  try {
+    const stat = await fs.stat(catDir);
+    if (!stat.isDirectory()) throw new Error();
+  } catch {
+    return NextResponse.json({ error: "Category not found" }, { status: 404 });
+  }
+
+  // Direct docs
+  const docs = await scanDocsInDir(catDir, categoryPath);
+
+  // Subcategories with doc counts + their direct docs
+  const subCategories: { name: string; path: string; docCount: number }[] = [];
+  const subDocs: Record<string, DocDetail[]> = {};
+
+  let dirEntries: import("fs").Dirent[] = [];
+  try { dirEntries = await fs.readdir(catDir, { withFileTypes: true }); }
+  catch { dirEntries = []; }
+
+  const subDirs = dirEntries
+    .filter((e) => e.isDirectory() && !EXCLUDED_SCAN.includes(e.name))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  for (const sub of subDirs) {
+    const subPath = `${categoryPath}/${sub.name}`;
+    const subDir = path.join(catDir, sub.name);
+    const docCount = await countDocsRecursive(subDir);
+    subCategories.push({ name: sub.name, path: subPath, docCount });
+    subDocs[subPath] = await scanDocsInDir(subDir, subPath);
+  }
+
+  // Enhanced tables
+  const allDbs = await listEnhancedTables(slug);
+  const databases = allDbs.map((db) => ({
+    id: db.id,
+    title: db.title,
+    tags: db.tags || [],
+    rowCount: db.rows.length,
+    createdAt: db.createdAt,
+    createdBy: db.createdBy,
+  }));
+
+  let totalDocs = docs.length;
+  for (const sc of subCategories) totalDocs += sc.docCount;
+
+  return NextResponse.json({
+    category: {
+      name: categoryPath.split("/").pop() || categoryPath,
+      path: categoryPath,
+      totalDocs,
+      subCategoryCount: subCategories.length,
+      databaseCount: databases.length,
+    },
+    docs,
+    subCategories,
+    subDocs,
+    databases,
+  });
+}
 
 export async function PUT(request: NextRequest, { params }: Params) {
   const { slug, path: pathParts } = await params;

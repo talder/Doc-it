@@ -298,6 +298,7 @@ export interface EnhancedTable {
   columns: DbColumn[];
   rows: DbRow[];
   views: DbView[];
+  tags?: string[];
   createdAt: string;
   createdBy: string;
   updatedAt: string;

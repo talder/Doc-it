@@ -46,6 +46,7 @@ interface CategoryRendererProps {
   spaceSlug?: string;
   spaceName?: string;
   onToggleFavorite?: (item: FavoriteItem) => void;
+  onOpenCategory?: (path: string) => void;
 }
 
 export default function CategoryRenderer({
@@ -78,6 +79,7 @@ export default function CategoryRenderer({
   spaceSlug,
   spaceName,
   onToggleFavorite,
+  onOpenCategory,
 }: CategoryRendererProps) {
   const categoryDocs = docs.filter((d) => d.category === category.path);
   const subCategories = allCategories.filter((c) => c.parent === category.path);
@@ -191,7 +193,7 @@ export default function CategoryRenderer({
             )}
           </button>
           <button
-            onClick={() => onToggleCategory(category.path)}
+            onClick={() => onOpenCategory ? onOpenCategory(category.path) : onToggleCategory(category.path)}
             className="flex items-center gap-1.5 flex-1 min-w-0"
           >
             {isTplCategory ? (
@@ -301,6 +303,7 @@ export default function CategoryRenderer({
               spaceSlug={spaceSlug}
               spaceName={spaceName}
               onToggleFavorite={onToggleFavorite}
+              onOpenCategory={onOpenCategory}
           />
         ))}
           {categoryDocs.map((doc) => {

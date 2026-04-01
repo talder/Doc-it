@@ -4,6 +4,25 @@ All notable changes to Doc-it are documented here.
 
 ---
 
+## [0.2.25] — 2026-04-01
+
+### Added
+- **Inline Table of Contents** — new `/toc` slash command inserts a dynamic, auto-updating TOC block into the document body. Includes a "Number headings" toggle that adds hierarchical numbering (1., 1.1, 1.1.1) to headings via CSS counters. The sidebar TOC panel also shows numbers when the toggle is enabled.
+- **Document title field** — a dedicated editable title at the top of every document, synced with the filename. Click to edit; rename triggers on save. Sidebar renames update the title automatically.
+- **Category landing page** — clicking a category name in the sidebar opens a full-page overview in the main content area with document count, stats, collapsible subcategories, and a detailed document table (name, tags, status, creator, dates). Enhanced tables are also listed.
+- **Enhanced table tags** — enhanced tables now support tags, matching the document tag system. Tags can be added/removed in the database view header, appear in the sidebar tag view, and are included in the global tag index. Tag rename/delete operations propagate to enhanced tables.
+- **TOC in offline bundle** — the offline reader export now renders inline TOC blocks as clickable, styled navigation with anchor links and optional heading numbering.
+
+### Fixed
+- **Template "From Template" category** — creating a document from a template now pre-selects the category you right-clicked in the sidebar, instead of always defaulting to the first category.
+- **Enhanced table tag persistence** — the `saveDb` function was not including `tags` in the PUT request body, so assigned tags were lost on save.
+- **Enhanced table tag colors** — tag chips in the database view header now use the correct customization colors.
+- **Tags view collapsed by default** — individual tags in the sidebar tag view now start collapsed instead of expanded.
+- **Category landing auto-select conflict** — clicking a category no longer triggers the auto-select-first-document effect, which was immediately overriding the category view.
+- **Category landing table row alignment** — fixed `display: flex` on `<td>` elements that broke row height synchronization when tags had different heights.
+
+---
+
 ## [0.2.18] — 2026-03-26
 
 ### Added

@@ -1,16 +1,26 @@
 "use client";
 
-import { ChevronRight, ChevronDown, Hash, RefreshCw, FileText, Settings } from "lucide-react";
+import { ChevronRight, ChevronDown, Hash, RefreshCw, FileText, Settings, Database as DbIcon } from "lucide-react";
 import { buildTagTree, getChildTags } from "@/lib/tags";
 import type { TagInfo, TagsIndex, DocFile } from "@/lib/types";
 import { useState } from "react";
 
+interface DbSummary {
+  id: string;
+  title: string;
+  rowCount: number;
+  createdAt: string;
+  tags?: string[];
+}
+
 interface TagsListProps {
   tagsIndex: TagsIndex;
   docs: DocFile[];
+  databases?: DbSummary[];
   activeDoc: { name: string; category: string } | null;
   onTagSelect: (tagName: string) => void;
   onSelectDoc: (doc: DocFile) => void;
+  onSelectDatabase?: (dbId: string) => void;
   selectedTag: string | null;
   onReindex?: () => void;
   isReindexing?: boolean;
@@ -22,22 +32,26 @@ function TagRenderer({
   tag,
   tagsIndex,
   docs,
+  databases,
   activeDoc,
   collapsedTags,
   toggleTag,
   onTagSelect,
   onSelectDoc,
+  onSelectDatabase,
   selectedTag,
   tagColors,
 }: {
   tag: TagInfo;
   tagsIndex: TagsIndex;
   docs: DocFile[];
+  databases?: DbSummary[];
   activeDoc: { name: string; category: string } | null;
   collapsedTags: Set<string>;
   toggleTag: (name: string) => void;
   onTagSelect: (name: string) => void;
   onSelectDoc: (doc: DocFile) => void;
+  onSelectDatabase?: (dbId: string) => void;
   selectedTag: string | null;
   tagColors?: Record<string, string>;
 }) {
@@ -54,7 +68,11 @@ function TagRenderer({
       tn === d.name || tn === `${d.category}/${d.name}` || tn.endsWith(`/${d.name}`)
     )
   );
-  const hasContent = tagDocs.length > 0 || hasChildren;
+  // Find enhanced tables that have this tag
+  const tagDbs = (databases || []).filter((db) =>
+    db.tags?.some((t) => t.toLowerCase() === tag.name)
+  );
+  const hasContent = tagDocs.length > 0 || tagDbs.length > 0 || hasChildren;
 
   return (
     <div>
@@ -110,6 +128,18 @@ function TagRenderer({
             );
           })}
 
+          {/* Enhanced tables with this tag */}
+          {tagDbs.map((db) => (
+            <button
+              key={db.id}
+              onClick={() => onSelectDatabase?.(db.id)}
+              className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-sm transition-colors text-text-secondary hover:bg-muted"
+            >
+              <DbIcon className="w-3.5 h-3.5 flex-shrink-0" style={{ color: "#14b8a6" }} />
+              <span className="truncate">{db.title}</span>
+            </button>
+          ))}
+
           {/* Child tags */}
           {children.map((child, i) => (
             <TagRenderer
@@ -117,11 +147,13 @@ function TagRenderer({
               tag={child}
               tagsIndex={tagsIndex}
               docs={docs}
+              databases={databases}
               activeDoc={activeDoc}
               collapsedTags={collapsedTags}
               toggleTag={toggleTag}
               onTagSelect={onTagSelect}
               onSelectDoc={onSelectDoc}
+              onSelectDatabase={onSelectDatabase}
               selectedTag={selectedTag}
               tagColors={tagColors}
             />
@@ -132,11 +164,11 @@ function TagRenderer({
   );
 }
 
-export default function TagsList({ tagsIndex, docs, activeDoc, onTagSelect, onSelectDoc, selectedTag, onReindex, isReindexing, tagColors, onOpenTagManager }: TagsListProps) {
-  const [collapsedTags, setCollapsedTags] = useState<Set<string>>(new Set());
-  const [sectionCollapsed, setSectionCollapsed] = useState(true);
-
+export default function TagsList({ tagsIndex, docs, databases, activeDoc, onTagSelect, onSelectDoc, onSelectDatabase, selectedTag, onReindex, isReindexing, tagColors, onOpenTagManager }: TagsListProps) {
   const rootTags = buildTagTree(tagsIndex);
+  // Start with all tags collapsed
+  const [collapsedTags, setCollapsedTags] = useState<Set<string>>(() => new Set(rootTags.map((t) => t.name)));
+  const [sectionCollapsed, setSectionCollapsed] = useState(true);
 
   if (rootTags.length === 0) return null;
 
@@ -211,11 +243,13 @@ export default function TagsList({ tagsIndex, docs, activeDoc, onTagSelect, onSe
               tag={tag}
               tagsIndex={tagsIndex}
               docs={docs}
+              databases={databases}
               activeDoc={activeDoc}
               collapsedTags={collapsedTags}
               toggleTag={toggleTag}
               onTagSelect={onTagSelect}
               onSelectDoc={onSelectDoc}
+              onSelectDatabase={onSelectDatabase}
               selectedTag={selectedTag}
               tagColors={tagColors}
             />

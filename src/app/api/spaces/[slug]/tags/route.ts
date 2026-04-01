@@ -6,6 +6,8 @@ import { getSpaceDir, readCustomization, writeCustomization } from "@/lib/config
 import { extractHashtags, buildTagsIndex, normalizeTag } from "@/lib/tags";
 import { parseFrontmatter, stringifyFrontmatter } from "@/lib/frontmatter";
 import { invalidateSpaceCache } from "@/lib/space-cache";
+import { listEnhancedTables, readEnhancedTable, writeEnhancedTable, getEnhancedTableDir } from "@/lib/enhanced-table";
+import type { EnhancedTable } from "@/lib/types";
 
 const EXCLUDED = ["attachments", ".git", ".DS_Store"];
 
@@ -45,6 +47,14 @@ async function scanDocsForTags(
   return results;
 }
 
+/** Scan enhanced tables for tags and return as { name, tags } entries. */
+async function scanDbsForTags(slug: string): Promise<{ name: string; tags: string[] }[]> {
+  const dbs = await listEnhancedTables(slug);
+  return dbs
+    .filter((db) => db.tags && db.tags.length > 0)
+    .map((db) => ({ name: `[db] ${db.title}`, tags: db.tags!.map((t) => t.toLowerCase()) }));
+}
+
 export async function GET(_req: NextRequest, { params }: Params) {
   const { slug } = await params;
   try {
@@ -55,7 +65,8 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
   const spaceDir = getSpaceDir(slug);
   const docs = await scanDocsForTags(spaceDir);
-  const tagsIndex = buildTagsIndex(docs);
+  const dbDocs = await scanDbsForTags(slug);
+  const tagsIndex = buildTagsIndex([...docs, ...dbDocs]);
 
   return NextResponse.json(tagsIndex);
 }
@@ -71,7 +82,8 @@ export async function POST(_req: NextRequest, { params }: Params) {
 
   const spaceDir = getSpaceDir(slug);
   const docs = await scanDocsForTags(spaceDir);
-  const tagsIndex = buildTagsIndex(docs);
+  const dbDocs = await scanDbsForTags(slug);
+  const tagsIndex = buildTagsIndex([...docs, ...dbDocs]);
 
   return NextResponse.json(tagsIndex);
 }
@@ -178,6 +190,16 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     }
   }
 
+  // Rename tag in enhanced tables
+  const dbs = await listEnhancedTables(slug);
+  for (const db of dbs) {
+    if (db.tags && db.tags.includes(oldNorm)) {
+      db.tags = [...new Set(db.tags.map((t) => t === oldNorm ? newNorm : t))];
+      await writeEnhancedTable(slug, db.id, db);
+      updated++;
+    }
+  }
+
   // Move tag color
   const cust = await readCustomization(slug);
   if (cust.tagColors[oldNorm]) {
@@ -190,7 +212,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   return NextResponse.json({ ok: true, updated });
 }
 
-// DELETE: remove a tag from all documents
+// DELETE: remove a tag from all documents and enhanced tables
 export async function DELETE(req: NextRequest, { params }: Params) {
   const { slug } = await params;
   try {
@@ -231,6 +253,17 @@ export async function DELETE(req: NextRequest, { params }: Params) {
 
     if (changed) {
       await fs.writeFile(file, stringifyFrontmatter(newBody, metadata), "utf-8");
+      updated++;
+    }
+  }
+
+  // Remove tag from enhanced tables
+  const dbs = await listEnhancedTables(slug);
+  for (const db of dbs) {
+    if (db.tags && db.tags.includes(norm)) {
+      db.tags = db.tags.filter((t) => t !== norm);
+      if (db.tags.length === 0) delete db.tags;
+      await writeEnhancedTable(slug, db.id, db);
       updated++;
     }
   }

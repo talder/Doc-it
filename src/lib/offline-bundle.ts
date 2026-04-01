@@ -396,6 +396,56 @@ async function resolveSpecialNodes(
     () => `<div class="ob-drawio-placeholder">&#128203;&nbsp;Inline database &mdash; see the Databases section in the sidebar</div>`,
   );
 
+  // 7. Table of Contents: <!-- toc --> or <!-- toc:numbered -->
+  //    First pass: collect headings, add anchor IDs, optionally prepend numbers.
+  //    Second pass: replace the <!-- toc --> comment with a clickable TOC block.
+  const tocMatch = html.match(/<!--\s*toc(?::(numbered))?\s*-->/);
+  if (tocMatch) {
+    const isNumbered = tocMatch[1] === "numbered";
+    const headingRe = /<h([1-4])([^>]*)>(.*?)<\/h[1-4]>/gi;
+    const entries: { level: number; text: string; number: string; anchor: string }[] = [];
+    const counters = [0, 0, 0, 0];
+    const usedAnchors = new Set<string>();
+
+    // Collect headings and inject anchor IDs + optional numbering
+    html = html.replace(headingRe, (full, lvl, attrs, inner) => {
+      const level = parseInt(lvl, 10);
+      const text = inner.replace(/<[^>]*>/g, "").trim();
+      if (!text) return full;
+
+      const idx = level - 1;
+      counters[idx]++;
+      for (let i = idx + 1; i < 4; i++) counters[i] = 0;
+      const num = counters.slice(0, idx + 1).join(".");
+
+      // Generate unique anchor slug
+      let anchor = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      if (usedAnchors.has(anchor)) anchor = `${anchor}-${idx}-${counters[idx]}`;
+      usedAnchors.add(anchor);
+
+      entries.push({ level, text, number: num, anchor });
+
+      const numPrefix = isNumbered
+        ? `<span style="color:#9ca3af;font-weight:500;margin-right:6px">${num}</span>`
+        : "";
+      return `<h${lvl}${attrs} id="${anchor}">${numPrefix}${inner}</h${lvl}>`;
+    });
+
+    // Build the TOC block with clickable links
+    if (entries.length > 0) {
+      const indent: Record<number, string> = { 1: "0", 2: "16px", 3: "32px", 4: "48px" };
+      const items = entries.map((e) =>
+        `<a href="#${e.anchor}" style="display:block;padding:2px 0 2px ${indent[e.level] || "0"};font-size:${e.level <= 2 ? "0.875rem" : "0.8125rem"};color:${e.level === 1 ? "inherit" : "#6b7280"};text-decoration:none">`
+        + `${isNumbered ? `<span style="color:#9ca3af;margin-right:4px">${e.number}</span>` : ""}`
+        + `${_escHtml(e.text)}</a>`,
+      ).join("");
+      const tocHtml = `<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 16px;margin:16px 0;background:#f9fafb"><div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:#9ca3af;margin-bottom:8px">Table of Contents</div>${items}</div>`;
+      html = html.replace(/<!--\s*toc(?::numbered)?\s*-->/, tocHtml);
+    } else {
+      html = html.replace(/<!--\s*toc(?::numbered)?\s*-->/, "");
+    }
+  }
+
   return html;
 }
 

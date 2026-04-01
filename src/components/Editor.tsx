@@ -963,6 +963,7 @@ interface EditorProps {
   filename: string;
   initialMarkdown: string;
   onSave: (markdown: string) => void;
+  onTitleChange?: (newTitle: string) => void;
   spaceSlug?: string;
   category?: string;
   onTagClick?: (tag: string) => void;
@@ -977,12 +978,55 @@ interface EditorProps {
   tagColors?: Record<string, string>;
 }
 
-export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, category, onTagClick, editable = true, lineSpacing = "compact", isTemplate = false, pageWidth = "narrow", onPageWidthChange, spellcheckEnabled = false, spellcheckLanguage = "en", spaceMembers = [], tagColors = {} }: EditorProps) {
+export default function Editor({ filename, initialMarkdown, onSave, onTitleChange, spaceSlug, category, onTagClick, editable = true, lineSpacing = "compact", isTemplate = false, pageWidth = "narrow", onPageWidthChange, spellcheckEnabled = false, spellcheckLanguage = "en", spaceMembers = [], tagColors = {} }: EditorProps) {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLoadingRef = useRef(false);
   const pendingSaveFnRef = useRef<null | (() => void)>(null);
   const onSaveRef = useRef(onSave);
   useEffect(() => { onSaveRef.current = onSave; }, [onSave]);
+  const onTitleChangeRef = useRef(onTitleChange);
+  useEffect(() => { onTitleChangeRef.current = onTitleChange; }, [onTitleChange]);
+
+  // ── Document title field ────────────────────────────────────────────────────
+  const [titleValue, setTitleValue] = useState(filename);
+  const [titleEditing, setTitleEditing] = useState(false);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  // Track whether a rename is pending so we fire it on next save
+  const titlePendingRef = useRef(false);
+
+  // Sync title when filename prop changes (reverse sync from sidebar rename)
+  useEffect(() => { setTitleValue(filename); titlePendingRef.current = false; }, [filename]);
+
+  const handleTitleClick = () => {
+    if (!editable) return;
+    setTitleEditing(true);
+    // Focus the input on next frame after it renders
+    requestAnimationFrame(() => titleInputRef.current?.focus());
+  };
+
+  const handleTitleCommit = () => {
+    setTitleEditing(false);
+    const trimmed = titleValue.trim();
+    if (!trimmed) {
+      // Don't allow empty — revert
+      setTitleValue(filename);
+      return;
+    }
+    if (trimmed !== filename) {
+      titlePendingRef.current = true;
+    }
+  };
+
+  const handleTitleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleTitleCommit();
+    }
+    if (e.key === "Escape") {
+      setTitleValue(filename);
+      setTitleEditing(false);
+    }
+  };
 
   // ── Flush any pending debounced save on unmount ────────────────────────────
   useEffect(() => {
@@ -1239,6 +1283,11 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
           const html = editor.getHTML();
           const md = turndown.turndown(html);
           capturedSave(md);
+          // Fire pending title rename on save
+          if (titlePendingRef.current) {
+            titlePendingRef.current = false;
+            onTitleChangeRef.current?.(titleValue.trim());
+          }
         } catch {}
         pendingSaveFnRef.current = null;
       };
@@ -1951,6 +2000,29 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
       </BubbleMenu>
 
       <div style={PAGE_WIDTH_MAX[pageWidth] ? { maxWidth: PAGE_WIDTH_MAX[pageWidth], marginLeft: "auto", marginRight: "auto" } : {}}>
+        {/* Document title field */}
+        <div className="doc-title-wrapper">
+          {titleEditing ? (
+            <input
+              ref={titleInputRef}
+              className="doc-title-field doc-title-field--editing"
+              value={titleValue}
+              onChange={(e) => setTitleValue(e.target.value)}
+              onBlur={handleTitleCommit}
+              onKeyDown={handleTitleKeyDown}
+              placeholder="Document title"
+              spellCheck={false}
+            />
+          ) : (
+            <div
+              className={`doc-title-field${editable ? " doc-title-field--editable" : ""}`}
+              onClick={handleTitleClick}
+              title={editable ? "Click to rename" : undefined}
+            >
+              {titleValue || <span className="doc-title-placeholder">Document title</span>}
+            </div>
+          )}
+        </div>
         <EditorContent editor={editor} className="tiptap-editor" />
       </div>
 

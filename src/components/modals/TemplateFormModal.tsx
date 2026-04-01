@@ -9,6 +9,7 @@ interface TemplateFormModalProps {
   isOpen: boolean;
   template: TemplateInfo | null;
   categories: Category[];
+  defaultCategory?: string;
   onClose: () => void;
   onCreate: (name: string, category: string, content: string) => void;
   spaceMembers?: { username: string; fullName?: string }[];
@@ -853,6 +854,7 @@ export default function TemplateFormModal({
   isOpen,
   template,
   categories,
+  defaultCategory,
   onClose,
   onCreate,
   spaceMembers = [],
@@ -872,7 +874,11 @@ export default function TemplateFormModal({
   useEffect(() => {
     if (isOpen && template) {
       setDocName("");
-      setCategory(nonTplCategories[0]?.path ?? "");
+      setCategory(
+        (defaultCategory && nonTplCategories.some((c) => c.path === defaultCategory))
+          ? defaultCategory
+          : nonTplCategories[0]?.path ?? ""
+      );
       // Pre-fill defaults
       const init: Record<string, string> = {};
       for (const f of template.fields) {

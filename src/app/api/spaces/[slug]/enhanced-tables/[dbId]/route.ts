@@ -29,10 +29,11 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
   const updates = await request.json();
 
-  // Allow updating: title, columns, views
+  // Allow updating: title, columns, views, tags
   if (updates.title !== undefined) db.title = updates.title;
   if (updates.columns !== undefined) db.columns = updates.columns;
   if (updates.views !== undefined) db.views = updates.views;
+  if (updates.tags !== undefined) db.tags = updates.tags;
   // Allow full row replacement (for reorder, bulk ops)
   if (updates.rows !== undefined) db.rows = updates.rows;
   db.updatedAt = new Date().toISOString();

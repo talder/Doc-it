@@ -28,6 +28,7 @@ import DocStatsFooter from "@/components/DocStatsFooter";
 import DocStatusPopover from "@/components/DocStatusPopover";
 import DocInfoPanel from "@/components/DocInfoPanel";
 import SpaceHome from "@/components/SpaceHome";
+import CategoryLanding from "@/components/CategoryLanding";
 import SearchModal from "@/components/SearchModal";
 import { usePresence } from "@/hooks/usePresence";
 import { useDocWatcher } from "@/hooks/useDocWatcher";
@@ -200,6 +201,9 @@ export default function Home() {
 
   // Track whether user intentionally navigated to home (skip auto-select)
   const [showHome, setShowHome] = useState(true);
+
+  // Category landing page
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
   // Search modal
   const [showSearchModal, setShowSearchModal] = useState(false);
@@ -442,6 +446,7 @@ export default function Home() {
     if (res.ok && docKeyRef.current === key) {
       const data = await res.json();
     setActiveDatabase(null);
+    setActiveCategory(null);
     setShowHome(false);
     setActiveDoc({ name: doc.name, category: doc.category, isTemplate: !!doc.isTemplate });
       setMarkdown(data.content);
@@ -483,8 +488,8 @@ export default function Home() {
 
   // Auto-select first doc (skip if user intentionally went home)
   useEffect(() => {
-    if (docs.length > 0 && !activeDoc && !showHome) loadDoc(docs[0]);
-  }, [docs, activeDoc, loadDoc, showHome]);
+    if (docs.length > 0 && !activeDoc && !showHome && !activeCategory) loadDoc(docs[0]);
+  }, [docs, activeDoc, loadDoc, showHome, activeCategory]);
 
   // Resolve pending doc load after space switch + data fetch
   useEffect(() => {
@@ -1022,6 +1027,43 @@ export default function Home() {
     }
   };
 
+  // --- Doc title rename (from Editor title field) ---
+
+  const handleTitleChange = useCallback(async (newName: string) => {
+    if (!currentSpace || !activeDoc || !newName || newName === activeDoc.name) return;
+    const res = await fetch(
+      `/api/spaces/${currentSpace.slug}/docs/${encodeURIComponent(activeDoc.name)}/rename`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          newName,
+          category: activeDoc.category,
+          isTemplate: !!activeDoc.isTemplate,
+        }),
+      }
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const safeName: string = data.name ?? newName;
+      await fetchSpaceData();
+      if (activeDoc) {
+        setActiveDoc({ ...activeDoc, name: safeName });
+      }
+      // Sync favorites
+      setFavorites((prev) =>
+        prev.map((fav) =>
+          fav.type === "doc" &&
+          fav.name === activeDoc.name &&
+          fav.category === activeDoc.category &&
+          fav.spaceSlug === currentSpace.slug
+            ? { ...fav, name: safeName }
+            : fav
+        )
+      );
+    }
+  }, [activeDoc, currentSpace, fetchSpaceData]);
+
   // --- Doc status ---
 
   const handleSetStatus = async (status: import("@/lib/types").DocStatus, reviewer?: string) => {
@@ -1486,7 +1528,7 @@ export default function Home() {
         onLogout={handleLogout}
         onOpenArchive={() => setShowArchiveModal(true)}
         onOpenTrash={() => setShowTrashModal(true)}
-        onHome={() => guardedNav(() => { setActiveDoc(null); setActiveDatabase(null); setActiveDatabaseSearch(""); setShowHome(true); })}
+        onHome={() => guardedNav(() => { setActiveDoc(null); setActiveDatabase(null); setActiveDatabaseSearch(""); setActiveCategory(null); setShowHome(true); })}
         onSearch={(q) => { setSearchInitialQuery(q); setShowSearchModal(true); }}
         reviewItems={reviewItems}
         onNavigateToReview={handleNavigateToReview}
@@ -1525,7 +1567,7 @@ export default function Home() {
           onExportTemplate={handleExportTemplate}
           onImportTemplate={handleImportTemplate}
           onNewDatabase={() => setShowSidebarDbCreateModal(true)}
-          onSelectDatabase={(dbId) => guardedNav(() => { setActiveDatabase(dbId); setActiveDatabaseSearch(""); })}
+          onSelectDatabase={(dbId) => guardedNav(() => { setActiveDatabase(dbId); setActiveDatabaseSearch(""); setActiveCategory(null); })}
           onEditDatabase={handleEditDatabase}
           onDeleteDatabase={handleDeleteDatabase}
           customization={customization}
@@ -1540,9 +1582,31 @@ export default function Home() {
           onToggleFavorite={handleToggleFavorite}
           onSelectFavorite={(item) => guardedNav(() => handleSelectFavorite(item))}
           onOpenTagManager={() => setShowTagManager(true)}
+          onOpenCategory={(path) => guardedNav(() => {
+            setActiveCategory(path);
+            setActiveDoc(null);
+            setActiveDatabase(null);
+            setActiveDatabaseSearch("");
+            setShowHome(false);
+          })}
         />
         <div className={`flex-1 flex flex-col overflow-hidden${distractionFree ? " df-mode" : ""}`}>
-          {activeDatabase && currentSpace ? (
+          {activeCategory && currentSpace ? (
+            <CategoryLanding
+              spaceSlug={currentSpace.slug}
+              categoryPath={activeCategory}
+              onOpenDoc={(name, category) => {
+                const target = docs.find((d) => d.name === name && d.category === category);
+                if (target) { setActiveCategory(null); loadDoc(target); }
+              }}
+              onOpenDatabase={(dbId) => {
+                setActiveCategory(null);
+                setActiveDatabase(dbId);
+                setActiveDatabaseSearch("");
+              }}
+              onOpenSubCategory={(path) => setActiveCategory(path)}
+            />
+          ) : activeDatabase && currentSpace ? (
             <DatabaseView
               key={activeDatabase}
               dbId={activeDatabase}
@@ -1554,6 +1618,7 @@ export default function Home() {
                 setActiveDatabaseSearch(search || "");
               }}
               onClose={() => { setActiveDatabase(null); setActiveDatabaseSearch(""); }}
+              tagColors={customization.tagColors}
             />
           ) : (<>
           {!distractionFree && (
@@ -1894,6 +1959,7 @@ export default function Home() {
                   filename={activeDoc.name}
                   initialMarkdown={markdown}
                   onSave={handleSave}
+                  onTitleChange={handleTitleChange}
                   spaceSlug={currentSpace?.slug || ""}
                   category={activeDoc.category}
                   onTagClick={handleEditorTagClick}
@@ -1996,6 +2062,7 @@ export default function Home() {
         isOpen={showTplFormModal}
         template={activeTpl}
         categories={categories}
+        defaultCategory={newDocDefaultCategory}
         onClose={() => { setShowTplFormModal(false); setActiveTpl(null); }}
         onCreate={handleCreateFromTemplate}
         spaceMembers={spaceMembers}

@@ -56,6 +56,7 @@ interface SidebarProps {
   onSetCategoryColor?: (catPath: string, color: string) => void;
   docStatusMap?: DocStatusMap;
   onOpenTagManager?: () => void;
+  onOpenCategory?: (path: string) => void;
   // Favorites
   favorites?: FavoriteItem[];
   currentSpaceSlug?: string;
@@ -103,6 +104,7 @@ export default function Sidebar({
   onToggleFavorite,
   onSelectFavorite,
   onOpenTagManager,
+  onOpenCategory,
 }: SidebarProps) {
   const importInputRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<SidebarMode>("documents");
@@ -239,9 +241,11 @@ export default function Sidebar({
           <TagsList
             tagsIndex={tagsIndex}
             docs={docs}
+            databases={databases}
             activeDoc={activeDoc}
             onTagSelect={onTagSelect}
             onSelectDoc={onSelectDoc}
+            onSelectDatabase={(dbId) => onSelectDatabase?.(dbId)}
             selectedTag={selectedTag}
             onReindex={onReindexTags}
             isReindexing={isReindexing}
@@ -290,9 +294,11 @@ export default function Sidebar({
               <TagsList
                 tagsIndex={tagsIndex}
                 docs={docs}
+                databases={databases}
                 activeDoc={activeDoc}
                 onTagSelect={onTagSelect}
                 onSelectDoc={onSelectDoc}
+                onSelectDatabase={(dbId) => onSelectDatabase?.(dbId)}
                 selectedTag={selectedTag}
                 onReindex={onReindexTags}
                 isReindexing={isReindexing}
@@ -450,6 +456,7 @@ export default function Sidebar({
                   spaceSlug={currentSpaceSlug}
                   spaceName={currentSpaceName}
                   onToggleFavorite={onToggleFavorite}
+                  onOpenCategory={onOpenCategory}
                 />
                   ))}
 

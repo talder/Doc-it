@@ -23,8 +23,10 @@ A self-hosted documentation platform built with Next.js, TipTap, and Tailwind CS
 
 ### Editor
 - **Rich text editing** powered by TipTap (ProseMirror) with bubble menu toolbar
-- **Slash commands** (`/`) — headings H1–H4, lists, alignment, callouts, code blocks, tables, images, attachments, PDFs, drawings, diagrams, enhanced tables, linked docs, template fields, equations, emoji, date/time — sorted into logical groups
-- **Table of Contents** — floating TOC panel (H1–H4) with resizable panel, always-show preference, and a persistent tab toggle on the page edge
+- **Slash commands** (`/`) — headings H1–H4, lists, alignment, callouts, code blocks, tables, images, attachments, PDFs, drawings, diagrams, enhanced tables, linked docs, template fields, equations, emoji, date/time, table of contents — sorted into logical groups
+- **Inline Table of Contents** — `/toc` slash command inserts a live, auto-updating TOC block with clickable entries. Optional "Number headings" toggle adds hierarchical numbering (1., 1.1, 1.1.1) via CSS counters
+- **Sidebar Table of Contents** — floating TOC panel (H1–H4) with resizable panel, always-show preference, and a persistent tab toggle on the page edge
+- **Document title field** — dedicated editable title at the top of every document, synced with the filename. Click to rename; triggers file rename on save
 - **Distraction-Free Mode** — full-screen writing mode that hides the sidebar, topbar, and all UI chrome; exit with `Esc` or the overlay button
 - **Excalidraw** — embedded whiteboard drawings stored as assets
 - **Draw.io** — embedded diagrams via iframe with SVG preview
@@ -40,6 +42,7 @@ A self-hosted documentation platform built with Next.js, TipTap, and Tailwind CS
 - **Revision history** — file-based snapshots with diff/compare view and revert
 - **Review workflow** — submit a document for review; assigned reviewers receive an email notification and can approve or request changes
 - **Document classification** — label documents as Public, Internal, Confidential, or Restricted
+- **Category landing page** — clicking a category in the sidebar shows a full-page overview with doc count, stats, collapsible subcategories, and a detailed document table (name, tags, status, creator, dates) plus enhanced tables
 - **Archive** — archive and restore documents
 - **Move** — relocate documents between categories
 - **Templates** — create reusable document templates with fillable fields; apply templates when creating new documents
@@ -55,6 +58,7 @@ A self-hosted documentation platform built with Next.js, TipTap, and Tailwind CS
 - **Column header sorting** — click any column header to cycle unsorted → ascending → descending
 - **Stable row numbers** — row numbers reflect insertion order, not display position
 - **Filtering & sorting** — filter rows and sort by any column via toolbar controls
+- **Tags** — enhanced tables support tags with the same add/remove/rename/delete behaviour as document tags; tags appear in the sidebar tag view and global tag index
 - **Per-space storage** — each enhanced table is stored as JSON within its space, versioned with the space
 
 ### On-Call Reports

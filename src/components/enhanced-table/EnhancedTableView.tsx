@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Database as DbIcon, Loader2, ArrowLeft } from "lucide-react";
+import { Database as DbIcon, Loader2, ArrowLeft, X } from "lucide-react";
 import type { EnhancedTable, DbColumn, DbRow, DbView, DbViewType, DbFilter, DbSort } from "@/lib/types";
 import EnhancedTableGrid from "./EnhancedTableGrid";
 import EnhancedTableKanban from "./EnhancedTableKanban";
@@ -79,6 +79,73 @@ function applySearch(rows: DbRow[], search: string, columns: DbColumn[]): DbRow[
 
 // ── Component ────────────────────────────────────────────────────────────────
 
+// ── Inline tag adder for database view ─────────────────────────────────────
+function DbTagAdder({ spaceSlug, existingTags, onAdd }: {
+  spaceSlug: string;
+  existingTags: string[];
+  onAdd: (tag: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState("");
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    fetch(`/api/spaces/${encodeURIComponent(spaceSlug)}/tags`)
+      .then((r) => r.json())
+      .then((idx) => setAllTags(Object.keys(idx)))
+      .catch(() => {});
+  }, [open, spaceSlug]);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setValue(""); }
+    };
+    if (open) document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  const available = allTags.filter((t) => !existingTags.includes(t));
+  const filtered = value
+    ? available.filter((t) => t.toLowerCase().includes(value.toLowerCase())).slice(0, 8)
+    : available.slice(0, 8);
+
+  const submit = (tag: string) => {
+    const clean = tag.trim().toLowerCase().replace(/[^a-z0-9_/-]/g, "");
+    if (clean && !existingTags.includes(clean)) onAdd(clean);
+    setValue("");
+    setOpen(false);
+  };
+
+  return (
+    <div className="relative" ref={ref}>
+      <button className="doc-tag-add" onClick={() => setOpen(true)} title="Add tag">+</button>
+      {open && (
+        <div className="doc-tag-dropdown">
+          <input
+            autoFocus
+            className="doc-tag-input"
+            placeholder="Add tag..."
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && value.trim()) submit(value); if (e.key === "Escape") { setOpen(false); setValue(""); } }}
+          />
+          {filtered.length > 0 && (
+            <div className="doc-tag-suggestions">
+              {filtered.map((t) => (
+                <button key={t} className="doc-tag-suggestion" onClick={() => submit(t)}>
+                  #{t}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface EnhancedTableViewProps {
   dbId: string;
   spaceSlug: string;
@@ -86,9 +153,18 @@ interface EnhancedTableViewProps {
   onClose: () => void;
   initialSearch?: string;
   onOpenDatabase?: (dbId: string, initialSearch?: string) => void;
+  tagColors?: Record<string, string>;
 }
 
-export default function EnhancedTableView({ dbId, spaceSlug, canWrite, onClose, initialSearch, onOpenDatabase }: EnhancedTableViewProps) {
+function tagContrastText(hex: string): string {
+  const c = hex.replace("#", "");
+  const r = parseInt(c.substring(0, 2), 16);
+  const g = parseInt(c.substring(2, 4), 16);
+  const b = parseInt(c.substring(4, 6), 16);
+  return r * 0.299 + g * 0.587 + b * 0.114 > 150 ? "#000" : "#fff";
+}
+
+export default function EnhancedTableView({ dbId, spaceSlug, canWrite, onClose, initialSearch, onOpenDatabase, tagColors = {} }: EnhancedTableViewProps) {
   const [db, setDb] = useState<EnhancedTable | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -135,7 +211,7 @@ export default function EnhancedTableView({ dbId, spaceSlug, canWrite, onClose, 
     await fetch(api, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: updated.title, columns: updated.columns, views: updated.views, rows: updated.rows }),
+      body: JSON.stringify({ title: updated.title, columns: updated.columns, views: updated.views, rows: updated.rows, tags: updated.tags }),
     });
   }, [api]);
 
@@ -372,8 +448,48 @@ export default function EnhancedTableView({ dbId, spaceSlug, canWrite, onClose, 
             onDoubleClick={() => { if (canWrite) { setTitleValue(db.title); setTitleEdit(true); } }}
             title={canWrite ? "Double-click to rename" : undefined}
           >
-            {db.title}
+          {db.title}
           </span>
+        )}
+        {/* Tag chips */}
+        {(db.tags && db.tags.length > 0) && (
+          <div className="doc-tag-chips">
+            {db.tags.map((tag) => {
+              const color = tagColors[tag];
+              return (
+                <span
+                  key={tag}
+                  className="doc-tag-chip"
+                  style={color ? { background: color, color: tagContrastText(color) } : undefined}
+                >
+                  {tag}
+                  {canWrite && (
+                    <button
+                      className="doc-tag-chip-remove"
+                      style={color ? { color: tagContrastText(color) } : undefined}
+                      onClick={() => {
+                        const tags = (db.tags || []).filter((t) => t !== tag);
+                        saveDb({ ...db, tags: tags.length > 0 ? tags : undefined });
+                      }}
+                      title={`Remove tag "${tag}"`}
+                    >
+                      ×
+                    </button>
+                  )}
+                </span>
+              );
+            })}
+          </div>
+        )}
+        {canWrite && (
+          <DbTagAdder
+            spaceSlug={spaceSlug}
+            existingTags={db.tags || []}
+            onAdd={(tag) => {
+              const tags = [...(db.tags || []), tag];
+              saveDb({ ...db, tags });
+            }}
+          />
         )}
       </div>
 
