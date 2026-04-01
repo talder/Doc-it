@@ -1597,7 +1597,7 @@ export default function Home() {
               categoryPath={activeCategory}
               onOpenDoc={(name, category) => {
                 const target = docs.find((d) => d.name === name && d.category === category);
-                if (target) { setActiveCategory(null); loadDoc(target); }
+                if (target) loadDoc(target);
               }}
               onOpenDatabase={(dbId) => {
                 setActiveCategory(null);
