@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Camera, Key, Plus, Trash2, Copy, Check, ShieldCheck, ShieldOff, RefreshCw } from "lucide-react";
+import AvatarEditor from "@/components/AvatarEditor";
 import PasswordStrengthMeter from "@/components/PasswordStrengthMeter";
 import { isPasswordValid } from "@/lib/password-policy";
 import { useTheme } from "@/components/ThemeProvider";
@@ -39,6 +40,7 @@ export default function ProfilePage() {
   const [spellcheckEnabled, setSpellcheckEnabled] = useState(true);
   const [spellcheckLang, setSpellcheckLang] = useState("en");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
 
   // API Keys state
   const [apiKeys, setApiKeys] = useState<ApiKeyRecord[]>([]);
@@ -147,11 +149,17 @@ export default function ProfilePage() {
     else flash("Failed to save preferences", "error");
   };
 
-  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setAvatarFile(file);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleAvatarSave = async (blob: Blob) => {
+    setAvatarFile(null);
     const formData = new FormData();
-    formData.append("file", file);
+    formData.append("file", new File([blob], "avatar.png", { type: "image/png" }));
     const res = await fetch("/api/auth/avatar", { method: "POST", body: formData });
     if (res.ok) {
       setAvatarUrl(`/api/auth/avatar/${encodeURIComponent(username)}?t=${Date.now()}`);
@@ -160,7 +168,6 @@ export default function ProfilePage() {
       const data = await res.json();
       flash(data.error || "Failed to upload avatar", "error");
     }
-    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const flash = (msg: string, type: "error" | "success") => {
@@ -254,7 +261,7 @@ export default function ProfilePage() {
                   ref={fileInputRef}
                   type="file"
                   accept="image/*"
-                  onChange={handleAvatarUpload}
+                  onChange={handleAvatarFileSelect}
                   className="hidden"
                 />
               </div>
@@ -823,6 +830,15 @@ export default function ProfilePage() {
         </div>
         )}
       </div>
+
+      {/* Avatar Editor Modal */}
+      {avatarFile && (
+        <AvatarEditor
+          imageFile={avatarFile}
+          onSave={handleAvatarSave}
+          onCancel={() => setAvatarFile(null)}
+        />
+      )}
     </div>
   );
 }
