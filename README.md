@@ -287,17 +287,158 @@ The upgrade path automatically creates a **data snapshot** before pulling code, 
 
 ### Manual Install
 
-If you prefer to install manually:
+If you prefer to install without the installer scripts, follow the steps below.
+
+#### Prerequisites
+
+| Component | Version | Purpose |
+|---|---|---|
+| **Node.js** | 24 LTS or newer | JavaScript runtime |
+| **npm** | 10+ (ships with Node.js 24) | Package manager |
+| **git** | any recent version | Clone the repository |
+| **Python 3** | 3.8+ (optional) | Required by `better-sqlite3` build step on some systems |
+| **C/C++ build tools** | see below | Required to compile native modules (`better-sqlite3`, `ssh2`) |
+
+> **Why native build tools?** Doc-it uses `better-sqlite3` (SQLite) and `ssh2` (SFTP backups) which include C/C++ addons compiled during `npm install`.
+
+#### macOS
 
 ```bash
+# 1. Install Xcode Command Line Tools (provides clang/make)
+xcode-select --install
+
+# 2. Install Node.js 24 via Homebrew (or nvm)
+brew install node@24
+# — or with nvm —
+nvm install 24
+nvm use 24
+
+# 3. Verify
+node -v   # v24.x.x
+npm -v    # 10.x.x
+
+# 4. Clone and install
 git clone https://github.com/talder/doc-it.git
 cd doc-it
 npm install
-npm run dev        # development
+
+# 5. Run
+npm run dev              # development (http://localhost:3000)
+# — or —
 npm run build && npm start  # production
 ```
 
-Requires Node.js 24+ and npm 10+.
+#### Ubuntu / Debian Linux
+
+```bash
+# 1. Install build essentials (gcc, g++, make) and Python
+sudo apt update
+sudo apt install -y build-essential python3 git curl
+
+# 2. Install Node.js 24 via NodeSource
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+sudo apt install -y nodejs
+# — or with nvm —
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+source ~/.bashrc
+nvm install 24
+
+# 3. Verify
+node -v   # v24.x.x
+npm -v    # 10.x.x
+
+# 4. Clone and install
+git clone https://github.com/talder/doc-it.git
+cd doc-it
+npm install
+
+# 5. Run
+npm run dev              # development (http://localhost:3000)
+# — or —
+npm run build && npm start  # production
+```
+
+#### RHEL / CentOS / Fedora
+
+```bash
+# 1. Install build tools
+sudo dnf groupinstall -y "Development Tools"
+sudo dnf install -y python3 git
+
+# 2. Install Node.js 24
+curl -fsSL https://rpm.nodesource.com/setup_24.x | sudo bash -
+sudo dnf install -y nodejs
+
+# 3. Clone and install
+git clone https://github.com/talder/doc-it.git
+cd doc-it
+npm install
+npm run build && npm start
+```
+
+#### Windows
+
+```powershell
+# 1. Install Node.js 24 from https://nodejs.org (LTS)
+#    During install, check "Automatically install the necessary tools"
+#    (this installs Visual Studio Build Tools + Python via Chocolatey)
+#
+# — or via winget —
+winget install OpenJS.NodeJS.LTS
+
+# 2. If you skipped the build tools checkbox, install them manually:
+npm install -g windows-build-tools
+# — or install Visual Studio Build Tools from https://visualstudio.microsoft.com/downloads/
+# Select "Desktop development with C++" workload
+
+# 3. Verify
+node -v   # v24.x.x
+npm -v    # 10.x.x
+
+# 4. Clone and install
+git clone https://github.com/talder/doc-it.git
+cd doc-it
+npm install
+
+# 5. Run
+npm run dev              # development (http://localhost:3000)
+# — or —
+npm run build; npm start  # production
+```
+
+#### Docker (alternative)
+
+```dockerfile
+FROM node:24-alpine
+RUN apk add --no-cache python3 make g++ git
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+EXPOSE 3000
+CMD ["npm", "start"]
+```
+
+```bash
+docker build -t doc-it .
+docker run -p 3000:3000 -v doc-it-data:/app/config -v doc-it-docs:/app/docs doc-it
+```
+
+#### First Launch
+
+On first launch, open [http://localhost:3000/setup](http://localhost:3000/setup) to create the initial admin account.
+
+#### Troubleshooting
+
+| Problem | Solution |
+|---|---|
+| `npm install` fails with `node-gyp` errors | Install C/C++ build tools (see platform instructions above) |
+| `better-sqlite3` build fails | Ensure Python 3 is installed and in PATH |
+| `ERR_MODULE_NOT_FOUND` on startup | Run `npm install` again — a dependency may have failed silently |
+| Port 3000 already in use | Set `PORT=3001 npm start` or stop the other process |
+| `EACCES` permission errors on Linux | Don't run with `sudo` — fix directory ownership instead: `sudo chown -R $USER:$USER .` |
+| Canvas / Excalidraw errors during build | These are expected in SSR and are handled — the app works correctly |
 
 ## Project Structure
 
