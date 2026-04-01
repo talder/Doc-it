@@ -350,6 +350,9 @@ if $SERVICE; then
   NODE_BIN="$(command -v node || which node 2>/dev/null || echo /usr/bin/node)"
   NPM_BIN="$(command -v npm || which npm 2>/dev/null || echo /usr/bin/npm)"
   [[ -x "$NPM_BIN" ]] || die "npm not found — cannot create systemd service"
+  # Use node directly (not npm) so SIGTERM reaches the Next.js process.
+  # npm swallows signals and doesn't forward them to child processes.
+  NEXT_BIN="${INSTALL_DIR}/node_modules/.bin/next"
   $SUDO tee "$SERVICE_FILE" > /dev/null <<UNIT
 [Unit]
 Description=doc-it Documentation Platform
@@ -362,9 +365,12 @@ Type=simple
 User=${SERVICE_USER}
 Group=${SERVICE_USER}
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=${NPM_BIN} start
+ExecStart=${NODE_BIN} ${NEXT_BIN} start -p 3000
 Restart=on-failure
 RestartSec=10
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=doc-it

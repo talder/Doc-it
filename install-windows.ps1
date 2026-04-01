@@ -276,7 +276,7 @@ if ($Service) {
   New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 
   & nssm install      $ServiceName $nodePath
-  & nssm set          $ServiceName AppParameters "node_modules\.bin\next start"
+  & nssm set          $ServiceName AppParameters "$nextCmd start -p 3000"
   & nssm set          $ServiceName AppDirectory  $Dir
   & nssm set          $ServiceName DisplayName   "doc-it Documentation Platform"
   & nssm set          $ServiceName Description   "Self-hosted documentation platform"

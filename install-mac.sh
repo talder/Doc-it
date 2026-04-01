@@ -268,7 +268,7 @@ if $SERVICE; then
   <key>UserName</key>          <string>${SERVICE_RUN_USER}</string>
   <key>GroupName</key>         <string>${SERVICE_RUN_GROUP}</string>
   <key>ProgramArguments</key>  <array>
-    <string>${NPM_PATH}</string><string>start</string>
+    <string>${NODE_PATH}</string><string>${INSTALL_DIR}/node_modules/.bin/next</string><string>start</string><string>-p</string><string>3000</string>
   </array>
   <key>WorkingDirectory</key>  <string>${INSTALL_DIR}</string>
   <key>EnvironmentVariables</key><dict>
