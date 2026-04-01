@@ -100,15 +100,28 @@ interface Props {
   onClose: () => void;
   backlinks?: Backlink[];
   onBacklinkClick?: (bl: Backlink) => void;
+  showNumbering?: boolean;
 }
 
-export default function TableOfContents({ markdown, onClose, backlinks = [], onBacklinkClick }: Props) {
+/** Compute hierarchical numbers matching the CSS counter scheme. */
+function computeNumbers(headings: TocHeading[]): string[] {
+  const counters = [0, 0, 0, 0];
+  return headings.map((h) => {
+    const idx = h.level - 1;
+    counters[idx]++;
+    for (let i = idx + 1; i < 4; i++) counters[i] = 0;
+    return counters.slice(0, idx + 1).join(".");
+  });
+}
+
+export default function TableOfContents({ markdown, onClose, backlinks = [], onBacklinkClick, showNumbering = false }: Props) {
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [dragging, setDragging] = useState(false);
   const startX = useRef(0);
   const startWidth = useRef(DEFAULT_WIDTH);
   const headings = parseToc(markdown);
+  const numbers = showNumbering ? computeNumbers(headings) : null;
 
   // Load persisted width
   useEffect(() => {
@@ -192,7 +205,10 @@ export default function TableOfContents({ markdown, onClose, backlinks = [], onB
                   ${activeIdx === h.index ? "bg-accent-light !text-accent-text" : ""}
                 `}
               >
-                <span className="truncate block leading-snug">{h.text}</span>
+                <span className="truncate block leading-snug">
+                  {numbers && <span className="text-text-muted mr-1 font-mono text-[10px]">{numbers[headings.indexOf(h)]}</span>}
+                  {h.text}
+                </span>
               </button>
             ))}
           </nav>

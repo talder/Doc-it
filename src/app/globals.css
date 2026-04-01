@@ -565,6 +565,160 @@ body {
 .tiptap-editor .ProseMirror h2 { font-size: 1.5em; font-weight: 600; margin-top: 1.25em; }
 .tiptap-editor .ProseMirror h3 { font-size: 1.25em; font-weight: 600; margin-top: 1em; }
 
+/* ── Hierarchical heading numbering (CSS counters, activated by TOC toggle) ── */
+.tiptap-editor .ProseMirror[data-numbered-headings="true"] {
+  counter-reset: h1-counter;
+}
+.tiptap-editor .ProseMirror[data-numbered-headings="true"] h1 {
+  counter-increment: h1-counter;
+  counter-reset: h2-counter;
+}
+.tiptap-editor .ProseMirror[data-numbered-headings="true"] h1::before {
+  content: counter(h1-counter) ". ";
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+.tiptap-editor .ProseMirror[data-numbered-headings="true"] h2 {
+  counter-increment: h2-counter;
+  counter-reset: h3-counter;
+}
+.tiptap-editor .ProseMirror[data-numbered-headings="true"] h2::before {
+  content: counter(h1-counter) "." counter(h2-counter) " ";
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+.tiptap-editor .ProseMirror[data-numbered-headings="true"] h3 {
+  counter-increment: h3-counter;
+  counter-reset: h4-counter;
+}
+.tiptap-editor .ProseMirror[data-numbered-headings="true"] h3::before {
+  content: counter(h1-counter) "." counter(h2-counter) "." counter(h3-counter) " ";
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+.tiptap-editor .ProseMirror[data-numbered-headings="true"] h4 {
+  counter-increment: h4-counter;
+}
+.tiptap-editor .ProseMirror[data-numbered-headings="true"] h4::before {
+  content: counter(h1-counter) "." counter(h2-counter) "." counter(h3-counter) "." counter(h4-counter) " ";
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+/* ── Inline Table of Contents block ─────────────────────────────────────────── */
+.toc-block {
+  user-select: none;
+}
+
+.toc-block-inner {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.toc-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-muted, #f9fafb);
+}
+
+.toc-block-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.toc-block-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toc-numbering-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+  user-select: none;
+}
+
+.toc-numbering-toggle input[type="checkbox"] {
+  accent-color: var(--color-accent);
+  cursor: pointer;
+  width: 13px;
+  height: 13px;
+}
+
+.toc-numbering-label {
+  white-space: nowrap;
+}
+
+.toc-delete-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  border-radius: 4px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+  background: none;
+  border: none;
+}
+
+.toc-delete-btn:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.toc-empty {
+  padding: 12px 14px;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.toc-nav {
+  padding: 6px 4px;
+}
+
+.toc-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s;
+  line-height: 1.5;
+}
+
+.toc-entry:hover {
+  background: var(--color-muted, #f1f5f9);
+}
+
+.toc-entry-number {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 1.5em;
+}
+
 .tiptap-editor .ProseMirror ul,
 .tiptap-editor .ProseMirror ol {
   padding-left: 1.5em;

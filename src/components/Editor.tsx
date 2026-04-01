@@ -56,6 +56,7 @@ import type { PDFEmbedAttrs } from "./extensions/PDFEmbedExtension";
 import { TemplatePlaceholderExtension } from "./extensions/TemplatePlaceholderExtension";
 import { EmojiShortcodeExtension } from "./extensions/EmojiShortcodeExtension";
 import { EnhancedTableBlockExtension } from "./extensions/EnhancedTableBlockExtension";
+import { TableOfContentsExtension } from "./extensions/TableOfContentsExtension";
 import type { EnhancedTableBlockAttrs } from "./extensions/EnhancedTableBlockExtension";
 import { Extension } from "@tiptap/core";
 import { Plugin as PmPlugin, PluginKey as PmPluginKey, NodeSelection } from "@tiptap/pm/state";
@@ -320,6 +321,11 @@ const markedCalloutExtension: MarkedExtension = {
         } catch { return null; }
       }) ?? out;
 
+      // table of contents
+      out = replaceComment(out, /<!--\s*toc(?::(numbered))?\s*-->/, (m) =>
+        `<div data-type="tableOfContents" data-show-numbering="${m[1] === "numbered" ? "true" : "false"}">Table of Contents</div>`,
+      ) ?? out;
+
       return out;
     },
   },
@@ -531,6 +537,20 @@ turndown.addRule("databaseBlock", {
       spaceSlug: el.getAttribute("data-space-slug")  || "",
     };
     return `\n<!-- database:${btoa(JSON.stringify(attrs))} -->\n\n`;
+  },
+});
+// Table of contents block → markdown comment
+turndown.addRule("tableOfContents", {
+  filter: (node) => {
+    return (
+      node.nodeName === "DIV" &&
+      (node as HTMLElement).getAttribute("data-type") === "tableOfContents"
+    );
+  },
+  replacement: (_content, node) => {
+    const el = node as HTMLElement;
+    const numbered = el.getAttribute("data-show-numbering") === "true";
+    return `\n<!-- toc${numbered ? ":numbered" : ""} -->\n\n`;
   },
 });
 // Preserve template placeholder spans
@@ -1144,6 +1164,7 @@ export default function Editor({ filename, initialMarkdown, onSave, spaceSlug, c
       MentionNode,
       MentionSuggestion,
       EnhancedTableBlockExtension,
+      TableOfContentsExtension,
       Extension.create({
         name: "tabHandler",
         addKeyboardShortcuts() {

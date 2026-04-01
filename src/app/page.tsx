@@ -252,6 +252,17 @@ export default function Home() {
 
   // TOC state
   const [tocOpen, setTocOpen] = useState(false);
+  const [tocNumbering, setTocNumbering] = useState(false);
+
+  // Listen for inline TOC numbering toggle
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { enabled } = (e as CustomEvent<{ enabled: boolean }>).detail;
+      setTocNumbering(enabled);
+    };
+    document.addEventListener("toc:numbering", handler);
+    return () => document.removeEventListener("toc:numbering", handler);
+  }, []);
 
   const openToc = () => {
     setTocOpen(true);
@@ -1926,6 +1937,7 @@ export default function Home() {
                   const target = docs.find((d) => d.name === bl.name && d.category === bl.category);
                   if (target) guardedNav(() => loadDoc(target));
                 }}
+                showNumbering={tocNumbering}
               />
             )}
 

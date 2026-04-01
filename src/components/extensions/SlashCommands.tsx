@@ -9,6 +9,7 @@ import {
   Table, ImageIcon, ChevronDown, Lightbulb, Pencil, GitBranch,
   Minus, AlignLeft, AlignCenter, AlignRight, Link, Paperclip,
   FileText, CalendarDays, Clock, Sigma, FileImage, LayoutTemplate, Database, Palette,
+  ListTree,
 } from "lucide-react";
 import { SlashCommandsList } from "./SlashCommandsList";
 import { PluginKey } from "@tiptap/pm/state";
@@ -21,6 +22,15 @@ export interface SlashCommandItem {
 }
 
 const getSlashCommands = (): SlashCommandItem[] => [
+  // ── Navigation ──────────────────────────────────────────────────────────────
+  {
+    title: "Table of Contents",
+    description: "Insert an auto-updating table of contents",
+    icon: <ListTree className="h-4 w-4" />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).insertTableOfContents().run();
+    },
+  },
   // ── Headings ────────────────────────────────────────────────────────────────
   {
     title: "Heading 1",
