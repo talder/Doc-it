@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Search, FileText, Hash, Filter, X, Clock, Tag, User, FolderOpen, Shield, Calendar, ClipboardList, Monitor, Headset } from "lucide-react";
+import { Search, FileText, Hash, Filter, X, Clock, Tag, User, FolderOpen, Shield, Calendar, ClipboardList, Monitor, Headset, Database } from "lucide-react";
 import type { DocFile, TagsIndex, Category } from "@/lib/types";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -35,6 +35,7 @@ interface SearchModalProps {
   spaceSlug: string | null;
   spaceMembers: { username: string; fullName?: string }[];
   onOpenDoc: (name: string, category: string) => void;
+  onOpenDatabase?: (dbId: string, search?: string) => void;
   initialQuery?: string;
 }
 
@@ -71,7 +72,7 @@ const EMPTY_FILTERS: SearchFilters = { category: "", tag: "", author: "", classi
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function SearchModal({
-  isOpen, onClose, docs, tagsIndex, categories, spaceSlug, spaceMembers, onOpenDoc, initialQuery,
+  isOpen, onClose, docs, tagsIndex, categories, spaceSlug, spaceMembers, onOpenDoc, onOpenDatabase, initialQuery,
 }: SearchModalProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -85,6 +86,8 @@ export default function SearchModal({
   const [instantResults, setInstantResults] = useState<{ name: string; category: string; matchType: "name" | "tag" }[]>([]);
   // Server-side content results
   const [contentResults, setContentResults] = useState<ContentResult[]>([]);
+  // Enhanced table row results
+  const [dbRowResults, setDbRowResults] = useState<{ dbId: string; dbTitle: string; rowId: string; matchValues: string[] }[]>([]);
   // Changelog results
   const [changeResults, setChangeResults] = useState<{ id: string; date: string; system: string; category: string; description: string; risk: string }[]>([]);
   // CmdbItem results
@@ -102,6 +105,7 @@ export default function SearchModal({
       setQuery(initialQuery || "");
       setInstantResults([]);
       setContentResults([]);
+      setDbRowResults([]);
       setChangeResults([]);
       setAssetResults([]);
       setTicketResults([]);
@@ -175,6 +179,7 @@ export default function SearchModal({
           // Filter out results already in instant list
           const instantKeys = new Set(instantResults.map((r) => `${r.category}/${r.name}`));
           setContentResults((data.results || []).filter((r: ContentResult) => !instantKeys.has(`${r.category}/${r.name}`)));
+          setDbRowResults(data.dbResults || []);
           setSearching(false);
         }
       })
@@ -215,6 +220,7 @@ export default function SearchModal({
     clearTimeout(debounceRef.current);
     if (!query || query.length < 2) {
       setContentResults([]);
+      setDbRowResults([]);
       setChangeResults([]);
       setAssetResults([]);
       setTicketResults([]);
@@ -460,6 +466,38 @@ export default function SearchModal({
             </div>
           )}
 
+          {/* Enhanced table row results */}
+          {dbRowResults.length > 0 && (
+            <div className="search-section">
+              <div className="search-section-header">
+                <Database className="w-3.5 h-3.5" />
+                Enhanced table rows
+              </div>
+              {dbRowResults.map((r) => (
+                <button
+                  key={`${r.dbId}/${r.rowId}`}
+                  className="search-result-item"
+                  onClick={() => {
+                    if (query.trim()) saveRecent(query.trim());
+                    if (onOpenDatabase) onOpenDatabase(r.dbId, r.matchValues[0] || "");
+                    onClose();
+                  }}
+                >
+                  <Database className="w-4 h-4 text-accent flex-shrink-0" />
+                  <div className="search-result-body">
+                    <div className="flex items-center gap-2">
+                      <span className="search-result-name">{r.matchValues[0]?.slice(0, 60) || r.rowId}</span>
+                      <span className="search-result-path">{r.dbTitle}</span>
+                    </div>
+                    {r.matchValues.length > 1 && (
+                      <p className="search-result-snippet">{r.matchValues.slice(1, 3).join(" · ")}</p>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Loading indicator */}
           {searching && query.length >= 2 && (
             <div className="search-loading">
@@ -563,7 +601,7 @@ export default function SearchModal({
           )}
 
           {/* No results */}
-          {query.length >= 2 && !searching && instantResults.length === 0 && contentResults.length === 0 && changeResults.length === 0 && assetResults.length === 0 && ticketResults.length === 0 && (
+          {query.length >= 2 && !searching && instantResults.length === 0 && contentResults.length === 0 && dbRowResults.length === 0 && changeResults.length === 0 && assetResults.length === 0 && ticketResults.length === 0 && (
             <div className="search-empty">
               <p className="text-sm text-text-muted">No results for &ldquo;{query}&rdquo;</p>
               {hasActiveFilters && <p className="text-xs text-text-muted mt-1">Try clearing some filters</p>}

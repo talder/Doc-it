@@ -5898,6 +5898,18 @@ textarea.modal-input {
   gap: 2px;
 }
 
+.et-relation-chip-link {
+  cursor: pointer;
+  border: none;
+  transition: background 0.1s, box-shadow 0.1s;
+}
+
+.et-relation-chip-link:hover {
+  background: var(--color-accent);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
 /* ── Tag cell ────────────────────────────────────────────────────────── */
 
 .et-tag-dropdown {
@@ -5919,6 +5931,17 @@ textarea.modal-input {
   background: var(--color-muted);
   color: var(--color-text-secondary);
   white-space: nowrap;
+}
+
+.et-tag-chip-link {
+  cursor: pointer;
+  border: none;
+  transition: opacity 0.1s, filter 0.1s;
+}
+
+.et-tag-chip-link:hover {
+  opacity: 0.8;
+  filter: brightness(0.9);
 }
 
 .et-tag-chip-remove {

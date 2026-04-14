@@ -2542,6 +2542,10 @@ export default function Home() {
           const target = docs.find((d) => d.name === name && d.category === category);
           if (target) guardedNav(() => loadDoc(target));
         }}
+        onOpenDatabase={(dbId, search) => {
+          setActiveDatabase(dbId);
+          setActiveDatabaseSearch(search || "");
+        }}
       />
 
       {/* Reading view overlay */}

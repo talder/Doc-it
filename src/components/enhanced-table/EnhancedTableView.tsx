@@ -623,6 +623,8 @@ export default function EnhancedTableView({ dbId, spaceSlug, canWrite, onClose, 
             members={members}
             spaceSlug={spaceSlug}
             tagColors={tagColors}
+            onOpenDatabase={onOpenDatabase}
+            onSearch={setSearch}
           />
         )}
         {activeView?.type === "kanban" && (

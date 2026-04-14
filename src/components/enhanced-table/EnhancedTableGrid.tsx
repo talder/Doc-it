@@ -46,6 +46,8 @@ interface Props {
   members?: { username: string; fullName?: string }[];
   spaceSlug?: string;
   tagColors?: Record<string, string>;
+  onOpenDatabase?: (dbId: string, initialSearch?: string) => void;
+  onSearch?: (query: string) => void;
 }
 
 const TAG_PRESET_COLORS = [
@@ -66,7 +68,7 @@ export default function DatabaseTable({
   db, view, rows, canWrite,
   onAddRow, onUpdateRow, onDeleteRow,
   onAddColumn, onUpdateColumn, onDeleteColumn, onUpdateView,
-  currentUser, members = [], spaceSlug, tagColors = {},
+  currentUser, members = [], spaceSlug, tagColors = {}, onOpenDatabase, onSearch,
 }: Props) {
   const [editCell, setEditCell] = useState<{ rowId: string; colId: string } | null>(null);
   const [editValue, setEditValue] = useState<string>("");
@@ -541,15 +543,26 @@ export default function DatabaseTable({
         );
       }
 
-      // Display mode: chips
+      // Display mode: clickable chips that navigate to target table
       if (linkedIds.length === 0) return <span className="et-cell-empty">—</span>;
+      const canNavigate = onOpenDatabase && col.relation.targetSpace === spaceSlug;
       return (
         <div className="et-cell-tags">
           {linkedIds.map((id) => (
-            <span key={id} className="et-cell-tag et-relation-chip">
+            <button
+              key={id}
+              className="et-cell-tag et-relation-chip et-relation-chip-link"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (canNavigate) {
+                  onOpenDatabase(col.relation!.targetDbId, labels[id] || "");
+                }
+              }}
+              title={canNavigate ? `Open in ${col.relation!.targetDbId}` : "Linked record (cross-space)"}
+            >
               <Link2 className="w-3 h-3 inline mr-0.5" />
               {labels[id] || id}
-            </span>
+            </button>
           ))}
         </div>
       );
@@ -689,16 +702,22 @@ export default function DatabaseTable({
         );
       }
 
-      // Display mode: colored tag chips
+      // Display mode: colored tag chips — clickable to filter
       if (vals.length === 0) return <span className="et-cell-empty">—</span>;
       return (
         <div className="et-cell-tags">
           {vals.map((t) => {
             const tc = localTagColors[t];
             return (
-              <span key={t} className="et-tag-chip" style={tc ? { background: tc, color: tagContrastText(tc) } : undefined}>
+              <button
+                key={t}
+                className="et-tag-chip et-tag-chip-link"
+                style={tc ? { background: tc, color: tagContrastText(tc) } : undefined}
+                onClick={(e) => { e.stopPropagation(); if (onSearch) onSearch(t); }}
+                title={`Filter by #${t}`}
+              >
                 #{t}
-              </span>
+              </button>
             );
           })}
         </div>

@@ -5,6 +5,7 @@ import { requireSpaceRole } from "@/lib/permissions";
 import { getSpaceDir } from "@/lib/config";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { getDb } from "@/lib/config";
+import { listEnhancedTables } from "@/lib/enhanced-table";
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -206,6 +207,32 @@ export async function GET(request: NextRequest, { params }: Params) {
     } catch { /* blobstore tables not yet initialised — skip silently */ }
   }
 
+  // Enhanced table row search
+  const dbResults: { dbId: string; dbTitle: string; rowId: string; matchValues: string[] }[] = [];
+  if (results.length < MAX_RESULTS) {
+    try {
+      const tables = await listEnhancedTables(slug);
+      for (const table of tables) {
+        if (dbResults.length >= 10) break;
+        for (const row of table.rows) {
+          const matchVals: string[] = [];
+          for (const col of table.columns) {
+            const val = row.cells[col.id];
+            if (val == null) continue;
+            const str = Array.isArray(val) ? val.join(", ") : String(val);
+            if (str.toLowerCase().includes(query.toLowerCase())) {
+              matchVals.push(str);
+            }
+          }
+          if (matchVals.length > 0) {
+            dbResults.push({ dbId: table.id, dbTitle: table.title, rowId: row.id, matchValues: matchVals });
+            if (dbResults.length >= 10) break;
+          }
+        }
+      }
+    } catch { /* skip */ }
+  }
+
   // Sort: name matches first, then content matches, then by recency
   results.sort((a, b) => {
     const typeOrder: Record<string, number> = { name: 0, both: 0, tag: 1, content: 2, attachment: 3 };
@@ -216,5 +243,5 @@ export async function GET(request: NextRequest, { params }: Params) {
     return (b.updatedAt || "").localeCompare(a.updatedAt || "");
   });
 
-  return NextResponse.json({ results });
+  return NextResponse.json({ results, dbResults });
 }
