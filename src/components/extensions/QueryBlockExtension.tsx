@@ -44,6 +44,22 @@ export const QueryBlockExtension = Node.create({
         tag: "div[data-query-block]",
         getAttrs: (node) => {
           const el = node as HTMLElement;
+          // Decode from single base64 config attribute
+          const configB64 = el.getAttribute("data-query-config") || "";
+          if (configB64) {
+            try {
+              const cfg = JSON.parse(atob(configB64));
+              return {
+                spaceSlug: cfg.spaceSlug || "",
+                dbId: cfg.dbId || "",
+                columns: cfg.columns || "[]",
+                filters: cfg.filters || "[]",
+                sorts: cfg.sorts || "[]",
+                limit: cfg.limit || 0,
+              };
+            } catch { /* fall through */ }
+          }
+          // Fallback: read individual attributes (backward compat)
           return {
             spaceSlug: el.getAttribute("data-space-slug") || "",
             dbId: el.getAttribute("data-db-id") || "",
@@ -58,16 +74,21 @@ export const QueryBlockExtension = Node.create({
   },
 
   renderHTML({ node }) {
+    // Encode all config into a single base64 string to avoid HTML attribute escaping issues
+    const config = {
+      spaceSlug: node.attrs.spaceSlug || "",
+      dbId: node.attrs.dbId || "",
+      columns: node.attrs.columns || "[]",
+      filters: node.attrs.filters || "[]",
+      sorts: node.attrs.sorts || "[]",
+      limit: node.attrs.limit || 0,
+    };
+    const configB64 = btoa(JSON.stringify(config));
     return [
       "div",
       mergeAttributes({
         "data-query-block": "",
-        "data-space-slug": node.attrs.spaceSlug || "",
-        "data-db-id": node.attrs.dbId || "",
-        "data-columns": node.attrs.columns || "[]",
-        "data-filters": node.attrs.filters || "[]",
-        "data-sorts": node.attrs.sorts || "[]",
-        "data-limit": String(node.attrs.limit || 0),
+        "data-query-config": configB64,
       }),
       "[Query Block]",
     ];

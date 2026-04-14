@@ -322,12 +322,9 @@ const markedCalloutExtension: MarkedExtension = {
         } catch { return null; }
       }) ?? out;
 
-      // query block
+      // query block — config is stored as a single base64 blob
       out = replaceComment(out, /<!--\s*query:([A-Za-z0-9+/=]+)\s*-->/, (m) => {
-        try {
-          const a = JSON.parse(atob(m[1]));
-          return `<div data-query-block="" data-space-slug="${a.spaceSlug || ""}" data-db-id="${a.dbId || ""}" data-columns="${(a.columns || "[]").replace(/"/g, "&quot;")}" data-filters="${(a.filters || "[]").replace(/"/g, "&quot;")}" data-sorts="${(a.sorts || "[]").replace(/"/g, "&quot;")}" data-limit="${a.limit || 0}"></div>`;
-        } catch { return null; }
+        return `<div data-query-block="" data-query-config="${m[1]}"></div>`;
       }) ?? out;
 
       // table of contents
@@ -552,6 +549,12 @@ turndown.addRule("queryBlock", {
   filter: (node) => node.nodeName === "DIV" && node.hasAttribute("data-query-block"),
   replacement: (_content, node) => {
     const el = node as HTMLElement;
+    // The config is already base64-encoded in a single attribute
+    const configB64 = el.getAttribute("data-query-config") || "";
+    if (configB64) {
+      return `\n<!-- query:${configB64} -->\n\n`;
+    }
+    // Fallback: encode from individual attributes
     const attrs = {
       spaceSlug: el.getAttribute("data-space-slug") || "",
       dbId:      el.getAttribute("data-db-id")      || "",
