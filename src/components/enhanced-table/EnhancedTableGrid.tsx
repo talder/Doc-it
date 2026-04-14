@@ -1,8 +1,27 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Plus, Trash2, MoreVertical, GripVertical, Copy, Eraser, X, ArrowUp, ArrowDown, Link2, Search, Hash } from "lucide-react";
-import type { EnhancedTable, DbColumn, DbRow, DbView, DbColumnType, DbLookupAggregate } from "@/lib/types";
+import { Plus, Trash2, MoreVertical, GripVertical, Copy, Eraser, X, ArrowUp, ArrowDown, Link2, Search, Hash, Pencil, Edit3 } from "lucide-react";
+import type { EnhancedTable, DbColumn, DbRow, DbView, DbColumnType, DbLookupAggregate, DbConditionalFormat } from "@/lib/types";
+import RowEditModal from "./RowEditModal";
+
+function matchesCfRule(row: DbRow, rule: DbConditionalFormat, columns: DbColumn[]): boolean {
+  const col = columns.find((c) => c.id === rule.columnId);
+  if (!col) return false;
+  const raw = row.cells[col.id];
+  const v = raw != null ? String(raw) : "";
+  const fv = rule.value != null ? String(rule.value) : "";
+  switch (rule.op) {
+    case "eq": case "is": return v === fv;
+    case "neq": case "isNot": return v !== fv;
+    case "contains": return v.toLowerCase().includes(fv.toLowerCase());
+    case "isEmpty": return v === "";
+    case "isNotEmpty": return v !== "";
+    case "gt": return Number(raw) > Number(rule.value);
+    case "lt": return Number(raw) < Number(rule.value);
+    default: return false;
+  }
+}
 
 const COLUMN_TYPES: { value: DbColumnType; label: string }[] = [
   { value: "text", label: "Text" },
@@ -115,6 +134,14 @@ export default function DatabaseTable({
 
   // Keep local tag colors in sync with prop
   useEffect(() => { setLocalTagColors(tagColors); }, [tagColors]);
+
+  // Row edit modal state
+  const [editModalRowId, setEditModalRowId] = useState<string | null>(null);
+
+  // Bulk edit state
+  const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  const [bulkEditColId, setBulkEditColId] = useState("");
+  const [bulkEditValue, setBulkEditValue] = useState<string>("");
 
   const colMenuRef = useRef<HTMLDivElement>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
@@ -374,6 +401,21 @@ export default function DatabaseTable({
   const rowNumMap = new Map(db.rows.map((r, i) => [r.id, i + 1]));
 
   const gridCols = "40px " + orderedCols.map((c) => `${getWidth(c)}px`).join(" ") + (canWrite ? " 40px" : "");
+
+  // Bulk edit handler
+  const handleBulkEditApply = () => {
+    if (!bulkEditColId) return;
+    const col = db.columns.find((c) => c.id === bulkEditColId);
+    if (!col) return;
+    let val: unknown = bulkEditValue;
+    if (col.type === "number") val = bulkEditValue === "" ? null : Number(bulkEditValue);
+    else if (col.type === "checkbox") val = bulkEditValue === "true";
+    selectedRows.forEach((rowId) => onUpdateRow(rowId, { [bulkEditColId]: val }));
+    setBulkEditOpen(false);
+    setBulkEditColId("");
+    setBulkEditValue("");
+    setSelectedRows(new Set());
+  };
 
   const renderCell = (row: DbRow, col: DbColumn) => {
     const value = row.cells[col.id];
@@ -1133,6 +1175,13 @@ export default function DatabaseTable({
               className={`et-td et-td-rownum${isSelected ? " is-selected" : ""}`}
               onClick={(e) => { e.stopPropagation(); toggleRow(row.id); }}
             >
+              <button
+                className="et-row-edit-btn"
+                onClick={(e) => { e.stopPropagation(); setEditModalRowId(row.id); }}
+                title="Edit row"
+              >
+                <Pencil className="w-3 h-3" />
+              </button>
               <span className="et-rownum-num">{rowNumMap.get(row.id) ?? rowIdx + 1}</span>
               <input
                 type="checkbox"
@@ -1142,15 +1191,28 @@ export default function DatabaseTable({
                 onClick={(e) => e.stopPropagation()}
               />
             </div>
-            {orderedCols.map((col) => (
-              <div
-                key={col.id}
-                className={`et-td${isSelected ? " is-selected" : ""}`}
-                onClick={() => startEdit(row.id, col.id, row.cells[col.id])}
-              >
-                {renderCell(row, col)}
-              </div>
-            ))}
+            {orderedCols.map((col) => {
+              // Apply conditional formatting
+              const cfStyles: React.CSSProperties = {};
+              for (const cf of (view.conditionalFormats || [])) {
+                if (matchesCfRule(row, cf, db.columns)) {
+                  if (cf.style.bg) cfStyles.background = cf.style.bg;
+                  if (cf.style.color) cfStyles.color = cf.style.color;
+                  if (cf.style.bold) cfStyles.fontWeight = 700;
+                  if (cf.style.italic) cfStyles.fontStyle = "italic";
+                }
+              }
+              return (
+                <div
+                  key={col.id}
+                  className={`et-td${isSelected ? " is-selected" : ""}`}
+                  style={Object.keys(cfStyles).length > 0 ? cfStyles : undefined}
+                  onClick={() => startEdit(row.id, col.id, row.cells[col.id])}
+                >
+                  {renderCell(row, col)}
+                </div>
+              );
+            })}
             {canWrite && (
               <div className={`et-td et-td-actions${isSelected ? " is-selected" : ""}`}>
                 <button className="et-row-delete" onClick={() => onDeleteRow(row.id)} title="Delete row">
@@ -1180,6 +1242,11 @@ export default function DatabaseTable({
         <div className="et-selection-bar">
           <span className="et-selection-count">{selectedRows.size} selected</span>
           <div className="et-selection-sep" />
+          {canWrite && (
+            <button className="et-selection-btn" onClick={() => { setBulkEditOpen(true); setBulkEditColId(""); setBulkEditValue(""); }}>
+              <Edit3 className="w-3.5 h-3.5" /> Bulk Edit
+            </button>
+          )}
           <button className="et-selection-btn" onClick={handleDuplicateSelected}>
             <Copy className="w-3.5 h-3.5" /> Duplicate
           </button>
@@ -1195,6 +1262,66 @@ export default function DatabaseTable({
           </button>
         </div>
       )}
+
+      {/* Bulk edit popover */}
+      {bulkEditOpen && (
+        <div className="et-bulk-edit-overlay" onClick={() => setBulkEditOpen(false)}>
+          <div className="et-bulk-edit-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="et-bulk-edit-header">Bulk Edit {selectedRows.size} rows</div>
+            <select className="qb-select" value={bulkEditColId} onChange={(e) => { setBulkEditColId(e.target.value); setBulkEditValue(""); }}>
+              <option value="">Select column…</option>
+              {db.columns.filter((c) => c.type !== "createdBy" && c.type !== "formula" && c.type !== "lookup").map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+            {bulkEditColId && (() => {
+              const col = db.columns.find((c) => c.id === bulkEditColId);
+              if (!col) return null;
+              if (col.type === "select") {
+                return <select className="qb-select" value={bulkEditValue} onChange={(e) => setBulkEditValue(e.target.value)}>
+                  <option value="">—</option>
+                  {(col.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>;
+              }
+              if (col.type === "checkbox") {
+                return <select className="qb-select" value={bulkEditValue} onChange={(e) => setBulkEditValue(e.target.value)}>
+                  <option value="true">Checked</option>
+                  <option value="false">Unchecked</option>
+                </select>;
+              }
+              if (col.type === "date") return <input className="qb-input" type="date" value={bulkEditValue} onChange={(e) => setBulkEditValue(e.target.value)} />;
+              if (col.type === "number") return <input className="qb-input" type="number" value={bulkEditValue} onChange={(e) => setBulkEditValue(e.target.value)} />;
+              return <input className="qb-input" type="text" value={bulkEditValue} onChange={(e) => setBulkEditValue(e.target.value)} placeholder="New value" />;
+            })()}
+            <div className="et-bulk-edit-actions">
+              <button className="rem-btn rem-btn-secondary" onClick={() => setBulkEditOpen(false)}>Cancel</button>
+              <button className="qb-save-btn" onClick={handleBulkEditApply} disabled={!bulkEditColId}>Apply</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Row edit modal */}
+      {editModalRowId && (() => {
+        const editRow = db.rows.find((r) => r.id === editModalRowId);
+        if (!editRow) return null;
+        return (
+          <RowEditModal
+            db={db}
+            row={editRow}
+            hiddenColumnIds={view.hiddenColumns || []}
+            canWrite={canWrite}
+            members={members}
+            spaceSlug={spaceSlug}
+            tagColors={tagColors}
+            relationLabels={relationLabels}
+            onUpdateRow={onUpdateRow}
+            onDeleteRow={(id) => { onDeleteRow(id); setEditModalRowId(null); }}
+            onDuplicateRow={(cells) => { onAddRow(cells); }}
+            onClose={() => setEditModalRowId(null)}
+          />
+        );
+      })()}
     </>
   );
 }

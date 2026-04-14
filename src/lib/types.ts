@@ -299,6 +299,18 @@ export interface DbSort {
   dir: "asc" | "desc";
 }
 
+export interface DbConditionalFormat {
+  columnId: string;
+  op: DbFilterOp;
+  value?: unknown;
+  style: {
+    bg?: string;
+    color?: string;
+    bold?: boolean;
+    italic?: boolean;
+  };
+}
+
 export interface DbView {
   id: string;
   name: string;
@@ -310,6 +322,7 @@ export interface DbView {
   hiddenColumns?: string[];  // columnIds
   columnOrder?: string[];    // columnIds in display order
   columnWidths?: Record<string, number>;
+  conditionalFormats?: DbConditionalFormat[];
 }
 
 export interface EnhancedTable {

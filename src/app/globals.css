@@ -6094,6 +6094,355 @@ textarea.modal-input {
   opacity: 0.85;
 }
 
+/* ── Row edit modal ───────────────────────────────────────────────── */
+
+.rem-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rem-panel {
+  background: var(--color-surface);
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  box-shadow: 0 8px 32px var(--color-shadow);
+  width: 90%;
+  max-width: 560px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.rem-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.rem-header-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rem-header-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.rem-header-meta {
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
+}
+
+.rem-close {
+  border: none;
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+}
+
+.rem-close:hover {
+  background: var(--color-muted);
+  color: var(--color-text-primary);
+}
+
+.rem-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rem-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rem-field-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.rem-input {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 0.8rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-input-bg);
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+.rem-input:focus {
+  border-color: var(--color-accent);
+}
+
+.rem-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rem-input-sm {
+  padding: 4px 8px;
+  font-size: 0.72rem;
+}
+
+.rem-readonly {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  padding: 4px 0;
+}
+
+.rem-check-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+.rem-check-label input {
+  accent-color: var(--color-accent);
+}
+
+.rem-multi {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
+.rem-multi-opt {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.rem-multi-opt input {
+  accent-color: var(--color-accent);
+}
+
+.rem-tag-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rem-tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.rem-relation-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rem-relation-picker {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 4px;
+  background: var(--color-surface);
+}
+
+.rem-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  border: 1px dashed var(--color-border);
+  border-radius: 6px;
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.rem-add-btn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.rem-section-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  padding-top: 10px;
+  border-top: 1px dashed var(--color-border);
+  margin-top: 4px;
+}
+
+.rem-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--color-border);
+}
+
+.rem-footer-spacer {
+  flex: 1;
+}
+
+.rem-delete-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rem-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  border: none;
+  transition: all 0.1s;
+}
+
+.rem-btn-secondary {
+  background: var(--color-muted);
+  color: var(--color-text-secondary);
+}
+
+.rem-btn-secondary:hover {
+  background: var(--color-muted-hover, var(--color-muted));
+}
+
+.rem-btn-danger {
+  background: #ef4444;
+  color: #fff;
+}
+
+.rem-btn-danger:hover {
+  background: #dc2626;
+}
+
+.rem-btn-danger-outline {
+  background: none;
+  border: 1px solid #ef4444;
+  color: #ef4444;
+}
+
+.rem-btn-danger-outline:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+/* Row edit pencil button */
+.et-row-edit-btn {
+  border: none;
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: 1px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: all 0.1s;
+  flex-shrink: 0;
+}
+
+.et-td-rownum:hover .et-row-edit-btn {
+  opacity: 1;
+}
+
+.et-row-edit-btn:hover {
+  color: var(--color-accent);
+  background: var(--color-accent-light);
+}
+
+/* Bulk edit overlay */
+.et-bulk-edit-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.et-bulk-edit-panel {
+  background: var(--color-surface);
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  box-shadow: 0 6px 24px var(--color-shadow);
+  padding: 16px;
+  min-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.et-bulk-edit-header {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.et-bulk-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+/* Conditional formatting panel */
+.et-cond-format-panel {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.et-cond-format-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.et-cond-format-close {
+  border: none;
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+}
+
 /* ── Query block ────────────────────────────────────────────────────── */
 
 .qb-config {

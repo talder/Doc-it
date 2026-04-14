@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Database as DbIcon, Loader2, ArrowLeft, X } from "lucide-react";
-import type { EnhancedTable, DbColumn, DbRow, DbView, DbViewType, DbFilter, DbSort, DbLookupAggregate } from "@/lib/types";
+import type { EnhancedTable, DbColumn, DbRow, DbView, DbViewType, DbFilter, DbSort, DbFilterOp, DbLookupAggregate, DbConditionalFormat } from "@/lib/types";
 import EnhancedTableGrid from "./EnhancedTableGrid";
 import EnhancedTableKanban from "./EnhancedTableKanban";
 import EnhancedTableCalendar from "./EnhancedTableCalendar";
@@ -11,6 +11,7 @@ import EnhancedTableToolbar from "./EnhancedTableToolbar";
 import EnhancedTableFilter from "./EnhancedTableFilter";
 import EnhancedTableSort from "./EnhancedTableSort";
 import { evaluateFormula } from "./FormulaEvaluator";
+import { generateCSV, downloadCSV, parseCSV } from "@/lib/csv";
 
 // ── Filter / Sort / Search helpers ──────────────────────────────────────────
 
@@ -171,6 +172,7 @@ export default function EnhancedTableView({ dbId, spaceSlug, canWrite, onClose, 
   const [activeViewId, setActiveViewId] = useState<string>("");
   const [showFilter, setShowFilter] = useState(false);
   const [showSort, setShowSort] = useState(false);
+  const [showConditionalFormat, setShowConditionalFormat] = useState(false);
   const [search, setSearch] = useState(initialSearch || "");
   const [titleEdit, setTitleEdit] = useState(false);
   const [titleValue, setTitleValue] = useState("");
@@ -354,6 +356,41 @@ export default function EnhancedTableView({ dbId, spaceSlug, canWrite, onClose, 
     handleUpdateView({ sorts });
   }, [handleUpdateView]);
 
+  const handleConditionalFormatChange = useCallback((conditionalFormats: DbConditionalFormat[]) => {
+    handleUpdateView({ conditionalFormats });
+  }, [handleUpdateView]);
+
+  // CSV import handler
+  const csvInputRef = useRef<HTMLInputElement>(null);
+  const handleImportCSV = useCallback(() => {
+    csvInputRef.current?.click();
+  }, []);
+  const handleCSVFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !db) return;
+    const text = await file.text();
+    const { headers, rows: csvRows } = parseCSV(text);
+    const colMap = new Map<string, string>();
+    for (const h of headers) {
+      const col = db.columns.find((c) => c.name.toLowerCase() === h.toLowerCase());
+      if (col) colMap.set(h, col.id);
+    }
+    for (const csvRow of csvRows) {
+      const cells: Record<string, unknown> = {};
+      for (const [header, colId] of colMap) {
+        const val = csvRow[header];
+        if (val !== undefined && val !== "") {
+          const col = db.columns.find((c) => c.id === colId);
+          if (col?.type === "number") cells[colId] = Number(val) || 0;
+          else if (col?.type === "checkbox") cells[colId] = val.toLowerCase() === "true" || val === "1";
+          else cells[colId] = val;
+        }
+      }
+      await handleAddRow(cells);
+    }
+    if (csvInputRef.current) csvInputRef.current.value = "";
+  }, [db, handleAddRow]);
+
   // Fetch target tables for lookup columns
   useEffect(() => {
     if (!db) return;
@@ -463,7 +500,17 @@ export default function EnhancedTableView({ dbId, spaceSlug, canWrite, onClose, 
     return stableOrderRef.current.filter((id) => rowMap.has(id)).map((id) => rowMap.get(id)!);
   })();
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // CSV export handler (must be after computedRows)
+  const handleExportCSV = useCallback(() => {
+    if (!db || !activeView) return;
+    const cols = (activeView.columnOrder || db.columns.map((c) => c.id))
+      .map((id) => db.columns.find((c) => c.id === id))
+      .filter((c): c is DbColumn => !!c && !(activeView.hiddenColumns || []).includes(c.id));
+    const csv = generateCSV(cols, computedRows);
+    downloadCSV(csv, `${db.title.replace(/[^a-zA-Z0-9]/g, "_")}.csv`);
+  }, [db, activeView, computedRows]);
+
+  // ── Render ─────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -587,8 +634,15 @@ export default function EnhancedTableView({ dbId, spaceSlug, canWrite, onClose, 
             canWrite={canWrite}
             onShowHidden={handleShowHidden}
             hiddenCount={hiddenCount}
+            onExportCSV={handleExportCSV}
+            onImportCSV={handleImportCSV}
+            showConditionalFormat={showConditionalFormat}
+            onToggleConditionalFormat={() => setShowConditionalFormat((v) => !v)}
+            conditionalFormatCount={activeView.conditionalFormats?.length || 0}
           />
         )}
+        {/* Hidden CSV file input */}
+        <input ref={csvInputRef} type="file" accept=".csv" style={{ display: "none" }} onChange={handleCSVFileChange} />
         {showFilter && activeView && (
           <EnhancedTableFilter
             columns={db.columns}
@@ -605,6 +659,64 @@ export default function EnhancedTableView({ dbId, spaceSlug, canWrite, onClose, 
             onChange={handleSortChange}
             onClose={() => setShowSort(false)}
           />
+        )}
+        {showConditionalFormat && activeView && (
+          <div className="et-cond-format-panel">
+            <div className="et-cond-format-header">
+              <span>Conditional Formatting</span>
+              <button className="et-cond-format-close" onClick={() => setShowConditionalFormat(false)}>×</button>
+            </div>
+            {(activeView.conditionalFormats || []).map((cf, i) => (
+              <div key={i} className="qb-filter-row">
+                <select className="qb-select qb-select-sm" value={cf.columnId} onChange={(e) => {
+                  const next = [...(activeView.conditionalFormats || [])]; next[i] = { ...cf, columnId: e.target.value };
+                  handleConditionalFormatChange(next);
+                }}>
+                  <option value="">Column…</option>
+                  {db.columns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <select className="qb-select qb-select-sm" value={cf.op} onChange={(e) => {
+                  const next = [...(activeView.conditionalFormats || [])]; next[i] = { ...cf, op: e.target.value as DbFilterOp };
+                  handleConditionalFormatChange(next);
+                }}>
+                  <option value="eq">=</option>
+                  <option value="neq">≠</option>
+                  <option value="contains">contains</option>
+                  <option value="gt">&gt;</option>
+                  <option value="lt">&lt;</option>
+                  <option value="isEmpty">is empty</option>
+                  <option value="isNotEmpty">is not empty</option>
+                </select>
+                {cf.op !== "isEmpty" && cf.op !== "isNotEmpty" && (
+                  <input className="qb-input" style={{ maxWidth: 80 }} value={String(cf.value ?? "")} onChange={(e) => {
+                    const next = [...(activeView.conditionalFormats || [])]; next[i] = { ...cf, value: e.target.value };
+                    handleConditionalFormatChange(next);
+                  }} placeholder="Value" />
+                )}
+                <input type="color" value={cf.style.bg || "#fef08a"} onChange={(e) => {
+                  const next = [...(activeView.conditionalFormats || [])]; next[i] = { ...cf, style: { ...cf.style, bg: e.target.value } };
+                  handleConditionalFormatChange(next);
+                }} title="Background color" style={{ width: 28, height: 28, border: "none", cursor: "pointer", borderRadius: 4, padding: 0 }} />
+                <label className="qb-check" style={{ gap: 2 }}>
+                  <input type="checkbox" checked={cf.style.bold || false} onChange={(e) => {
+                    const next = [...(activeView.conditionalFormats || [])]; next[i] = { ...cf, style: { ...cf.style, bold: e.target.checked } };
+                    handleConditionalFormatChange(next);
+                  }} /> <strong>B</strong>
+                </label>
+                <button className="qb-remove" onClick={() => {
+                  handleConditionalFormatChange((activeView.conditionalFormats || []).filter((_, j) => j !== i));
+                }}>×</button>
+              </div>
+            ))}
+            {canWrite && (
+              <button className="qb-add-btn" onClick={() => {
+                handleConditionalFormatChange([
+                  ...(activeView.conditionalFormats || []),
+                  { columnId: db.columns[0]?.id || "", op: "eq", value: "", style: { bg: "#fef08a" } },
+                ]);
+              }}>+ Add rule</button>
+            )}
+          </div>
         )}
         {activeView?.type === "table" && (
           <EnhancedTableGrid
