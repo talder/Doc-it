@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Database as DbIcon, Loader2, ArrowLeft, X } from "lucide-react";
-import type { EnhancedTable, DbColumn, DbRow, DbView, DbViewType, DbFilter, DbSort } from "@/lib/types";
+import type { EnhancedTable, DbColumn, DbRow, DbView, DbViewType, DbFilter, DbSort, DbLookupAggregate } from "@/lib/types";
 import EnhancedTableGrid from "./EnhancedTableGrid";
 import EnhancedTableKanban from "./EnhancedTableKanban";
 import EnhancedTableCalendar from "./EnhancedTableCalendar";
@@ -176,6 +176,8 @@ export default function EnhancedTableView({ dbId, spaceSlug, canWrite, onClose, 
   const [titleValue, setTitleValue] = useState("");
   const [currentUser, setCurrentUser] = useState<string>("");
   const [members, setMembers] = useState<{ username: string; fullName?: string }[]>([]);
+  // Cache of target tables for lookup column resolution: "space/dbId" -> EnhancedTable
+  const [targetTableCache, setTargetTableCache] = useState<Record<string, EnhancedTable>>({});
 
   const api = `/api/spaces/${encodeURIComponent(spaceSlug)}/enhanced-tables/${encodeURIComponent(dbId)}`;
 
@@ -352,6 +354,31 @@ export default function EnhancedTableView({ dbId, spaceSlug, canWrite, onClose, 
     handleUpdateView({ sorts });
   }, [handleUpdateView]);
 
+  // Fetch target tables for lookup columns
+  useEffect(() => {
+    if (!db) return;
+    const lookupCols = db.columns.filter((c) => c.type === "lookup" && c.lookup);
+    if (lookupCols.length === 0) return;
+    const needed = new Map<string, { space: string; dbId: string }>();
+    for (const lc of lookupCols) {
+      const relCol = db.columns.find((c) => c.id === lc.lookup!.relationColumnId);
+      if (!relCol?.relation) continue;
+      const key = `${relCol.relation.targetSpace}/${relCol.relation.targetDbId}`;
+      if (!targetTableCache[key] && !needed.has(key)) {
+        needed.set(key, { space: relCol.relation.targetSpace, dbId: relCol.relation.targetDbId });
+      }
+    }
+    for (const [key, { space, dbId: tDbId }] of needed) {
+      fetch(`/api/spaces/${encodeURIComponent(space)}/enhanced-tables/${encodeURIComponent(tDbId)}`)
+        .then((r) => r.json())
+        .then((data: EnhancedTable) => {
+          setTargetTableCache((prev) => ({ ...prev, [key]: data }));
+        })
+        .catch(() => {});
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db?.columns]);
+
   // ── Computed rows (stable ordering) ─────────────────────────────────────────
   // Only re-sort when sort config, filters, search, or the row set changes —
   // NOT when cell data changes. This prevents rows from jumping while editing.
@@ -367,6 +394,52 @@ export default function EnhancedTableView({ dbId, spaceSlug, canWrite, onClose, 
         const cells = { ...row.cells };
         for (const fc of formulaCols) {
           cells[fc.id] = evaluateFormula(fc.formula!, row, db.columns);
+        }
+        return { ...row, cells };
+      });
+    }
+
+    // Resolve lookup columns from cached target tables
+    const lookupCols = db.columns.filter((c) => c.type === "lookup" && c.lookup);
+    if (lookupCols.length > 0) {
+      result = result.map((row) => {
+        const cells = { ...row.cells };
+        for (const lc of lookupCols) {
+          const lookup = lc.lookup!;
+          const relCol = db.columns.find((c) => c.id === lookup.relationColumnId);
+          if (!relCol?.relation) continue;
+          const key = `${relCol.relation.targetSpace}/${relCol.relation.targetDbId}`;
+          const targetDb = targetTableCache[key];
+          if (!targetDb) continue;
+
+          // Get linked row IDs
+          const linkedVal = row.cells[relCol.id];
+          const linkedIds: string[] = Array.isArray(linkedVal)
+            ? linkedVal.map(String)
+            : linkedVal ? [String(linkedVal)] : [];
+
+          // Pull values from target rows
+          const values: unknown[] = [];
+          for (const rid of linkedIds) {
+            const targetRow = targetDb.rows.find((r) => r.id === rid);
+            if (targetRow) values.push(targetRow.cells[lookup.targetColumnId]);
+          }
+
+          // Aggregate
+          const agg: DbLookupAggregate = lookup.aggregate || "list";
+          const nums = values.map(Number).filter((n) => !isNaN(n));
+          switch (agg) {
+            case "first": cells[lc.id] = values[0] ?? null; break;
+            case "count": cells[lc.id] = values.length; break;
+            case "sum": cells[lc.id] = nums.reduce((a, b) => a + b, 0); break;
+            case "avg": cells[lc.id] = nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null; break;
+            case "min": cells[lc.id] = nums.length ? Math.min(...nums) : null; break;
+            case "max": cells[lc.id] = nums.length ? Math.max(...nums) : null; break;
+            case "list":
+            default:
+              cells[lc.id] = values.filter((v) => v != null).map(String);
+              break;
+          }
         }
         return { ...row, cells };
       });
@@ -549,6 +622,7 @@ export default function EnhancedTableView({ dbId, spaceSlug, canWrite, onClose, 
             currentUser={currentUser}
             members={members}
             spaceSlug={spaceSlug}
+            tagColors={tagColors}
           />
         )}
         {activeView?.type === "kanban" && (

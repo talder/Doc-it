@@ -239,9 +239,27 @@ export interface DocMetadata {
 export type DbColumnType =
   | "text" | "number" | "select" | "multiSelect"
   | "checkbox" | "date" | "url" | "email"
-  | "formula" | "member" | "createdBy";
+  | "formula" | "member" | "createdBy"
+  | "relation" | "lookup" | "tag";
 
 export type DbViewType = "table" | "kanban" | "calendar" | "gallery";
+
+export interface DbColumnRelation {
+  targetSpace: string;           // slug of the target space
+  targetDbId: string;            // ID of the target enhanced table
+  displayColumnId?: string;      // column on target table to show as label (defaults to first text col)
+  limit: "one" | "many";         // "one" = single link, "many" = multi-link
+  bidirectional?: boolean;       // auto-create/maintain reverse column on target table
+  reverseColumnId?: string;      // ID of the auto-created reverse column on the target table
+}
+
+export type DbLookupAggregate = "first" | "list" | "count" | "sum" | "avg" | "min" | "max";
+
+export interface DbColumnLookup {
+  relationColumnId: string;      // relation column on this table to follow
+  targetColumnId: string;        // column on the target table to pull
+  aggregate?: DbLookupAggregate; // how to reduce multiple values (default "list")
+}
 
 export interface DbColumn {
   id: string;
@@ -252,6 +270,8 @@ export interface DbColumn {
   width?: number;               // default column width in px
   defaultValue?: unknown;       // default cell value for new rows
   defaultCurrentDate?: boolean; // date only: use today's date as default
+  relation?: DbColumnRelation;  // relation column config
+  lookup?: DbColumnLookup;      // lookup column config
 }
 
 export interface DbRow {

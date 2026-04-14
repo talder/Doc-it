@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Plus, Trash2, MoreVertical, GripVertical, Copy, Eraser, X, ArrowUp, ArrowDown } from "lucide-react";
-import type { EnhancedTable, DbColumn, DbRow, DbView, DbColumnType } from "@/lib/types";
+import { Plus, Trash2, MoreVertical, GripVertical, Copy, Eraser, X, ArrowUp, ArrowDown, Link2, Search, Hash } from "lucide-react";
+import type { EnhancedTable, DbColumn, DbRow, DbView, DbColumnType, DbLookupAggregate } from "@/lib/types";
 
 const COLUMN_TYPES: { value: DbColumnType; label: string }[] = [
   { value: "text", label: "Text" },
@@ -15,6 +15,19 @@ const COLUMN_TYPES: { value: DbColumnType; label: string }[] = [
   { value: "email", label: "Email" },
   { value: "member", label: "Member" },
   { value: "createdBy", label: "Created By" },
+  { value: "relation", label: "Relation" },
+  { value: "lookup", label: "Lookup" },
+  { value: "tag", label: "Tag" },
+];
+
+const LOOKUP_AGGREGATES: { value: DbLookupAggregate; label: string }[] = [
+  { value: "list", label: "List" },
+  { value: "first", label: "First" },
+  { value: "count", label: "Count" },
+  { value: "sum", label: "Sum" },
+  { value: "avg", label: "Average" },
+  { value: "min", label: "Min" },
+  { value: "max", label: "Max" },
 ];
 
 interface Props {
@@ -32,13 +45,28 @@ interface Props {
   currentUser?: string;
   members?: { username: string; fullName?: string }[];
   spaceSlug?: string;
+  tagColors?: Record<string, string>;
+}
+
+const TAG_PRESET_COLORS = [
+  "#ef4444", "#f97316", "#eab308", "#22c55e",
+  "#14b8a6", "#3b82f6", "#8b5cf6", "#ec4899",
+  "#6b7280", "#78716c",
+];
+
+function tagContrastText(hex: string): string {
+  const c = hex.replace("#", "");
+  const r = parseInt(c.substring(0, 2), 16);
+  const g = parseInt(c.substring(2, 4), 16);
+  const b = parseInt(c.substring(4, 6), 16);
+  return r * 0.299 + g * 0.587 + b * 0.114 > 150 ? "#000" : "#fff";
 }
 
 export default function DatabaseTable({
   db, view, rows, canWrite,
   onAddRow, onUpdateRow, onDeleteRow,
   onAddColumn, onUpdateColumn, onDeleteColumn, onUpdateView,
-  currentUser, members = [], spaceSlug,
+  currentUser, members = [], spaceSlug, tagColors = {},
 }: Props) {
   const [editCell, setEditCell] = useState<{ rowId: string; colId: string } | null>(null);
   const [editValue, setEditValue] = useState<string>("");
@@ -49,6 +77,43 @@ export default function DatabaseTable({
   const [selectOptions, setSelectOptions] = useState<string>("");
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [colDefaultPanel, setColDefaultPanel] = useState<string | null>(null);
+  const [relationConfigCol, setRelationConfigCol] = useState<string | null>(null);
+  const [lookupConfigCol, setLookupConfigCol] = useState<string | null>(null);
+
+  // Relation config state
+  const [relSpaces, setRelSpaces] = useState<{ slug: string; name: string }[]>([]);
+  const [relTables, setRelTables] = useState<{ id: string; title: string; columns: { id: string; name: string; type: string }[] }[]>([]);
+  const [relSelectedSpace, setRelSelectedSpace] = useState("");
+  const [relSelectedDb, setRelSelectedDb] = useState("");
+  const [relSelectedDisplayCol, setRelSelectedDisplayCol] = useState("");
+  const [relLimit, setRelLimit] = useState<"one" | "many">("many");
+  const [relBidirectional, setRelBidirectional] = useState(false);
+
+  // Lookup config state
+  const [lookupRelCol, setLookupRelCol] = useState("");
+  const [lookupTargetCol, setLookupTargetCol] = useState("");
+  const [lookupAggregate, setLookupAggregate] = useState<DbLookupAggregate>("list");
+  const [lookupTargetCols, setLookupTargetCols] = useState<{ id: string; name: string }[]>([]);
+
+  // Relation cell editor state
+  const [relationSearch, setRelationSearch] = useState("");
+  const [relationTargetRows, setRelationTargetRows] = useState<{ id: string; label: string }[]>([]);
+  const [relationTargetLoading, setRelationTargetLoading] = useState(false);
+
+  // Relation label cache: columnId -> { rowId -> label }
+  const [relationLabels, setRelationLabels] = useState<Record<string, Record<string, string>>>({});
+
+  // Tag cell editor state
+  const [tagSearch, setTagSearch] = useState("");
+  const [spaceTags, setSpaceTags] = useState<string[]>([]);
+  const [tagCreating, setTagCreating] = useState(false);
+  const [tagNewName, setTagNewName] = useState("");
+  const [tagNewColor, setTagNewColor] = useState<string | null>(null);
+  const [localTagColors, setLocalTagColors] = useState<Record<string, string>>(tagColors);
+
+  // Keep local tag colors in sync with prop
+  useEffect(() => { setLocalTagColors(tagColors); }, [tagColors]);
+
   const colMenuRef = useRef<HTMLDivElement>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
   const tabNavigating = useRef(false);
@@ -64,12 +129,36 @@ export default function DatabaseTable({
 
   const getWidth = (col: DbColumn) => view.columnWidths?.[col.id] || col.width || 150;
 
+  // Fetch relation labels for all relation columns on mount / db change
+  useEffect(() => {
+    if (!spaceSlug) return;
+    const relCols = db.columns.filter((c) => c.type === "relation" && c.relation);
+    if (relCols.length === 0) return;
+    for (const col of relCols) {
+      // Collect all row IDs referenced by this column
+      const ids = new Set<string>();
+      for (const row of db.rows) {
+        const val = row.cells[col.id];
+        if (Array.isArray(val)) val.forEach((v: string) => ids.add(v));
+        else if (val) ids.add(String(val));
+      }
+      if (ids.size === 0) continue;
+      const api = `/api/spaces/${encodeURIComponent(spaceSlug)}/enhanced-tables/${encodeURIComponent(db.id)}/rows/lookup?columnId=${encodeURIComponent(col.id)}&rowIds=${encodeURIComponent([...ids].join(","))}`;
+      fetch(api)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.labels) setRelationLabels((prev) => ({ ...prev, [col.id]: data.labels }));
+        })
+        .catch(() => {});
+    }
+  }, [db.columns, db.rows, db.id, spaceSlug]);
+
   // Close menus on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (colMenuRef.current && !colMenuRef.current.contains(e.target as Node)) {
       setColMenu(null); setColRename(null); setColTypeChange(null); setSelectEditCol(null);
-        setColDefaultPanel(null);
+        setColDefaultPanel(null); setRelationConfigCol(null); setLookupConfigCol(null);
       }
     };
     document.addEventListener("mousedown", handler);
@@ -79,7 +168,44 @@ export default function DatabaseTable({
   const startEdit = (rowId: string, colId: string, currentValue: unknown) => {
     if (!canWrite) return;
     const col = db.columns.find((c) => c.id === colId);
-    if (col?.type === "createdBy") return; // auto-filled, read-only
+    if (col?.type === "createdBy" || col?.type === "lookup") return; // read-only
+    if (col?.type === "tag") {
+      setEditCell({ rowId, colId });
+      setTagSearch("");
+      setTagCreating(false);
+      setTagNewName(""); setTagNewColor(null);
+      // Fetch existing space tags
+      if (spaceSlug) {
+        fetch(`/api/spaces/${encodeURIComponent(spaceSlug)}/tags`)
+          .then((r) => r.json())
+          .then((idx) => setSpaceTags(Object.keys(idx)))
+          .catch(() => {});
+      }
+      return;
+    }
+    if (col?.type === "relation" && col.relation) {
+      setEditCell({ rowId, colId });
+      setRelationSearch("");
+      // Fetch target table rows for the picker
+      setRelationTargetLoading(true);
+      const { targetSpace, targetDbId, displayColumnId } = col.relation;
+      fetch(`/api/spaces/${encodeURIComponent(targetSpace)}/enhanced-tables/${encodeURIComponent(targetDbId)}`)
+        .then((r) => r.json())
+        .then((targetDb: EnhancedTable) => {
+          const dispCol = displayColumnId
+            ? targetDb.columns.find((c) => c.id === displayColumnId)
+            : targetDb.columns.find((c) => c.type === "text") || targetDb.columns[0];
+          setRelationTargetRows(
+            targetDb.rows.map((r) => ({
+              id: r.id,
+              label: dispCol ? (r.cells[dispCol.id] != null ? String(r.cells[dispCol.id]) : "") : r.id,
+            }))
+          );
+        })
+        .catch(() => setRelationTargetRows([]))
+        .finally(() => setRelationTargetLoading(false));
+      return;
+    }
     setEditCell({ rowId, colId });
     setEditValue(currentValue != null ? String(currentValue) : "");
   };
@@ -109,7 +235,7 @@ export default function DatabaseTable({
     if (nc >= orderedCols.length) { nc = 0; nr++; }
     else if (nc < 0) { nc = orderedCols.length - 1; nr--; }
     // Skip read-only columns
-    while (nr >= 0 && nr < rows.length && orderedCols[nc]?.type === "createdBy") {
+    while (nr >= 0 && nr < rows.length && (orderedCols[nc]?.type === "createdBy" || orderedCols[nc]?.type === "lookup")) {
       nc += step;
       if (nc >= orderedCols.length) { nc = 0; nr++; }
       else if (nc < 0) { nc = orderedCols.length - 1; nr--; }
@@ -356,6 +482,239 @@ export default function DatabaseTable({
         : <span className="et-cell-empty">—</span>;
     }
 
+    // ── Relation cell ──────────────────────────────────────────────────
+    if (col.type === "relation" && col.relation) {
+      const linkedIds = Array.isArray(value) ? (value as string[]) : value ? [String(value)] : [];
+      const labels = relationLabels[col.id] || {};
+      const isOne = col.relation.limit === "one";
+
+      if (isEditing) {
+        const filtered = relationSearch
+          ? relationTargetRows.filter((r) => r.label.toLowerCase().includes(relationSearch.toLowerCase()))
+          : relationTargetRows;
+        return (
+          <div className="et-relation-dropdown" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Escape") setEditCell(null); }}>
+            <div className="et-relation-search-wrap">
+              <Search className="w-3 h-3 text-text-muted" />
+              <input
+                autoFocus
+                className="et-relation-search"
+                placeholder="Search…"
+                value={relationSearch}
+                onChange={(e) => setRelationSearch(e.target.value)}
+              />
+            </div>
+            {relationTargetLoading ? (
+              <div className="et-relation-loading">Loading…</div>
+            ) : (
+              <div className="et-relation-list">
+                {filtered.map((tr) => {
+                  const checked = linkedIds.includes(tr.id);
+                  return (
+                    <label key={tr.id} className="et-multiselect-option">
+                      <input
+                        type={isOne ? "radio" : "checkbox"}
+                        name={`rel-${col.id}-${row.id}`}
+                        checked={checked}
+                        onChange={() => {
+                          let next: string | string[] | null;
+                          if (isOne) {
+                            next = checked ? null : tr.id;
+                          } else {
+                            next = checked ? linkedIds.filter((id) => id !== tr.id) : [...linkedIds, tr.id];
+                          }
+                          onUpdateRow(row.id, { [col.id]: next });
+                          // Update label cache immediately
+                          setRelationLabels((prev) => ({ ...prev, [col.id]: { ...prev[col.id], [tr.id]: tr.label } }));
+                          if (isOne) setEditCell(null);
+                        }}
+                      />
+                      <span>{tr.label || tr.id}</span>
+                    </label>
+                  );
+                })}
+                {filtered.length === 0 && <div className="et-relation-empty">No rows found</div>}
+              </div>
+            )}
+            {!isOne && <button className="et-multiselect-done" onClick={() => setEditCell(null)}>Done</button>}
+          </div>
+        );
+      }
+
+      // Display mode: chips
+      if (linkedIds.length === 0) return <span className="et-cell-empty">—</span>;
+      return (
+        <div className="et-cell-tags">
+          {linkedIds.map((id) => (
+            <span key={id} className="et-cell-tag et-relation-chip">
+              <Link2 className="w-3 h-3 inline mr-0.5" />
+              {labels[id] || id}
+            </span>
+          ))}
+        </div>
+      );
+    }
+
+    // ── Tag cell ────────────────────────────────────────────────────────
+    if (col.type === "tag") {
+      const vals = Array.isArray(value) ? (value as string[]) : [];
+
+      if (isEditing) {
+        const filtered = tagSearch
+          ? spaceTags.filter((t) => t.toLowerCase().includes(tagSearch.toLowerCase()) && !vals.includes(t)).slice(0, 10)
+          : spaceTags.filter((t) => !vals.includes(t)).slice(0, 10);
+        const showCreateOption = tagSearch.trim() && !spaceTags.includes(tagSearch.trim().toLowerCase());
+
+        return (
+          <div className="et-tag-dropdown" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Escape") { setEditCell(null); setTagCreating(false); } }}>
+            {!tagCreating ? (
+              <>
+                <div className="et-relation-search-wrap">
+                  <Search className="w-3 h-3 text-text-muted" />
+                  <input
+                    autoFocus
+                    className="et-relation-search"
+                    placeholder="Search tags…"
+                    value={tagSearch}
+                    onChange={(e) => setTagSearch(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && tagSearch.trim()) {
+                        const clean = tagSearch.trim().toLowerCase().replace(/[^a-z0-9_/-]/g, "");
+                        if (clean && !vals.includes(clean)) {
+                          onUpdateRow(row.id, { [col.id]: [...vals, clean] });
+                          if (!spaceTags.includes(clean)) setSpaceTags((prev) => [...prev, clean]);
+                        }
+                        setTagSearch("");
+                      }
+                    }}
+                  />
+                </div>
+                {/* Already-selected tags with remove buttons */}
+                {vals.length > 0 && (
+                  <div className="et-tag-selected">
+                    {vals.map((t) => {
+                      const tc = localTagColors[t];
+                      return (
+                        <span key={t} className="et-tag-chip" style={tc ? { background: tc, color: tagContrastText(tc) } : undefined}>
+                          #{t}
+                          <button
+                            className="et-tag-chip-remove"
+                            style={tc ? { color: tagContrastText(tc) } : undefined}
+                            onClick={() => onUpdateRow(row.id, { [col.id]: vals.filter((v) => v !== t) })}
+                          >×</button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="et-relation-list">
+                  {filtered.map((t) => {
+                    const tc = localTagColors[t];
+                    return (
+                      <button key={t} className="et-tag-option" onClick={() => {
+                        onUpdateRow(row.id, { [col.id]: [...vals, t] });
+                        setTagSearch("");
+                      }}>
+                        <span className="et-tag-dot" style={tc ? { background: tc } : undefined}><Hash className="w-2.5 h-2.5" /></span>
+                        {t}
+                      </button>
+                    );
+                  })}
+                  {showCreateOption && (
+                    <button className="et-tag-create-btn" onClick={() => {
+                      setTagNewName(tagSearch.trim().toLowerCase().replace(/[^a-z0-9_/-]/g, ""));
+                      setTagNewColor(null);
+                      setTagCreating(true);
+                    }}>
+                      <Plus className="w-3 h-3" /> Create "{tagSearch.trim()}"
+                    </button>
+                  )}
+                </div>
+                <button className="et-multiselect-done" onClick={() => setEditCell(null)}>Done</button>
+              </>
+            ) : (
+              /* Create new tag popover with color picker */
+              <div className="et-tag-create-panel">
+                <div className="et-tag-create-header">Create new tag</div>
+                <input
+                  autoFocus
+                  className="et-col-menu-input"
+                  placeholder="Tag name"
+                  value={tagNewName}
+                  onChange={(e) => setTagNewName(e.target.value.toLowerCase().replace(/[^a-z0-9_/-]/g, ""))}
+                />
+                <div className="et-tag-create-header" style={{ marginTop: 6 }}>Color</div>
+                <div className="et-tag-color-grid">
+                  <button
+                    className={`et-tag-color-swatch${tagNewColor === null ? " active" : ""}`}
+                    style={{ background: "var(--color-muted)" }}
+                    onClick={() => setTagNewColor(null)}
+                    title="No color"
+                  />
+                  {TAG_PRESET_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      className={`et-tag-color-swatch${tagNewColor === c ? " active" : ""}`}
+                      style={{ background: c }}
+                      onClick={() => setTagNewColor(c)}
+                    />
+                  ))}
+                </div>
+                <div className="et-tag-create-actions">
+                  <button className="et-tag-create-cancel" onClick={() => setTagCreating(false)}>Cancel</button>
+                  <button className="et-tag-create-save" onClick={async () => {
+                    const clean = tagNewName.trim();
+                    if (!clean) return;
+                    // Add tag to cell
+                    if (!vals.includes(clean)) {
+                      onUpdateRow(row.id, { [col.id]: [...vals, clean] });
+                    }
+                    if (!spaceTags.includes(clean)) setSpaceTags((prev) => [...prev, clean]);
+                    // Save color if set
+                    if (tagNewColor && spaceSlug) {
+                      setLocalTagColors((prev) => ({ ...prev, [clean]: tagNewColor }));
+                      await fetch(`/api/spaces/${encodeURIComponent(spaceSlug)}/customization`, {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ tagColors: { [clean]: tagNewColor } }),
+                      });
+                    }
+                    setTagCreating(false);
+                    setTagSearch("");
+                  }}>Create</button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      // Display mode: colored tag chips
+      if (vals.length === 0) return <span className="et-cell-empty">—</span>;
+      return (
+        <div className="et-cell-tags">
+          {vals.map((t) => {
+            const tc = localTagColors[t];
+            return (
+              <span key={t} className="et-tag-chip" style={tc ? { background: tc, color: tagContrastText(tc) } : undefined}>
+                #{t}
+              </span>
+            );
+          })}
+        </div>
+      );
+    }
+
+    // ── Lookup cell (read-only) ────────────────────────────────────────
+    if (col.type === "lookup" && col.lookup) {
+      const computed = row.cells[col.id];
+      if (computed == null || computed === "") return <span className="et-cell-empty">—</span>;
+      if (Array.isArray(computed)) {
+        return <span className="et-cell-text">{computed.join(", ")}</span>;
+      }
+      return <span className="et-cell-text">{String(computed)}</span>;
+    }
+
     if (isEditing) {
       return (
         <input
@@ -486,6 +845,132 @@ export default function DatabaseTable({
                     />
                     <div className="text-[10px] text-text-muted mt-1">Comma-separated. Enter to save.</div>
                   </div>
+                ) : relationConfigCol === col.id ? (
+                  <div className="et-col-default-panel">
+                    <div className="et-col-menu-item" style={{ opacity: 0.5, fontSize: "0.65rem", cursor: "default" }}>Configure Relation</div>
+                    <label className="et-col-default-label">
+                      Space
+                      <select className="et-col-menu-input" value={relSelectedSpace} onChange={(e) => {
+                        setRelSelectedSpace(e.target.value);
+                        setRelSelectedDb("");
+                        setRelSelectedDisplayCol("");
+                        setRelTables([]);
+                        if (e.target.value) {
+                          fetch(`/api/spaces/${encodeURIComponent(e.target.value)}/enhanced-tables`)
+                            .then((r) => r.json())
+                            .then((tables: EnhancedTable[]) => setRelTables(tables.map((t) => ({ id: t.id, title: t.title, columns: t.columns.map((c) => ({ id: c.id, name: c.name, type: c.type })) }))))
+                            .catch(() => {});
+                        }
+                      }}>
+                        <option value="">Select space…</option>
+                        {relSpaces.map((s) => <option key={s.slug} value={s.slug}>{s.name}</option>)}
+                      </select>
+                    </label>
+                    {relSelectedSpace && (
+                      <label className="et-col-default-label">
+                        Table
+                        <select className="et-col-menu-input" value={relSelectedDb} onChange={(e) => {
+                          setRelSelectedDb(e.target.value);
+                          setRelSelectedDisplayCol("");
+                        }}>
+                          <option value="">Select table…</option>
+                          {relTables.filter((t) => t.id !== db.id || relSelectedSpace !== spaceSlug).map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
+                        </select>
+                      </label>
+                    )}
+                    {relSelectedDb && (() => {
+                      const targetTable = relTables.find((t) => t.id === relSelectedDb);
+                      const targetCols = targetTable?.columns || [];
+                      return (
+                        <>
+                          <label className="et-col-default-label">
+                            Display column
+                            <select className="et-col-menu-input" value={relSelectedDisplayCol} onChange={(e) => setRelSelectedDisplayCol(e.target.value)}>
+                              <option value="">(Auto – first text)</option>
+                              {targetCols.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                          </label>
+                          <label className="et-col-default-label">
+                            <input type="checkbox" checked={relLimit === "many"} onChange={(e) => setRelLimit(e.target.checked ? "many" : "one")} />
+                            Allow multiple links
+                          </label>
+                          <label className="et-col-default-label">
+                            <input type="checkbox" checked={relBidirectional} onChange={(e) => setRelBidirectional(e.target.checked)} />
+                            Create reverse column
+                          </label>
+                          <button className="et-col-menu-item" style={{ marginTop: 4, fontWeight: 600 }} onClick={() => {
+                            onUpdateColumn(col.id, {
+                              type: "relation",
+                              relation: {
+                                targetSpace: relSelectedSpace,
+                                targetDbId: relSelectedDb,
+                                displayColumnId: relSelectedDisplayCol || undefined,
+                                limit: relLimit,
+                                bidirectional: relBidirectional,
+                              },
+                            });
+                            setRelationConfigCol(null);
+                            setColMenu(null);
+                          }}>Save</button>
+                        </>
+                      );
+                    })()}
+                    <button className="et-col-menu-item" style={{ marginTop: 4 }} onClick={() => setRelationConfigCol(null)}>← Back</button>
+                  </div>
+                ) : lookupConfigCol === col.id ? (
+                  <div className="et-col-default-panel">
+                    <div className="et-col-menu-item" style={{ opacity: 0.5, fontSize: "0.65rem", cursor: "default" }}>Configure Lookup</div>
+                    <label className="et-col-default-label">
+                      Relation column
+                      <select className="et-col-menu-input" value={lookupRelCol} onChange={(e) => {
+                        setLookupRelCol(e.target.value);
+                        setLookupTargetCol("");
+                        setLookupTargetCols([]);
+                        const relCol = db.columns.find((c) => c.id === e.target.value);
+                        if (relCol?.relation) {
+                          fetch(`/api/spaces/${encodeURIComponent(relCol.relation.targetSpace)}/enhanced-tables/${encodeURIComponent(relCol.relation.targetDbId)}`)
+                            .then((r) => r.json())
+                            .then((targetDb: EnhancedTable) => setLookupTargetCols(targetDb.columns.map((c) => ({ id: c.id, name: c.name }))))
+                            .catch(() => {});
+                        }
+                      }}>
+                        <option value="">Select relation…</option>
+                        {db.columns.filter((c) => c.type === "relation" && c.relation).map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                    {lookupRelCol && lookupTargetCols.length > 0 && (
+                      <>
+                        <label className="et-col-default-label">
+                          Target column
+                          <select className="et-col-menu-input" value={lookupTargetCol} onChange={(e) => setLookupTargetCol(e.target.value)}>
+                            <option value="">Select column…</option>
+                            {lookupTargetCols.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                          </select>
+                        </label>
+                        <label className="et-col-default-label">
+                          Aggregation
+                          <select className="et-col-menu-input" value={lookupAggregate} onChange={(e) => setLookupAggregate(e.target.value as DbLookupAggregate)}>
+                            {LOOKUP_AGGREGATES.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+                          </select>
+                        </label>
+                        <button className="et-col-menu-item" style={{ marginTop: 4, fontWeight: 600 }} onClick={() => {
+                          onUpdateColumn(col.id, {
+                            type: "lookup",
+                            lookup: {
+                              relationColumnId: lookupRelCol,
+                              targetColumnId: lookupTargetCol,
+                              aggregate: lookupAggregate,
+                            },
+                          });
+                          setLookupConfigCol(null);
+                          setColMenu(null);
+                        }}>Save</button>
+                      </>
+                    )}
+                    <button className="et-col-menu-item" style={{ marginTop: 4 }} onClick={() => setLookupConfigCol(null)}>← Back</button>
+                  </div>
                 ) : colDefaultPanel === col.id ? (
                   <div className="et-col-default-panel">
                     <div className="et-col-menu-item" style={{ opacity: 0.5, fontSize: "0.65rem", cursor: "default" }}>Default value</div>
@@ -547,6 +1032,58 @@ export default function DatabaseTable({
                     )}
                     {(col.type === "select" || col.type === "multiSelect" || col.type === "date" || col.type === "checkbox" || col.type === "member") && (
                       <button className="et-col-menu-item" onClick={() => setColDefaultPanel(col.id)}>Set default…</button>
+                    )}
+                    {col.type === "relation" && (
+                      <button className="et-col-menu-item" onClick={() => {
+                        // Pre-populate config from existing relation
+                        if (col.relation) {
+                          setRelSelectedSpace(col.relation.targetSpace);
+                          setRelSelectedDb(col.relation.targetDbId);
+                          setRelSelectedDisplayCol(col.relation.displayColumnId || "");
+                          setRelLimit(col.relation.limit);
+                          setRelBidirectional(col.relation.bidirectional || false);
+                          // Fetch tables for the pre-selected space
+                          fetch(`/api/spaces/${encodeURIComponent(col.relation.targetSpace)}/enhanced-tables`)
+                            .then((r) => r.json())
+                            .then((tables: EnhancedTable[]) => setRelTables(tables.map((t) => ({ id: t.id, title: t.title, columns: t.columns.map((c) => ({ id: c.id, name: c.name, type: c.type })) }))))
+                            .catch(() => {});
+                        } else {
+                          setRelSelectedSpace(spaceSlug || "");
+                          setRelSelectedDb(""); setRelSelectedDisplayCol(""); setRelLimit("many"); setRelBidirectional(false);
+                          if (spaceSlug) {
+                            fetch(`/api/spaces/${encodeURIComponent(spaceSlug)}/enhanced-tables`)
+                              .then((r) => r.json())
+                              .then((tables: EnhancedTable[]) => setRelTables(tables.map((t) => ({ id: t.id, title: t.title, columns: t.columns.map((c) => ({ id: c.id, name: c.name, type: c.type })) }))))
+                              .catch(() => {});
+                          }
+                        }
+                        // Fetch spaces list
+                        fetch("/api/spaces")
+                          .then((r) => r.json())
+                          .then((spaces: { slug: string; name: string }[]) => setRelSpaces(spaces))
+                          .catch(() => {});
+                        setRelationConfigCol(col.id);
+                      }}>Configure relation…</button>
+                    )}
+                    {col.type === "lookup" && (
+                      <button className="et-col-menu-item" onClick={() => {
+                        if (col.lookup) {
+                          setLookupRelCol(col.lookup.relationColumnId);
+                          setLookupTargetCol(col.lookup.targetColumnId);
+                          setLookupAggregate(col.lookup.aggregate || "list");
+                          // Fetch target columns
+                          const relCol = db.columns.find((c) => c.id === col.lookup!.relationColumnId);
+                          if (relCol?.relation) {
+                            fetch(`/api/spaces/${encodeURIComponent(relCol.relation.targetSpace)}/enhanced-tables/${encodeURIComponent(relCol.relation.targetDbId)}`)
+                              .then((r) => r.json())
+                              .then((targetDb: EnhancedTable) => setLookupTargetCols(targetDb.columns.map((c) => ({ id: c.id, name: c.name }))))
+                              .catch(() => {});
+                          }
+                        } else {
+                          setLookupRelCol(""); setLookupTargetCol(""); setLookupAggregate("list"); setLookupTargetCols([]);
+                        }
+                        setLookupConfigCol(col.id);
+                      }}>Configure lookup…</button>
                     )}
                     <button className="et-col-menu-item" onClick={() => {
                       const hidden = [...(view.hiddenColumns || []), col.id];

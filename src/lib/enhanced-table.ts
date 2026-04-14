@@ -2,7 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
 import { getSpaceDir, getStorageRoot, ensureDir } from "./config";
-import type { EnhancedTable } from "./types";
+import type { EnhancedTable, DbColumn } from "./types";
 
 export function generateId(): string {
   return crypto.randomBytes(6).toString("hex");
@@ -100,5 +100,101 @@ export async function unarchiveEnhancedTable(spaceSlug: string, dbId: string): P
     return true;
   } catch {
     return false;
+  }
+}
+
+// ── Relation helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Resolve display labels for a set of row IDs in a target table.
+ * Returns a map of rowId -> display label string.
+ */
+export async function resolveRelationLabels(
+  spaceSlug: string,
+  dbId: string,
+  rowIds: string[],
+  displayColumnId?: string,
+): Promise<Record<string, string>> {
+  const db = await readEnhancedTable(spaceSlug, dbId);
+  if (!db) return {};
+
+  // Pick the display column: explicit, or first text column, or first column
+  let displayCol: DbColumn | undefined;
+  if (displayColumnId) displayCol = db.columns.find((c) => c.id === displayColumnId);
+  if (!displayCol) displayCol = db.columns.find((c) => c.type === "text");
+  if (!displayCol) displayCol = db.columns[0];
+  if (!displayCol) return {};
+
+  const idSet = new Set(rowIds);
+  const labels: Record<string, string> = {};
+  for (const row of db.rows) {
+    if (!idSet.has(row.id)) continue;
+    const raw = row.cells[displayCol.id];
+    labels[row.id] = raw != null ? String(raw) : "";
+  }
+  return labels;
+}
+
+/**
+ * Add a source row ID to the reverse relation column on a target table's row.
+ */
+export async function syncBidirectionalAdd(
+  targetSpace: string,
+  targetDbId: string,
+  reverseColId: string,
+  targetRowId: string,
+  sourceRowId: string,
+): Promise<void> {
+  const db = await readEnhancedTable(targetSpace, targetDbId);
+  if (!db) return;
+  const row = db.rows.find((r) => r.id === targetRowId);
+  if (!row) return;
+  const current = row.cells[reverseColId];
+  const arr = Array.isArray(current) ? [...current] : current ? [current] : [];
+  if (!arr.includes(sourceRowId)) {
+    arr.push(sourceRowId);
+    row.cells[reverseColId] = arr;
+    db.updatedAt = new Date().toISOString();
+    await writeEnhancedTable(targetSpace, targetDbId, db);
+  }
+}
+
+/**
+ * Remove a source row ID from the reverse relation column on a target table's row.
+ */
+export async function syncBidirectionalRemove(
+  targetSpace: string,
+  targetDbId: string,
+  reverseColId: string,
+  targetRowId: string,
+  sourceRowId: string,
+): Promise<void> {
+  const db = await readEnhancedTable(targetSpace, targetDbId);
+  if (!db) return;
+  const row = db.rows.find((r) => r.id === targetRowId);
+  if (!row) return;
+  const current = row.cells[reverseColId];
+  const arr = Array.isArray(current) ? current.filter((id: string) => id !== sourceRowId) : [];
+  row.cells[reverseColId] = arr;
+  db.updatedAt = new Date().toISOString();
+  await writeEnhancedTable(targetSpace, targetDbId, db);
+}
+
+/**
+ * When a row is deleted, clean up all bidirectional reverse references.
+ */
+export async function cleanupBidirectionalOnRowDelete(
+  spaceSlug: string,
+  db: EnhancedTable,
+  row: { id: string; cells: Record<string, unknown> },
+): Promise<void> {
+  for (const col of db.columns) {
+    if (col.type !== "relation" || !col.relation?.bidirectional || !col.relation.reverseColumnId) continue;
+    const { targetSpace, targetDbId, reverseColumnId } = col.relation;
+    const linked = row.cells[col.id];
+    const ids = Array.isArray(linked) ? linked : linked ? [linked] : [];
+    for (const targetRowId of ids) {
+      await syncBidirectionalRemove(targetSpace, targetDbId, reverseColumnId, String(targetRowId), row.id);
+    }
   }
 }
