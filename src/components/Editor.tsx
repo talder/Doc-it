@@ -56,6 +56,7 @@ import type { PDFEmbedAttrs } from "./extensions/PDFEmbedExtension";
 import { TemplatePlaceholderExtension } from "./extensions/TemplatePlaceholderExtension";
 import { EmojiShortcodeExtension } from "./extensions/EmojiShortcodeExtension";
 import { EnhancedTableBlockExtension } from "./extensions/EnhancedTableBlockExtension";
+import { QueryBlockExtension } from "./extensions/QueryBlockExtension";
 import { TableOfContentsExtension } from "./extensions/TableOfContentsExtension";
 import type { EnhancedTableBlockAttrs } from "./extensions/EnhancedTableBlockExtension";
 import { Extension } from "@tiptap/core";
@@ -1208,6 +1209,7 @@ export default function Editor({ filename, initialMarkdown, onSave, onTitleChang
       MentionNode,
       MentionSuggestion,
       EnhancedTableBlockExtension,
+      QueryBlockExtension,
       TableOfContentsExtension,
       Extension.create({
         name: "tabHandler",
@@ -1411,6 +1413,20 @@ export default function Editor({ filename, initialMarkdown, onSave, onTitleChang
       setPendingDbPickerEditor(ev.detail.editor);
       setShowDbPicker(true);
     };
+    const handleQuery = (e: Event) => {
+      const ev = e as CustomEvent;
+      const target = ev.detail.editor;
+      // Insert an unconfigured query block — the node view will auto-open the config panel
+      target?.commands.insertQueryBlock({
+        spaceSlug: spaceSlug || "",
+        dbId: "",
+        columns: "[]",
+        filters: "[]",
+        sorts: "[]",
+        limit: 0,
+      });
+    };
+    document.addEventListener("slash:query", handleQuery);
     document.addEventListener("slash:math", handleMath);
     document.addEventListener("slash:database", handleDatabase);
     document.addEventListener("slash:database-existing", handleDatabaseExisting);
@@ -1433,6 +1449,7 @@ export default function Editor({ filename, initialMarkdown, onSave, onTitleChang
     document.addEventListener("slash:color", handleColor);
     document.addEventListener("slash:emoji", handleEmoji);
     return () => {
+      document.removeEventListener("slash:query", handleQuery);
       document.removeEventListener("slash:color", handleColor);
       document.removeEventListener("slash:math", handleMath);
       document.removeEventListener("slash:database", handleDatabase);

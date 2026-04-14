@@ -279,6 +279,18 @@ const getSlashCommands = (): SlashCommandItem[] => [
     },
   },
   {
+    title: "Query",
+    description: "Insert a live query from an enhanced table",
+    icon: <Database className="h-4 w-4" style={{ color: "#8b5cf6" }} />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run();
+      document.dispatchEvent(new CustomEvent("slash:query", {
+        detail: { editor },
+        bubbles: true,
+      }));
+    },
+  },
+  {
     title: "Template Field",
     description: "Insert a template placeholder field",
     icon: <LayoutTemplate className="h-4 w-4" />,
