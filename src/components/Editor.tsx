@@ -549,21 +549,8 @@ turndown.addRule("queryBlock", {
   filter: (node) => node.nodeName === "DIV" && node.hasAttribute("data-query-block"),
   replacement: (_content, node) => {
     const el = node as HTMLElement;
-    // The config is already base64-encoded in a single attribute
     const configB64 = el.getAttribute("data-query-config") || "";
-    if (configB64) {
-      return `\n<!-- query:${configB64} -->\n\n`;
-    }
-    // Fallback: encode from individual attributes
-    const attrs = {
-      spaceSlug: el.getAttribute("data-space-slug") || "",
-      dbId:      el.getAttribute("data-db-id")      || "",
-      columns:   el.getAttribute("data-columns")    || "[]",
-      filters:   el.getAttribute("data-filters")    || "[]",
-      sorts:     el.getAttribute("data-sorts")      || "[]",
-      limit:     parseInt(el.getAttribute("data-limit") || "0", 10) || 0,
-    };
-    return `\n<!-- query:${btoa(JSON.stringify(attrs))} -->\n\n`;
+    return `\n<!-- query:${configB64} -->\n\n`;
   },
 });
 // Table of contents block → markdown comment
@@ -1443,14 +1430,9 @@ export default function Editor({ filename, initialMarkdown, onSave, onTitleChang
       const ev = e as CustomEvent;
       const target = ev.detail.editor;
       // Insert an unconfigured query block — the node view will auto-open the config panel
-      target?.commands.insertQueryBlock({
-        spaceSlug: spaceSlug || "",
-        dbId: "",
-        columns: "[]",
-        filters: "[]",
-        sorts: "[]",
-        limit: 0,
-      });
+      // Encode the initial empty config as base64
+      const emptyCfg = btoa(JSON.stringify({ spaceSlug: spaceSlug || "", dbId: "", columns: [], filters: [], sorts: [], limit: 0 }));
+      target?.commands.insertQueryBlock({ config: emptyCfg });
     };
     document.addEventListener("slash:query", handleQuery);
     document.addEventListener("slash:math", handleMath);

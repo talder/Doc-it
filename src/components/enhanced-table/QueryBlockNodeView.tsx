@@ -5,18 +5,46 @@ import { NodeViewWrapper } from "@tiptap/react";
 import { Database as DbIcon, Settings, Loader2, X, Plus, Trash2 } from "lucide-react";
 import type { EnhancedTable, DbColumn, DbRow, DbFilter, DbFilterOp, DbSort } from "@/lib/types";
 
-interface NodeViewProps {
-  node: {
-    attrs: {
-      spaceSlug: string;
-      dbId: string;
-      columns: string;
-      filters: string;
-      sorts: string;
-      limit: number;
+interface QueryConfig {
+  spaceSlug: string;
+  dbId: string;
+  columns: string[];
+  filters: DbFilter[];
+  sorts: DbSort[];
+  limit: number;
+}
+
+function decodeConfig(b64: string): QueryConfig {
+  const empty: QueryConfig = { spaceSlug: "", dbId: "", columns: [], filters: [], sorts: [], limit: 0 };
+  if (!b64) return empty;
+  try {
+    const raw = JSON.parse(atob(b64));
+    return {
+      spaceSlug: raw.spaceSlug || "",
+      dbId: raw.dbId || "",
+      columns: typeof raw.columns === "string" ? JSON.parse(raw.columns) : (raw.columns || []),
+      filters: typeof raw.filters === "string" ? JSON.parse(raw.filters) : (raw.filters || []),
+      sorts: typeof raw.sorts === "string" ? JSON.parse(raw.sorts) : (raw.sorts || []),
+      limit: raw.limit || 0,
     };
-  };
+  } catch { return empty; }
+}
+
+function encodeConfig(cfg: QueryConfig): string {
+  return btoa(JSON.stringify({
+    spaceSlug: cfg.spaceSlug,
+    dbId: cfg.dbId,
+    columns: cfg.columns,
+    filters: cfg.filters,
+    sorts: cfg.sorts,
+    limit: cfg.limit,
+  }));
+}
+
+interface NodeViewProps {
+  node: { attrs: { config: string } };
   updateAttributes: (attrs: Record<string, unknown>) => void;
+  editor: { isEditable: boolean };
 }
 
 const FILTER_OPS: { value: DbFilterOp; label: string }[] = [
@@ -87,17 +115,15 @@ function applySorts(rows: DbRow[], sorts: DbSort[], columns: DbColumn[]): DbRow[
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export function QueryBlockNodeView({ node, updateAttributes }: NodeViewProps) {
-  const { spaceSlug, dbId } = node.attrs;
-  const selectedColumns: string[] = (() => { try { return JSON.parse(node.attrs.columns); } catch { return []; } })();
-  const queryFilters: DbFilter[] = (() => { try { return JSON.parse(node.attrs.filters); } catch { return []; } })();
-  const querySorts: DbSort[] = (() => { try { return JSON.parse(node.attrs.sorts); } catch { return []; } })();
-  const limit = node.attrs.limit || 0;
+export function QueryBlockNodeView({ node, updateAttributes, editor }: NodeViewProps) {
+  const cfg = decodeConfig(node.attrs.config);
+  const { spaceSlug, dbId, columns: selectedColumns, filters: queryFilters, sorts: querySorts, limit } = cfg;
+  const editable = editor?.isEditable ?? false;
 
   const [db, setDb] = useState<EnhancedTable | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [configOpen, setConfigOpen] = useState(!dbId);
+  const [configOpen, setConfigOpen] = useState(!dbId && editable);
 
   // Config panel state
   const [tables, setTables] = useState<{ id: string; title: string }[]>([]);
@@ -158,13 +184,15 @@ export function QueryBlockNodeView({ node, updateAttributes }: NodeViewProps) {
 
   // Save config
   const handleSaveConfig = () => {
-    updateAttributes({
+    const newConfig = encodeConfig({
+      spaceSlug,
       dbId: cfgDbId,
-      columns: JSON.stringify(cfgCols),
-      filters: JSON.stringify(cfgFilters),
-      sorts: JSON.stringify(cfgSorts),
+      columns: cfgCols,
+      filters: cfgFilters,
+      sorts: cfgSorts,
       limit: cfgLimit,
     });
+    updateAttributes({ config: newConfig });
     setConfigOpen(false);
     // Trigger re-fetch
     setLoading(true);
@@ -175,8 +203,8 @@ export function QueryBlockNodeView({ node, updateAttributes }: NodeViewProps) {
   if (!dbId && !configOpen) {
     return (
       <NodeViewWrapper className="my-3" contentEditable={false}>
-        <div className="et-block et-block-error" style={{ cursor: "pointer" }} onClick={() => setConfigOpen(true)}>
-          <DbIcon className="w-4 h-4" /> Click to configure query
+        <div className="et-block et-block-error" style={{ cursor: editable ? "pointer" : "default" }} onClick={() => { if (editable) setConfigOpen(true); }}>
+          <DbIcon className="w-4 h-4" /> {editable ? "Click to configure query" : "Unconfigured query block"}
         </div>
       </NodeViewWrapper>
     );
@@ -371,16 +399,18 @@ export function QueryBlockNodeView({ node, updateAttributes }: NodeViewProps) {
             {limit > 0 && <span className="qb-badge">limit {limit}</span>}
           </span>
           <span className="text-[10px] text-text-muted">{results.length} row{results.length !== 1 ? "s" : ""}</span>
-          <button className="et-display-btn" onClick={() => {
-            setCfgDbId(dbId);
-            setCfgCols(selectedColumns);
-            setCfgFilters(queryFilters);
-            setCfgSorts(querySorts);
-            setCfgLimit(limit);
-            setConfigOpen(true);
-          }} title="Configure query">
-            <Settings className="w-3.5 h-3.5" />
-          </button>
+          {editable && (
+            <button className="et-display-btn" onClick={() => {
+              setCfgDbId(dbId);
+              setCfgCols(selectedColumns);
+              setCfgFilters(queryFilters);
+              setCfgSorts(querySorts);
+              setCfgLimit(limit);
+              setConfigOpen(true);
+            }} title="Configure query">
+              <Settings className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
         {results.length === 0 ? (
           <div className="qb-empty">No matching rows</div>
