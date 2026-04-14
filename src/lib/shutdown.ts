@@ -24,11 +24,23 @@ export function getShutdownDeadline(): string {
 }
 
 export function notifyShutdown(): void {
+  if (pending) return; // already in progress
   pending = true;
   deadline = new Date(Date.now() + SHUTDOWN_COUNTDOWN_SECONDS * 1000).toISOString();
   for (const fn of listeners) {
     try { fn(deadline); } catch { /* ignore */ }
   }
+
+  // Schedule session invalidation after countdown
+  setTimeout(async () => {
+    try {
+      const { invalidateAllSessions } = await import("./auth");
+      const count = await invalidateAllSessions();
+      console.log(`[shutdown] Invalidated ${count} session(s) after countdown.`);
+    } catch (err) {
+      console.error("[shutdown] Failed to invalidate sessions:", err);
+    }
+  }, SHUTDOWN_COUNTDOWN_SECONDS * 1000);
 }
 
 export function subscribeShutdown(fn: Listener): void {
