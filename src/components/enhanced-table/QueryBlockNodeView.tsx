@@ -248,11 +248,44 @@ export function QueryBlockNodeView({ node, updateAttributes }: NodeViewProps) {
                       }}>
                         {FILTER_OPS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                       </select>
-                      {f.op !== "isEmpty" && f.op !== "isNotEmpty" && (
-                        <input className="qb-input" value={String(f.value ?? "")} onChange={(e) => {
-                          const next = [...cfgFilters]; next[i] = { ...f, value: e.target.value }; setCfgFilters(next);
-                        }} placeholder="Value" />
-                      )}
+                      {f.op !== "isEmpty" && f.op !== "isNotEmpty" && (() => {
+                        const filterCol = targetCols.find((c) => c.id === f.columnId);
+                        const hasOptions = filterCol && (filterCol.type === "select" || filterCol.type === "multiSelect" || filterCol.type === "tag");
+                        const opts = filterCol?.options || [];
+                        // For tag columns, collect unique tags from all rows in the target table
+                        const tagOpts = filterCol?.type === "tag" && cfgTargetDb
+                          ? [...new Set(cfgTargetDb.rows.flatMap((r) => {
+                              const v = r.cells[filterCol.id];
+                              return Array.isArray(v) ? v : v ? [String(v)] : [];
+                            }))].sort()
+                          : [];
+                        const allOpts = filterCol?.type === "tag" ? tagOpts : opts;
+                        if (hasOptions && allOpts.length > 0) {
+                          return (
+                            <select className="qb-select qb-select-sm" value={String(f.value ?? "")} onChange={(e) => {
+                              const next = [...cfgFilters]; next[i] = { ...f, value: e.target.value }; setCfgFilters(next);
+                            }}>
+                              <option value="">Any…</option>
+                              {allOpts.map((o) => <option key={o} value={o}>{o}</option>)}
+                            </select>
+                          );
+                        }
+                        if (filterCol?.type === "checkbox") {
+                          return (
+                            <select className="qb-select qb-select-sm" value={String(f.value ?? "")} onChange={(e) => {
+                              const next = [...cfgFilters]; next[i] = { ...f, value: e.target.value }; setCfgFilters(next);
+                            }}>
+                              <option value="true">Checked</option>
+                              <option value="false">Unchecked</option>
+                            </select>
+                          );
+                        }
+                        return (
+                          <input className="qb-input" value={String(f.value ?? "")} onChange={(e) => {
+                            const next = [...cfgFilters]; next[i] = { ...f, value: e.target.value }; setCfgFilters(next);
+                          }} placeholder="Value" />
+                        );
+                      })()}
                       <button className="qb-remove" onClick={() => setCfgFilters(cfgFilters.filter((_, j) => j !== i))}>
                         <Trash2 className="w-3 h-3" />
                       </button>
