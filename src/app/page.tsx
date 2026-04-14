@@ -621,10 +621,29 @@ export default function Home() {
   useEffect(() => {
     const es = new EventSource("/api/system/events");
 
-    es.addEventListener("shutdown", () => {
+    es.addEventListener("shutdown", (e: MessageEvent) => {
       setShutdownPending(true);
       const content = lastSavedMarkdownRef.current;
       if (content !== null) handleSave(content).catch(() => {});
+      // Parse deadline and start countdown
+      try {
+        const data = JSON.parse(e.data);
+        if (data.deadline) {
+          const deadlineMs = new Date(data.deadline).getTime();
+          const tick = () => {
+            const remaining = Math.max(0, Math.ceil((deadlineMs - Date.now()) / 1000));
+            const el = document.getElementById("shutdown-countdown");
+            if (el) el.textContent = `${remaining}s`;
+            if (remaining <= 0) {
+              // Sessions are invalidated — force reload to login
+              window.location.href = "/login";
+            } else {
+              setTimeout(tick, 1000);
+            }
+          };
+          tick();
+        }
+      } catch { /* ignore */ }
     });
 
     es.addEventListener("notification", (e: MessageEvent) => {
@@ -1897,11 +1916,11 @@ export default function Home() {
               </div>
             </div>
           )}
-          {/* Server shutdown warning banner */}
+          {/* Server shutdown warning banner with countdown */}
           {shutdownPending && (
             <div className="presence-warning" style={{ background: "var(--color-destructive, #dc2626)", borderColor: "transparent" }}>
               <span style={{ color: "#fff" }}>
-                <strong>⚠ The server is shutting down.</strong> Your work has been saved. Please close this tab — the application will be unavailable shortly.
+                <strong>⚠ Server update in progress.</strong> Your work has been saved. You will be logged out in <strong id="shutdown-countdown">60s</strong>.
               </span>
             </div>
           )}

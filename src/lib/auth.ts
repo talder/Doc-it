@@ -211,6 +211,17 @@ export async function invalidateUserSessions(
 }
 
 /**
+ * Invalidate ALL sessions across all users.
+ * Called during server shutdown to force all clients to disconnect.
+ */
+export async function invalidateAllSessions(): Promise<number> {
+  const sessions = await getSessions();
+  const count = Object.keys(sessions).length;
+  await writeSessions({});
+  return count;
+}
+
+/**
  * Clear a user's TOTP state, forcing re-enrollment on next login.
  * Called by admins when a user loses their authenticator device.
  */

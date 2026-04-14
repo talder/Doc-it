@@ -1,4 +1,4 @@
-import { isShutdownPending, subscribeShutdown, unsubscribeShutdown } from "@/lib/shutdown";
+import { isShutdownPending, getShutdownDeadline, subscribeShutdown, unsubscribeShutdown } from "@/lib/shutdown";
 import { subscribeNotifications } from "@/lib/notification-bus";
 import { getCurrentUser } from "@/lib/auth";
 
@@ -24,18 +24,17 @@ export async function GET(request: Request) {
 
       // If the server is already shutting down, tell the client immediately
       if (isShutdownPending()) {
-        send("shutdown", JSON.stringify({ reason: "Server is shutting down" }));
+        send("shutdown", JSON.stringify({ reason: "Server is shutting down for update", deadline: getShutdownDeadline() }));
         try { controller.close(); } catch { /* ignore */ }
         return;
       }
 
       // Subscribe to future shutdown signals
-      const onShutdown = () => {
-        send("shutdown", JSON.stringify({ reason: "Server is shutting down" }));
-        closed = true;
-        clearInterval(keepalive);
-        unsubNotifs();
-        try { controller.close(); } catch { /* ignore */ }
+      const onShutdown = (dl: string) => {
+        send("shutdown", JSON.stringify({ reason: "Server is shutting down for update", deadline: dl }));
+        // Keep the connection open for the countdown period so the client
+        // can continue showing the timer. The server will force-close after
+        // the deadline via the SIGTERM handler.
       };
       subscribeShutdown(onShutdown);
 

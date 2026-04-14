@@ -173,19 +173,27 @@ setTimeout(async () => {
 // Track whether we've already handled SIGTERM to avoid double-firing
 let shutdownHandled = false;
 
-process.once("SIGTERM", () => {
+process.once("SIGTERM", async () => {
   if (shutdownHandled) return;
   shutdownHandled = true;
 
-  console.log("[shutdown] SIGTERM received — notifying connected clients…");
+  const { SHUTDOWN_COUNTDOWN_SECONDS } = await import("./lib/shutdown");
+  console.log(`[shutdown] SIGTERM received — notifying connected clients (${SHUTDOWN_COUNTDOWN_SECONDS}s countdown)…`);
   notifyShutdown();
 
-  // Give clients ~4 seconds to receive the SSE event and autosave, then
-  // re-raise SIGTERM so Next.js can complete its graceful HTTP shutdown.
-  setTimeout(() => {
+  // After the countdown, invalidate all sessions so clients are forced to
+  // the login page, then re-raise SIGTERM for the HTTP server shutdown.
+  setTimeout(async () => {
+    try {
+      const { invalidateAllSessions } = await import("./lib/auth");
+      const count = await invalidateAllSessions();
+      console.log(`[shutdown] Invalidated ${count} session(s).`);
+    } catch (err) {
+      console.error("[shutdown] Failed to invalidate sessions:", err);
+    }
     console.log("[shutdown] Grace period elapsed — proceeding with shutdown.");
     process.kill(process.pid, "SIGTERM");
-  }, 4_000);
+  }, (SHUTDOWN_COUNTDOWN_SECONDS + 5) * 1000); // +5s buffer
 });
 
 // ── Crash logging — process-level handlers ───────────────────────────────────
