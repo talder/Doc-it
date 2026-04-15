@@ -203,6 +203,31 @@ export default function DatabaseTable({
   const colMenuRef = useRef<HTMLDivElement>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
   const tabNavigating = useRef(false);
+  const tableWrapRef = useRef<HTMLDivElement>(null);
+
+  // Virtual scrolling: only render visible rows when > 100 rows
+  const ROW_HEIGHT = 32;
+  const BUFFER = 10;
+  const useVirtual = rows.length > 100;
+  const [scrollTop, setScrollTop] = useState(0);
+  const [containerHeight, setContainerHeight] = useState(600);
+
+  useEffect(() => {
+    if (!useVirtual || !tableWrapRef.current) return;
+    const el = tableWrapRef.current;
+    setContainerHeight(el.clientHeight);
+    const onScroll = () => setScrollTop(el.scrollTop);
+    const onResize = () => setContainerHeight(el.clientHeight);
+    el.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onResize);
+    return () => { el.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onResize); };
+  }, [useVirtual]);
+
+  const virtualStart = useVirtual ? Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER) : 0;
+  const virtualEnd = useVirtual ? Math.min(rows.length, Math.ceil((scrollTop + containerHeight) / ROW_HEIGHT) + BUFFER) : rows.length;
+  const visibleRows = rows.slice(virtualStart, virtualEnd);
+  const spacerTop = virtualStart * ROW_HEIGHT;
+  const spacerBottom = (rows.length - virtualEnd) * ROW_HEIGHT;
 
   // Column ordering
   const orderedCols = (() => {
@@ -868,7 +893,7 @@ export default function DatabaseTable({
 
   return (
     <>
-    <div className="et-table-wrap">
+    <div className="et-table-wrap" ref={tableWrapRef}>
       <div className="et-table" style={{ gridTemplateColumns: gridCols }}>
         {/* Header */}
         <div className="et-th et-th-rownum">
@@ -1264,8 +1289,14 @@ export default function DatabaseTable({
           </div>
         )}
 
-        {/* Rows */}
-        {rows.map((row, rowIdx) => {
+        {/* Virtual scroll spacer (top) */}
+        {useVirtual && spacerTop > 0 && (
+          <div style={{ gridColumn: "1 / -1", height: spacerTop }} />
+        )}
+
+        {/* Rows (virtualized when > 100 rows) */}
+        {visibleRows.map((row) => {
+          const rowIdx = rows.indexOf(row);
           const isSelected = selectedRows.has(row.id);
           return (
           <div key={row.id} className="et-row contents">
@@ -1290,7 +1321,6 @@ export default function DatabaseTable({
               />
             </div>
             {orderedCols.map((col) => {
-              // Apply conditional formatting
               const cfStyles: React.CSSProperties = {};
               for (const cf of (view.conditionalFormats || [])) {
                 if (matchesCfRule(row, cf, db.columns)) {
@@ -1321,6 +1351,11 @@ export default function DatabaseTable({
           </div>
           );
         })}
+
+        {/* Virtual scroll spacer (bottom) */}
+        {useVirtual && spacerBottom > 0 && (
+          <div style={{ gridColumn: "1 / -1", height: spacerBottom }} />
+        )}
         {/* Footer row with aggregates */}
         {view.showFooter && (
           <>
