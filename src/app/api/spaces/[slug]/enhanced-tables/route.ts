@@ -13,7 +13,10 @@ export async function GET(_request: NextRequest, { params }: Params) {
 
   const dbs = await listEnhancedTables(slug);
   // Return lightweight list (no rows) for perf
-  return NextResponse.json(dbs.map(({ rows, ...rest }) => ({ ...rest, rowCount: rows.length, tags: rest.tags || [] })));
+  return NextResponse.json(dbs.map((db) => {
+    const { rows, ...rest } = db;
+    return { ...rest, rowCount: Array.isArray(rows) ? rows.length : 0, tags: rest.tags || [] };
+  }));
 }
 
 export async function POST(request: NextRequest, { params }: Params) {
