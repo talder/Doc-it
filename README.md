@@ -61,6 +61,22 @@ A self-hosted documentation platform built with Next.js, TipTap, and Tailwind CS
 - **Tags** — enhanced tables support tags with the same add/remove/rename/delete behaviour as document tags; tags appear in the sidebar tag view and global tag index
 - **Per-space storage** — each enhanced table is stored as JSON within its space, versioned with the space
 
+### Enhanced Tables — Performance Guidelines
+
+Each enhanced table is stored as a single JSON file (`docs/{space}/.databases/{id}.db.json`). Every read or write operation loads and saves the entire file. This is fast for typical IT documentation use cases but has practical limits:
+
+| Metric | Comfortable | Workable | Starts to degrade |
+|---|---|---|---|
+| Rows | Up to 2,000 | Up to 5,000 | 10,000+ |
+| Columns | Up to 25 | Up to 40 | 50+ |
+| File size | Up to 2 MB | Up to 5 MB | 10 MB+ |
+
+**Tips for best performance:**
+- Keep tables under 2,000 rows for snappy inline editing
+- Split large datasets across multiple tables (e.g. by year or category)
+- Use views with filters to limit visible rows rather than loading everything
+- CSV export is available for archiving or analysing large datasets externally
+
 ### On-Call Reports
 - **On-call logging** — log on-call incidents with date, time, problem description, working time, and solution
 - **Auto-incrementing IDs** — ONC-000001, ONC-000002, etc.
