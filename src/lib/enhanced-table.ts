@@ -19,16 +19,29 @@ function dbPath(spaceSlug: string, dbId: string): string {
 export async function listEnhancedTables(spaceSlug: string): Promise<EnhancedTable[]> {
   const dir = getEnhancedTableDir(spaceSlug);
   await ensureDir(dir);
-  const files = await fs.readdir(dir);
+  let files: string[];
+  try {
+    files = await fs.readdir(dir);
+  } catch {
+    return [];
+  }
   const dbs: EnhancedTable[] = [];
   for (const f of files) {
     if (!f.endsWith(".db.json")) continue;
     try {
       const raw = await fs.readFile(path.join(dir, f), "utf-8");
-      dbs.push(JSON.parse(raw));
+      const parsed = JSON.parse(raw);
+      // Ensure required fields exist
+      if (parsed && typeof parsed === "object" && parsed.id) {
+        if (!parsed.title) parsed.title = f.replace(".db.json", "");
+        if (!Array.isArray(parsed.rows)) parsed.rows = [];
+        if (!Array.isArray(parsed.columns)) parsed.columns = [];
+        if (!Array.isArray(parsed.views)) parsed.views = [];
+        dbs.push(parsed);
+      }
     } catch { /* skip corrupt */ }
   }
-  return dbs.sort((a, b) => a.title.localeCompare(b.title));
+  return dbs.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
 }
 
 export async function readEnhancedTable(spaceSlug: string, dbId: string): Promise<EnhancedTable | null> {
