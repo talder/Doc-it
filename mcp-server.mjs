@@ -125,7 +125,12 @@ server.registerTool("list_tables", {
   inputSchema: z.object({ space: z.string().optional().describe("Space slug") }),
 }, async ({ space }) => {
   const s = sp(space); if (!s) return ok("Error: No space specified.");
-  return ok(await api("GET", `/api/spaces/${encodeURIComponent(s)}/enhanced-tables`));
+  try {
+    const result = await api("GET", `/api/spaces/${encodeURIComponent(s)}/enhanced-tables`);
+    return ok(result);
+  } catch (err) {
+    return { content: [{ type: "text", text: `Error: ${err.message || String(err)}` }], isError: true };
+  }
 });
 
 server.registerTool("read_table", {
