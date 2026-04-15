@@ -13,6 +13,8 @@ npm run lint         # ESLint
 
 Requires Node.js 24+ (see `.nvmrc`) and npm 10+.
 
+**Branches**: `main` (stable) and `dev` (development). Installers support `--branch dev`.
+
 There is no test framework configured in this project. There are no unit tests.
 
 ## Architecture Overview

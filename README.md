@@ -259,6 +259,7 @@ On first launch, open [http://localhost:3000/setup](http://localhost:3000/setup)
 | `--service` / `-Service` | Install as a system service (launchd / systemd / Windows Service) |
 | `--check` / `-Check` | Run preflight checks only — do not install |
 | `--dir` / `-Dir` | Override install directory (default: `/opt/doc-it` or `C:\doc-it`) |
+| `--branch` / `-Branch` | Git branch to install (default: `main`, use `dev` for development) |
 
 **Service details by platform:**
 - macOS — launchd daemon at `/Library/LaunchDaemons/com.talder.docit.plist` (auto-start at boot)
@@ -289,6 +290,30 @@ powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Upgrade
 ```
 
 The upgrade path automatically creates a **data snapshot** before pulling code, stops the running service, fetches and hard-resets to the latest commit, fixes file ownership, rebuilds as the service user, and restarts. If something goes wrong, restore from the snapshot via **Admin → Backup → Data Snapshots**.
+
+### Development Branch
+
+Doc-it maintains two branches:
+- **`main`** — stable production releases
+- **`dev`** — development builds with latest features (may be unstable)
+
+To install or upgrade from the development branch:
+
+```bash
+# macOS
+bash install-mac.sh --branch dev
+bash install-mac.sh --upgrade --branch dev
+
+# Linux
+bash install-linux.sh --branch dev
+bash install-linux.sh --upgrade --branch dev
+
+# Windows
+powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Branch dev
+powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Upgrade -Branch dev
+```
+
+Omitting `--branch` defaults to `main`.
 
 ### Manual Install
 
