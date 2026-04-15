@@ -118,6 +118,22 @@ DOCIT_URL=http://localhost:3000 DOCIT_API_KEY=dk_u_abc123 node mcp-server.mjs
 | `update_row` | Update a row by ID |
 | `delete_row` | Delete a row by ID |
 
+### On-Call Reports
+
+| Tool | Description |
+|---|---|
+| `list_oncall` | List on-call entries with optional date range and search filters |
+| `create_oncall` | Create a new on-call report entry (date, time, description, working time, solution) |
+| `update_oncall_solution` | Update the solution field of an existing on-call entry |
+
+### Change Log
+
+| Tool | Description |
+|---|---|
+| `list_changelog` | List change log entries with filters (date, category, system, search) |
+| `create_changelog` | Create a new change log entry (system, category, risk, impact, status) |
+| `list_changelog_systems` | List known system names for autocomplete |
+
 ### Tags & System
 
 | Tool | Description |
@@ -141,6 +157,10 @@ An AI assistant can:
 - *"Add a new row to the Leveranciers table"* → calls `create_row` with column name/value pairs
 - *"Search for documents about Active Directory"* → calls `search_docs` with `query: "Active Directory"`
 - *"Update the phone number for Bobby"* → calls `query_table` to find the row, then `update_row`
+- *"Show last week's on-call reports"* → calls `list_oncall` with `from` and `to` dates
+- *"Log an on-call incident: DNS failure at 03:15"* → calls `create_oncall`
+- *"List all network changes this month"* → calls `list_changelog` with `category: "Network"` and date range
+- *"Register a change: upgraded firewall firmware"* → calls `create_changelog` with full details
 
 ---
 

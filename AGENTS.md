@@ -71,11 +71,13 @@ Security headers (CSP, HSTS, X-Frame-Options, etc.) are configured in `next.conf
 
 ### MCP Server (`mcp-server.mjs`)
 
-Standalone MCP (Model Context Protocol) server for AI assistant integration (Warp, Claude, Cursor). Uses stdio transport. Connects to Doc-it via REST API with a `DOCIT_API_KEY`. Exposes 14 tools:
+Standalone MCP (Model Context Protocol) server for AI assistant integration (Warp, Claude, Cursor). Uses stdio transport. Connects to Doc-it via REST API with a `DOCIT_API_KEY`. Exposes 20 tools:
 
 - **Spaces**: `list_spaces`
 - **Documents**: `list_docs`, `read_doc`, `create_doc`, `update_doc`, `search_docs`
 - **Enhanced Tables**: `list_tables`, `read_table`, `query_table`, `create_row`, `update_row`, `delete_row`
+- **On-Call**: `list_oncall`, `create_oncall`, `update_oncall_solution`
+- **Change Log**: `list_changelog`, `create_changelog`, `list_changelog_systems`
 - **Tags**: `list_tags`
 - **System**: `get_version`
 

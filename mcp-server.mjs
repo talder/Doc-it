@@ -40,7 +40,7 @@ function sp(input) { return input || DEFAULT_SPACE; }
 
 const server = new McpServer(
   { name: "docit", version: "1.0.0" },
-  { instructions: `Doc-it MCP server → ${BASE_URL}. ${DEFAULT_SPACE ? `Default space: ${DEFAULT_SPACE}.` : "Provide 'space' param."} Use list_spaces first.` }
+  { instructions: `Doc-it MCP server → ${BASE_URL}. ${DEFAULT_SPACE ? `Default space: ${DEFAULT_SPACE}.` : "Provide 'space' param."} Tools: list_spaces, list_docs, read_doc, create_doc, update_doc, search_docs, list_tables, read_table, query_table, create_row, update_row, delete_row, list_tags, list_oncall, create_oncall, update_oncall_solution, list_changelog, create_changelog, list_changelog_systems, get_version. Use list_spaces first.` }
 );
 
 // ── Spaces ───────────────────────────────────────────────────────────────────
@@ -225,7 +225,90 @@ server.registerTool("list_tags", {
   return ok(await api("GET", `/api/spaces/${encodeURIComponent(s)}/tags`));
 });
 
-// ── System ───────────────────────────────────────────────────────────────────
+// ── On-Call ─────────────────────────────────────────────────────────────
+
+server.registerTool("list_oncall", {
+  description: "List on-call report entries with optional filtering by date range and search query",
+  inputSchema: z.object({
+    from: z.string().optional().describe("Start date (YYYY-MM-DD)"),
+    to: z.string().optional().describe("End date (YYYY-MM-DD)"),
+    query: z.string().optional().describe("Search text"),
+  }),
+}, async ({ from, to, query }) => {
+  const p = new URLSearchParams();
+  if (from) p.set("from", from);
+  if (to) p.set("to", to);
+  if (query) p.set("q", query);
+  return ok(await api("GET", `/api/oncall?${p}`));
+});
+
+server.registerTool("create_oncall", {
+  description: "Create an on-call report entry",
+  inputSchema: z.object({
+    date: z.string().describe("Date (YYYY-MM-DD)"),
+    time: z.string().describe("Time (HH:MM)"),
+    description: z.string().describe("Problem description"),
+    workingTime: z.string().optional().describe("Duration (e.g. '1h30m', '45m')"),
+    solution: z.string().optional().describe("Solution description"),
+    assistedBy: z.array(z.string()).optional().describe("Usernames of people who assisted"),
+  }),
+}, async ({ date, time, description, workingTime, solution, assistedBy }) => {
+  return ok(await api("POST", "/api/oncall", { date, time, description, workingTime, solution, assistedBy }));
+});
+
+server.registerTool("update_oncall_solution", {
+  description: "Update the solution field of an existing on-call entry",
+  inputSchema: z.object({
+    id: z.string().describe("On-call entry ID (e.g. ONC-000001)"),
+    solution: z.string().describe("Updated solution text"),
+  }),
+}, async ({ id, solution }) => {
+  return ok(await api("PATCH", `/api/oncall/${encodeURIComponent(id)}`, { solution }));
+});
+
+// ── Change Log ──────────────────────────────────────────────────────────
+
+server.registerTool("list_changelog", {
+  description: "List change log entries with optional filtering",
+  inputSchema: z.object({
+    from: z.string().optional().describe("Start date (YYYY-MM-DD)"),
+    to: z.string().optional().describe("End date (YYYY-MM-DD)"),
+    query: z.string().optional().describe("Search text"),
+    category: z.string().optional().describe("Category filter (Disk, Network, Security, Software, Hardware, Configuration, Other)"),
+    system: z.string().optional().describe("System name filter"),
+  }),
+}, async ({ from, to, query, category, system }) => {
+  const p = new URLSearchParams();
+  if (from) p.set("from", from);
+  if (to) p.set("to", to);
+  if (query) p.set("q", query);
+  if (category) p.set("category", category);
+  if (system) p.set("system", system);
+  return ok(await api("GET", `/api/changelog?${p}`));
+});
+
+server.registerTool("create_changelog", {
+  description: "Create a new change log entry",
+  inputSchema: z.object({
+    date: z.string().describe("Date (YYYY-MM-DD)"),
+    system: z.string().describe("System or hostname affected"),
+    category: z.enum(["Disk", "Network", "Security", "Software", "Hardware", "Configuration", "Other"]).describe("Change category"),
+    description: z.string().describe("What was changed"),
+    impact: z.string().describe("Impact description"),
+    risk: z.enum(["Low", "Medium", "High", "Critical"]).describe("Risk level"),
+    status: z.enum(["Completed", "Failed", "Rolled Back"]).describe("Change status"),
+  }),
+}, async ({ date, system, category, description, impact, risk, status }) => {
+  return ok(await api("POST", "/api/changelog", { date, system, category, description, impact, risk, status }));
+});
+
+server.registerTool("list_changelog_systems", {
+  description: "List known system names used in the change log (for autocomplete)",
+}, async () => {
+  return ok(await api("GET", "/api/changelog?systems=1"));
+});
+
+// ── System ───────────────────────────────────────────────────────────────
 
 server.registerTool("get_version", { description: "Get Doc-it server version" }, async () => {
   return ok(await api("GET", "/api/version"));

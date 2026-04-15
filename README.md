@@ -172,7 +172,8 @@ A self-hosted documentation platform built with Next.js, TipTap, and Tailwind CS
 - **Admin panel** — manage users, spaces, groups, permissions, SMTP settings, Active Directory, service API keys, backups, and audit logs
 - **SMTP email** — configurable email notifications: new user registration (admins), review assignment, mentions, security incidents, helpdesk ticket events
 - **Real-time notifications** — topbar bell updates instantly via SSE; no page refresh required
-- **Graceful shutdown** — when the service stops, connected browser tabs receive a warning and any open document is autosaved before the server exits
+- **Graceful shutdown** — when the service stops, connected browser tabs receive a 60-second countdown warning, work is autosaved, and all sessions are invalidated before exit
+- **MCP server** — standalone Model Context Protocol server (`mcp-server.mjs`) for AI assistant integration (Warp, Claude, Cursor) with 20 tools covering documents, enhanced tables, on-call reports, change log, tags, and system info
 
 ### NIS2 Audit Logging
 - **34 event types** covering authentication, document changes, user management, space operations, API key lifecycle, and settings changes
