@@ -417,6 +417,136 @@ const GROUPS: EndpointGroup[] = [
       },
     ],
   },
+  {
+    name: "On-Call Reports",
+    endpoints: [
+      {
+        id: "list-oncall", method: "GET", path: "/api/oncall", summary: "List on-call entries with optional filtering", auth: "user",
+        params: [
+          { name: "from", type: "query", required: false, description: "Start date (YYYY-MM-DD)" },
+          { name: "to", type: "query", required: false, description: "End date (YYYY-MM-DD)" },
+          { name: "q", type: "query", required: false, description: "Search text" },
+        ],
+      },
+      {
+        id: "create-oncall", method: "POST", path: "/api/oncall", summary: "Create an on-call report entry", auth: "user",
+        params: [
+          { name: "date", type: "body", required: true, description: "Date (YYYY-MM-DD)", example: "2026-04-15" },
+          { name: "time", type: "body", required: true, description: "Time (HH:MM)", example: "03:15" },
+          { name: "description", type: "body", required: true, description: "Problem description" },
+          { name: "workingTime", type: "body", required: false, description: "Duration (e.g. 1h30m, 45m)" },
+          { name: "solution", type: "body", required: false, description: "Solution description" },
+          { name: "assistedBy", type: "body", required: false, description: "Array of usernames who assisted" },
+        ],
+      },
+      {
+        id: "get-oncall", method: "GET", path: "/api/oncall/{id}", summary: "Get a single on-call entry", auth: "user",
+        params: [{ name: "id", type: "path", required: true, description: "On-call entry ID (e.g. ONC-000001)" }],
+      },
+      {
+        id: "update-oncall-solution", method: "PATCH", path: "/api/oncall/{id}", summary: "Update the solution field (only field editable after creation)", auth: "user",
+        params: [
+          { name: "id", type: "path", required: true, description: "On-call entry ID" },
+          { name: "solution", type: "body", required: true, description: "Updated solution text" },
+        ],
+      },
+      {
+        id: "delete-oncall", method: "DELETE", path: "/api/oncall/{id}", summary: "Delete an on-call entry (admin only)", auth: "admin",
+        params: [{ name: "id", type: "path", required: true, description: "On-call entry ID" }],
+      },
+      { id: "oncall-stats", method: "GET", path: "/api/oncall/stats", summary: "Get on-call statistics, per-registrar breakdown, and heatmap", auth: "user",
+        params: [{ name: "days", type: "query", required: false, description: "Heatmap period in days (default 90)" }],
+      },
+      { id: "oncall-users", method: "GET", path: "/api/oncall/users", summary: "List users available for assisted-by picker", auth: "user" },
+      { id: "get-oncall-settings", method: "GET", path: "/api/oncall/settings", summary: "Get on-call settings (admin)", auth: "admin" },
+      {
+        id: "put-oncall-settings", method: "PUT", path: "/api/oncall/settings", summary: "Update on-call settings (admin)", auth: "admin",
+        params: [
+          { name: "allowedUsers", type: "body", required: false, description: "Array of usernames allowed to use on-call" },
+          { name: "emailEnabled", type: "body", required: false, description: "Boolean — enable weekly email digest" },
+          { name: "emailRecipients", type: "body", required: false, description: "Array of email addresses" },
+        ],
+      },
+    ],
+  },
+  {
+    name: "Change Log",
+    endpoints: [
+      {
+        id: "list-changelog", method: "GET", path: "/api/changelog", summary: "List change log entries with optional filtering", auth: "user",
+        params: [
+          { name: "q", type: "query", required: false, description: "Search text" },
+          { name: "from", type: "query", required: false, description: "Start date (YYYY-MM-DD)" },
+          { name: "to", type: "query", required: false, description: "End date (YYYY-MM-DD)" },
+          { name: "category", type: "query", required: false, description: "Category filter" },
+          { name: "system", type: "query", required: false, description: "System name filter" },
+          { name: "systems", type: "query", required: false, description: "Set to \"1\" to return known system names only" },
+        ],
+      },
+      {
+        id: "create-changelog", method: "POST", path: "/api/changelog", summary: "Create a new change log entry", auth: "user",
+        params: [
+          { name: "date", type: "body", required: true, description: "Date (YYYY-MM-DD)" },
+          { name: "system", type: "body", required: true, description: "System or hostname affected" },
+          { name: "category", type: "body", required: true, description: "Disk | Network | Security | Software | Hardware | Configuration | Other" },
+          { name: "description", type: "body", required: true, description: "What was changed" },
+          { name: "impact", type: "body", required: true, description: "Impact description" },
+          { name: "risk", type: "body", required: true, description: "Low | Medium | High | Critical" },
+          { name: "status", type: "body", required: true, description: "Completed | Failed | Rolled Back" },
+        ],
+      },
+    ],
+  },
+  {
+    name: "Search",
+    endpoints: [
+      {
+        id: "search-docs", method: "GET", path: "/api/spaces/{slug}/search", summary: "Search documents, content, tags, and enhanced table rows", auth: "user",
+        params: [
+          { name: "slug", type: "path", required: true, description: "Space slug" },
+          { name: "q", type: "query", required: true, description: "Search query (min 2 chars)" },
+          { name: "category", type: "query", required: false, description: "Filter by category" },
+          { name: "tag", type: "query", required: false, description: "Filter by tag" },
+          { name: "author", type: "query", required: false, description: "Filter by author" },
+          { name: "classification", type: "query", required: false, description: "public | internal | confidential | restricted" },
+          { name: "from", type: "query", required: false, description: "Updated after date (YYYY-MM-DD)" },
+          { name: "to", type: "query", required: false, description: "Updated before date (YYYY-MM-DD)" },
+        ],
+      },
+    ],
+  },
+  {
+    name: "Tags",
+    endpoints: [
+      {
+        id: "list-tags", method: "GET", path: "/api/spaces/{slug}/tags", summary: "List all tags in a space with document counts", auth: "user",
+        params: [{ name: "slug", type: "path", required: true, description: "Space slug" }],
+      },
+      {
+        id: "rename-tag", method: "PATCH", path: "/api/spaces/{slug}/tags", summary: "Rename a tag across all documents and tables", auth: "user",
+        params: [
+          { name: "slug", type: "path", required: true, description: "Space slug" },
+          { name: "oldName", type: "body", required: true, description: "Current tag name" },
+          { name: "newName", type: "body", required: true, description: "New tag name" },
+        ],
+      },
+      {
+        id: "delete-tag", method: "DELETE", path: "/api/spaces/{slug}/tags", summary: "Delete a tag from all documents and tables", auth: "user",
+        params: [
+          { name: "slug", type: "path", required: true, description: "Space slug" },
+          { name: "tagName", type: "body", required: true, description: "Tag name to delete" },
+        ],
+      },
+    ],
+  },
+  {
+    name: "System",
+    endpoints: [
+      { id: "get-version", method: "GET", path: "/api/version", summary: "Get Doc-it server version", auth: "none" },
+      { id: "system-events", method: "GET", path: "/api/system/events", summary: "SSE stream for shutdown warnings and real-time notifications", auth: "user" },
+      { id: "admin-shutdown", method: "POST", path: "/api/admin/shutdown", summary: "Trigger 60-second shutdown countdown for all connected clients", auth: "admin" },
+    ],
+  },
 ];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
