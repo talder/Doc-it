@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { X, Copy, Trash2, Hash, Link2, Search, Plus } from "lucide-react";
 import type { EnhancedTable, DbColumn, DbRow } from "@/lib/types";
+import { copyToClipboard } from "@/lib/clipboard";
 
 const TAG_PRESET_COLORS = [
   "#ef4444", "#f97316", "#eab308", "#22c55e",
@@ -369,7 +370,7 @@ export default function RowEditModal({
           {/* Copy permalink */}
           <button className="rem-btn rem-btn-secondary" onClick={() => {
             const url = `${window.location.origin}/spaces/${encodeURIComponent(spaceSlug || "")}/tables/${encodeURIComponent(db.id)}/row/${encodeURIComponent(row.id)}`;
-            navigator.clipboard.writeText(url).catch(() => {});
+            copyToClipboard(url);
           }} title="Copy row link">
             <Link2 className="w-3.5 h-3.5" /> Copy Link
           </button>
