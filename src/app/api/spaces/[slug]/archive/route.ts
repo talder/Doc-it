@@ -55,7 +55,10 @@ export async function GET(_req: NextRequest, { params }: Params) {
   const type = _req.nextUrl.searchParams.get("type");
   if (type === "enhanced-tables") {
     const dbs = await listArchivedEnhancedTables(slug);
-    return NextResponse.json(dbs.map(({ rows, ...rest }) => ({ ...rest, rowCount: rows.length })));
+    return NextResponse.json(dbs.map((db) => {
+      const { rows, ...rest } = db;
+      return { ...rest, rowCount: Array.isArray(rows) ? rows.length : 0 };
+    }));
   }
 
   const archiveDir = getArchiveSpaceDir(slug);

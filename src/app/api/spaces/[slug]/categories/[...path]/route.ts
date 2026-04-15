@@ -118,7 +118,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
     id: db.id,
     title: db.title,
     tags: db.tags || [],
-    rowCount: db.rows.length,
+    rowCount: Array.isArray(db.rows) ? db.rows.length : 0,
     createdAt: db.createdAt,
     createdBy: db.createdBy,
   }));

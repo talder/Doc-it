@@ -62,7 +62,10 @@ export async function GET(_request: NextRequest, { params }: Params) {
     .map((u) => ({ username: u.username, fullName: u.fullName }));
 
   // Databases: strip rows for lightweight listing
-  const databases = rawDbs.map(({ rows, ...rest }) => ({ ...rest, rowCount: rows.length }));
+  const databases = rawDbs.map((db) => {
+    const { rows, ...rest } = db;
+    return { ...rest, rowCount: Array.isArray(rows) ? rows.length : 0 };
+  });
 
   const payload = { categories, docs, tags, templates, members, customization, databases, statuses };
   setSpaceCache(slug, payload);
