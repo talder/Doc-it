@@ -54,19 +54,34 @@ Doc-it is a self-hosted documentation platform built as a single **Next.js 16 Ap
 - `changelog.ts` — change log module
 - `oncall.ts` — on-call report CRUD, filtering, weekly email (server-only; imports `config.ts`)
 - `oncall-shared.ts` — client-safe on-call types and pure helpers (no server deps; safe to import from `"use client"` components)
+- `csv.ts` — client-safe CSV parse/generate/download utilities for enhanced table import/export
 
 ### Component Organization (`src/components/`)
 
 - `Editor.tsx` — main TipTap editor with bubble menu, markdown import/export via `marked`+`turndown`
 - `sidebar/Sidebar.tsx` — main sidebar with categories, docs, tags, enhanced tables, favorites
 - `extensions/` — all custom TipTap node/mark extensions
-- `enhanced-table/` — enhanced table views (table, kanban, gallery, calendar)
+- `enhanced-table/` — enhanced table views (table, kanban, gallery, calendar), row edit modal, query block node view
 - `helpdesk/` — helpdesk UI components (ticket panel, form designer, portal page designer, SLA/rule editors)
 - `modals/` — modal dialogs for CRUD operations
 
 ### Security Headers
 
 Security headers (CSP, HSTS, X-Frame-Options, etc.) are configured in `next.config.ts` via `headers()`. `canvas` and `better-sqlite3` are declared as `serverExternalPackages`. Turbopack aliases `canvas` to `empty-module.js` to avoid client-side bundling errors.
+
+### MCP Server (`mcp-server.mjs`)
+
+Standalone MCP (Model Context Protocol) server for AI assistant integration (Warp, Claude, Cursor). Uses stdio transport. Connects to Doc-it via REST API with a `DOCIT_API_KEY`. Exposes 14 tools:
+
+- **Spaces**: `list_spaces`
+- **Documents**: `list_docs`, `read_doc`, `create_doc`, `update_doc`, `search_docs`
+- **Enhanced Tables**: `list_tables`, `read_table`, `query_table`, `create_row`, `update_row`, `delete_row`
+- **Tags**: `list_tags`
+- **System**: `get_version`
+
+Run: `DOCIT_URL=http://localhost:3000 DOCIT_API_KEY=dk_u_... node mcp-server.mjs`
+
+See `documentation/features/mcp-server.md` for full setup guide.
 
 ## Data Directories (gitignored)
 
