@@ -240,7 +240,8 @@ export type DbColumnType =
   | "text" | "number" | "select" | "multiSelect"
   | "checkbox" | "date" | "url" | "email"
   | "formula" | "member" | "createdBy"
-  | "relation" | "lookup" | "tag";
+  | "relation" | "lookup" | "tag"
+  | "autoIncrement";
 
 export type DbViewType = "table" | "kanban" | "calendar" | "gallery";
 
@@ -261,6 +262,19 @@ export interface DbColumnLookup {
   aggregate?: DbLookupAggregate; // how to reduce multiple values (default "list")
 }
 
+export interface DbAutoIncrementConfig {
+  prefix: string;               // e.g. "CT-", "INV-"
+  padLength: number;            // zero-pad to this length (default 4)
+}
+
+export type DbNumberFormatStyle = "plain" | "currency" | "percent";
+
+export interface DbNumberFormat {
+  style: DbNumberFormatStyle;
+  decimals?: number;            // decimal places (default 0 for plain, 2 for currency/percent)
+  currency?: string;            // e.g. "EUR", "USD" — only used when style is "currency"
+}
+
 export interface DbColumn {
   id: string;
   name: string;
@@ -272,6 +286,9 @@ export interface DbColumn {
   defaultCurrentDate?: boolean; // date only: use today's date as default
   relation?: DbColumnRelation;  // relation column config
   lookup?: DbColumnLookup;      // lookup column config
+  description?: string;         // tooltip on column header hover
+  autoIncrement?: DbAutoIncrementConfig;  // auto-increment config
+  numberFormat?: DbNumberFormat;          // number display formatting
 }
 
 export interface DbRow {
@@ -323,6 +340,15 @@ export interface DbView {
   columnOrder?: string[];    // columnIds in display order
   columnWidths?: Record<string, number>;
   conditionalFormats?: DbConditionalFormat[];
+  showFooter?: boolean;      // show aggregate footer row
+}
+
+export interface DbWebhook {
+  id: string;
+  url: string;
+  events: ("create" | "update" | "delete")[];
+  filter?: DbFilter;           // optional: only trigger when this filter matches
+  enabled: boolean;
 }
 
 export interface EnhancedTable {
@@ -332,6 +358,8 @@ export interface EnhancedTable {
   rows: DbRow[];
   views: DbView[];
   tags?: string[];
+  nextAutoNumber?: number;     // global counter for autoIncrement columns
+  webhooks?: DbWebhook[];      // automation webhooks
   createdAt: string;
   createdBy: string;
   updatedAt: string;

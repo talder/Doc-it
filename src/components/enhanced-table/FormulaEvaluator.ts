@@ -1,12 +1,18 @@
 import type { DbColumn, DbRow } from "@/lib/types";
 
 /**
- * Evaluate a simple formula expression against a row.
+ * Evaluate a formula expression against a row.
  *
  * Supported:
- *   prop("Column Name")  — returns the value of that column
+ *   {Column Name}        — column reference (curly braces)
+ *   prop("Column Name")  — column reference (function form)
  *   now()                — current date ISO string
- *   if(cond, then, else)
+ *   if(cond, then, else) — conditional
+ *   CONCAT(a, b, ...)    — string concatenation
+ *   SUM("Column")        — sum all rows for a column
+ *   COUNT("Column")      — count non-empty values
+ *   AVG("Column")        — average of numeric values
+ *   MIN("Column"), MAX("Column") — min/max across all rows
  *   Arithmetic: + - * /
  *   String concatenation with +
  *   Comparisons: ==, !=, >, <, >=, <=
@@ -16,13 +22,14 @@ export function evaluateFormula(
   formula: string,
   row: DbRow,
   columns: DbColumn[],
+  allRows?: DbRow[],
 ): unknown {
   try {
     const colByName = new Map(columns.map((c) => [c.name.toLowerCase(), c]));
 
     // Tokenize: split into tokens handling strings, parentheses, operators, identifiers
     const tokens = tokenize(formula);
-    const ctx: EvalContext = { row, colByName, pos: 0, tokens };
+    const ctx: EvalContext = { row, colByName, pos: 0, tokens, allRows: allRows || [] };
     const result = parseExpression(ctx);
     return result;
   } catch {
@@ -35,6 +42,7 @@ interface EvalContext {
   colByName: Map<string, DbColumn>;
   pos: number;
   tokens: Token[];
+  allRows: DbRow[];
 }
 
 type Token =
@@ -74,6 +82,15 @@ function tokenize(expr: string): Token[] {
       let num = "";
       while (i < expr.length && /[0-9.]/.test(expr[i])) { num += expr[i]; i++; }
       tokens.push({ type: "number", value: parseFloat(num) });
+      continue;
+    }
+    // {Column Name} reference
+    if (ch === "{") {
+      let ref = "";
+      i++;
+      while (i < expr.length && expr[i] !== "}") { ref += expr[i]; i++; }
+      i++; // closing }
+      tokens.push({ type: "string", value: "__COL_REF:" + ref });
       continue;
     }
     // Identifier
@@ -150,7 +167,16 @@ function parsePrimary(ctx: EvalContext): unknown {
   const t = peek(ctx);
   if (!t) return "";
 
-  if (t.type === "string") { consume(ctx); return t.value; }
+  if (t.type === "string") {
+    consume(ctx);
+    // Handle {ColumnName} references
+    if (typeof t.value === "string" && t.value.startsWith("__COL_REF:")) {
+      const colName = t.value.slice(10).toLowerCase();
+      const col = ctx.colByName.get(colName);
+      return col ? ctx.row.cells[col.id] ?? "" : "";
+    }
+    return t.value;
+  }
   if (t.type === "number") { consume(ctx); return t.value; }
   if (t.type === "bool") { consume(ctx); return t.value; }
 
@@ -175,6 +201,20 @@ function parsePrimary(ctx: EvalContext): unknown {
       }
       if (peek(ctx)?.type === "paren") consume(ctx); // )
 
+      // Helper: get numeric values for a column across all rows
+      const colNums = (colArg: unknown): number[] => {
+        const cn = String(colArg || "").toLowerCase();
+        const c = ctx.colByName.get(cn);
+        if (!c) return [];
+        return ctx.allRows.map((r) => Number(r.cells[c.id])).filter((n) => !isNaN(n));
+      };
+      const colVals = (colArg: unknown): unknown[] => {
+        const cn = String(colArg || "").toLowerCase();
+        const c = ctx.colByName.get(cn);
+        if (!c) return [];
+        return ctx.allRows.map((r) => r.cells[c.id]).filter((v) => v != null && v !== "");
+      };
+
       switch (name) {
         case "prop": {
           const colName = String(args[0] || "").toLowerCase();
@@ -183,13 +223,25 @@ function parsePrimary(ctx: EvalContext): unknown {
         }
         case "now": return new Date().toISOString().slice(0, 10);
         case "if": return args[0] ? args[1] : args[2];
+        case "concat": return args.map(String).join("");
         case "len": return String(args[0] || "").length;
         case "lower": return String(args[0] || "").toLowerCase();
         case "upper": return String(args[0] || "").toUpperCase();
         case "round": return Math.round(Number(args[0] || 0));
         case "abs": return Math.abs(Number(args[0] || 0));
-        case "min": return Math.min(...args.map(Number));
-        case "max": return Math.max(...args.map(Number));
+        // Per-row min/max (inline values)
+        case "min": {
+          if (args.length === 1 && typeof args[0] === "string") { const n = colNums(args[0]); return n.length ? Math.min(...n) : 0; }
+          return Math.min(...args.map(Number));
+        }
+        case "max": {
+          if (args.length === 1 && typeof args[0] === "string") { const n = colNums(args[0]); return n.length ? Math.max(...n) : 0; }
+          return Math.max(...args.map(Number));
+        }
+        // Aggregate functions (across all rows)
+        case "sum": { const n = colNums(args[0]); return n.reduce((a, b) => a + b, 0); }
+        case "count": { return colVals(args[0]).length; }
+        case "avg": { const n = colNums(args[0]); return n.length ? n.reduce((a, b) => a + b, 0) / n.length : 0; }
         default: return "#UNKNOWN_FN";
       }
     }

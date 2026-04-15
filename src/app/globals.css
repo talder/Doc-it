@@ -6094,6 +6094,16 @@ textarea.modal-input {
   opacity: 0.85;
 }
 
+/* ── Footer row ─────────────────────────────────────────────────── */
+
+.et-td-footer {
+  background: var(--color-muted);
+  border-top: 2px solid var(--color-border);
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
 /* ── Row edit modal ───────────────────────────────────────────────── */
 
 .rem-overlay {

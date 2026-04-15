@@ -26,12 +26,19 @@ export async function POST(request: NextRequest, { params }: Params) {
 
   const { cells } = await request.json();
 
-  // Auto-populate createdBy columns with the authenticated user
+  // Auto-populate createdBy and autoIncrement columns
   const user = await getCurrentUser();
   const mergedCells: Record<string, unknown> = { ...(cells || {}) };
   for (const col of db.columns) {
     if (col.type === "createdBy" && !mergedCells[col.id]) {
       mergedCells[col.id] = user?.username || "";
+    }
+    if (col.type === "autoIncrement" && col.autoIncrement && !mergedCells[col.id]) {
+      const num = db.nextAutoNumber || 1;
+      const prefix = col.autoIncrement.prefix || "";
+      const padLen = col.autoIncrement.padLength || 4;
+      mergedCells[col.id] = `${prefix}${String(num).padStart(padLen, "0")}`;
+      db.nextAutoNumber = num + 1;
     }
   }
 

@@ -430,7 +430,7 @@ export default function EnhancedTableView({ dbId, spaceSlug, canWrite, onClose, 
       result = result.map((row) => {
         const cells = { ...row.cells };
         for (const fc of formulaCols) {
-          cells[fc.id] = evaluateFormula(fc.formula!, row, db.columns);
+          cells[fc.id] = evaluateFormula(fc.formula!, row, db.columns, db.rows);
         }
         return { ...row, cells };
       });

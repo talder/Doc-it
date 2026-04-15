@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Plus, Trash2, MoreVertical, GripVertical, Copy, Eraser, X, ArrowUp, ArrowDown, Link2, Search, Hash, Pencil, Edit3 } from "lucide-react";
 import type { EnhancedTable, DbColumn, DbRow, DbView, DbColumnType, DbLookupAggregate, DbConditionalFormat } from "@/lib/types";
+import { Info } from "lucide-react";
 import RowEditModal from "./RowEditModal";
 
 function matchesCfRule(row: DbRow, rule: DbConditionalFormat, columns: DbColumn[]): boolean {
@@ -37,7 +38,28 @@ const COLUMN_TYPES: { value: DbColumnType; label: string }[] = [
   { value: "relation", label: "Relation" },
   { value: "lookup", label: "Lookup" },
   { value: "tag", label: "Tag" },
+  { value: "autoIncrement", label: "Auto ID" },
 ];
+
+/** Format a number value using column's numberFormat config */
+function formatNumber(value: unknown, col: DbColumn): string {
+  if (value == null || value === "") return "";
+  const num = Number(value);
+  if (isNaN(num)) return String(value);
+  const fmt = col.numberFormat;
+  if (!fmt || fmt.style === "plain") {
+    return fmt?.decimals != null ? num.toFixed(fmt.decimals) : String(num);
+  }
+  try {
+    if (fmt.style === "currency") {
+      return new Intl.NumberFormat(undefined, { style: "currency", currency: fmt.currency || "EUR", minimumFractionDigits: fmt.decimals ?? 2, maximumFractionDigits: fmt.decimals ?? 2 }).format(num);
+    }
+    if (fmt.style === "percent") {
+      return new Intl.NumberFormat(undefined, { style: "percent", minimumFractionDigits: fmt.decimals ?? 0, maximumFractionDigits: fmt.decimals ?? 0 }).format(num / 100);
+    }
+  } catch { /* fallback */ }
+  return String(num);
+}
 
 const LOOKUP_AGGREGATES: { value: DbLookupAggregate; label: string }[] = [
   { value: "list", label: "List" },
@@ -197,7 +219,7 @@ export default function DatabaseTable({
   const startEdit = (rowId: string, colId: string, currentValue: unknown) => {
     if (!canWrite) return;
     const col = db.columns.find((c) => c.id === colId);
-    if (col?.type === "createdBy" || col?.type === "lookup") return; // read-only
+    if (col?.type === "createdBy" || col?.type === "lookup" || col?.type === "autoIncrement") return; // read-only
     if (col?.type === "tag") {
       setEditCell({ rowId, colId });
       setTagSearch("");
@@ -264,7 +286,7 @@ export default function DatabaseTable({
     if (nc >= orderedCols.length) { nc = 0; nr++; }
     else if (nc < 0) { nc = orderedCols.length - 1; nr--; }
     // Skip read-only columns
-    while (nr >= 0 && nr < rows.length && (orderedCols[nc]?.type === "createdBy" || orderedCols[nc]?.type === "lookup")) {
+    while (nr >= 0 && nr < rows.length && (orderedCols[nc]?.type === "createdBy" || orderedCols[nc]?.type === "lookup" || orderedCols[nc]?.type === "autoIncrement")) {
       nc += step;
       if (nc >= orderedCols.length) { nc = 0; nr++; }
       else if (nc < 0) { nc = orderedCols.length - 1; nr--; }
@@ -766,6 +788,11 @@ export default function DatabaseTable({
       );
     }
 
+    // ── Auto-increment (read-only) ───────────────────────────────────
+    if (col.type === "autoIncrement") {
+      return value ? <span className="et-cell-text" style={{ fontFamily: "monospace", fontWeight: 500 }}>{String(value)}</span> : <span className="et-cell-empty">—</span>;
+    }
+
     // ── Lookup cell (read-only) ────────────────────────────────────────
     if (col.type === "lookup" && col.lookup) {
       const computed = row.cells[col.id];
@@ -792,6 +819,11 @@ export default function DatabaseTable({
 
     if (col.type === "url" && value) {
       return <a href={String(value)} target="_blank" rel="noopener noreferrer" className="et-cell-link">{String(value)}</a>;
+    }
+
+    // Number formatting
+    if (col.type === "number" && col.numberFormat && value != null && value !== "") {
+      return <span className="et-cell-text">{formatNumber(value, col)}</span>;
     }
 
     const display = value != null && value !== "" ? String(value) : "";
@@ -838,8 +870,9 @@ export default function DatabaseTable({
             onDragLeave={() => { if (dropTarget?.colId === col.id) setDropTarget(null); }}
           >
             {canWrite && <GripVertical className="et-th-grip" />}
-            <span className="et-th-name et-th-name-sortable" onClick={handleHeaderClick}>
+            <span className="et-th-name et-th-name-sortable" onClick={handleHeaderClick} title={col.description || undefined}>
               {col.name}
+              {col.description && <Info className="w-2.5 h-2.5 text-text-muted inline ml-0.5 opacity-50" />}
               {currentSort && (
                 <span className="et-th-sort-icon">
                   {currentSort.dir === "asc" ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
@@ -1146,6 +1179,35 @@ export default function DatabaseTable({
                         setLookupConfigCol(col.id);
                       }}>Configure lookup…</button>
                     )}
+                    {/* Description */}
+                    <button className="et-col-menu-item" onClick={() => {
+                      const desc = prompt("Column description (shown as tooltip):", col.description || "");
+                      if (desc !== null) { onUpdateColumn(col.id, { description: desc || undefined }); setColMenu(null); }
+                    }}>Set description…</button>
+                    {/* Auto-increment config */}
+                    {col.type === "autoIncrement" && (
+                      <button className="et-col-menu-item" onClick={() => {
+                        const prefix = prompt("ID prefix (e.g. CT-, INV-):", col.autoIncrement?.prefix || "");
+                        if (prefix !== null) {
+                          const padStr = prompt("Pad length (digits):", String(col.autoIncrement?.padLength || 4));
+                          const padLength = parseInt(padStr || "4") || 4;
+                          onUpdateColumn(col.id, { autoIncrement: { prefix, padLength } });
+                          setColMenu(null);
+                        }
+                      }}>Configure Auto ID…</button>
+                    )}
+                    {/* Number format config */}
+                    {col.type === "number" && (
+                      <button className="et-col-menu-item" onClick={() => {
+                        const style = prompt("Format: plain, currency, or percent", col.numberFormat?.style || "plain") as "plain" | "currency" | "percent" | null;
+                        if (style && ["plain", "currency", "percent"].includes(style)) {
+                          const decimals = parseInt(prompt("Decimal places:", String(col.numberFormat?.decimals ?? (style === "currency" ? 2 : 0))) || "0");
+                          const currency = style === "currency" ? (prompt("Currency code (EUR, USD, GBP):", col.numberFormat?.currency || "EUR") || "EUR") : undefined;
+                          onUpdateColumn(col.id, { numberFormat: { style, decimals, currency } });
+                          setColMenu(null);
+                        }
+                      }}>Number format…</button>
+                    )}
                     <button className="et-col-menu-item" onClick={() => {
                       const hidden = [...(view.hiddenColumns || []), col.id];
                       onUpdateView({ hiddenColumns: hidden });
@@ -1223,6 +1285,26 @@ export default function DatabaseTable({
           </div>
           );
         })}
+        {/* Footer row with aggregates */}
+        {view.showFooter && (
+          <>
+            <div className="et-td et-td-footer">Σ</div>
+            {orderedCols.map((col) => {
+              if (col.type !== "number") return <div key={col.id} className="et-td et-td-footer" />;
+              const nums = rows.map((r) => Number(r.cells[col.id])).filter((n) => !isNaN(n));
+              const sum = nums.reduce((a, b) => a + b, 0);
+              const avg = nums.length ? sum / nums.length : 0;
+              return (
+                <div key={col.id} className="et-td et-td-footer" title={`Sum: ${col.numberFormat ? formatNumber(sum, col) : sum}\nAvg: ${col.numberFormat ? formatNumber(avg, col) : avg.toFixed(1)}\nCount: ${nums.length}`}>
+                  <span className="et-cell-text" style={{ fontWeight: 600, fontSize: "0.72rem" }}>
+                    {col.numberFormat ? formatNumber(sum, col) : sum}
+                  </span>
+                </div>
+              );
+            })}
+            {canWrite && <div className="et-td et-td-footer" />}
+          </>
+        )}
       </div>
     </div>
 
