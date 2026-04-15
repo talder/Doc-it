@@ -256,6 +256,13 @@ server.registerTool("create_oncall", {
   return ok(await api("POST", "/api/oncall", { date, time, description, workingTime, solution, assistedBy }));
 });
 
+server.registerTool("get_oncall", {
+  description: "Get a single on-call entry by ID",
+  inputSchema: z.object({ id: z.string().describe("On-call entry ID (e.g. ONC-000001)") }),
+}, async ({ id }) => {
+  return ok(await api("GET", `/api/oncall/${encodeURIComponent(id)}`));
+});
+
 server.registerTool("update_oncall_solution", {
   description: "Update the solution field of an existing on-call entry",
   inputSchema: z.object({
@@ -264,6 +271,27 @@ server.registerTool("update_oncall_solution", {
   }),
 }, async ({ id, solution }) => {
   return ok(await api("PATCH", `/api/oncall/${encodeURIComponent(id)}`, { solution }));
+});
+
+server.registerTool("delete_oncall", {
+  description: "Delete an on-call entry (admin only)",
+  inputSchema: z.object({ id: z.string().describe("On-call entry ID") }),
+}, async ({ id }) => {
+  return ok(await api("DELETE", `/api/oncall/${encodeURIComponent(id)}`));
+});
+
+server.registerTool("oncall_stats", {
+  description: "Get on-call statistics: total entries, working time, per-registrar breakdown, heatmap, top assisted users",
+  inputSchema: z.object({ days: z.number().optional().describe("Heatmap period in days (default 90)") }),
+}, async ({ days }) => {
+  const p = days ? `?days=${days}` : "";
+  return ok(await api("GET", `/api/oncall/stats${p}`));
+});
+
+server.registerTool("oncall_users", {
+  description: "List users available for the on-call assisted-by picker",
+}, async () => {
+  return ok(await api("GET", "/api/oncall/users"));
 });
 
 // ── Change Log ──────────────────────────────────────────────────────────

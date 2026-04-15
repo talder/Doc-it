@@ -145,6 +145,16 @@ export async function updateOnCallSolution(id: string, solution: string): Promis
   return entry;
 }
 
+/** Delete an on-call entry by ID. Returns true if found and deleted. */
+export async function deleteOnCallEntry(id: string): Promise<boolean> {
+  const data = await readOnCallData();
+  const idx = data.entries.findIndex((e) => e.id === id);
+  if (idx === -1) return false;
+  data.entries.splice(idx, 1);
+  await writeOnCallData(data);
+  return true;
+}
+
 // ── Filtering ─────────────────────────────────────────────────────────────────
 
 export function filterOnCallEntries(
