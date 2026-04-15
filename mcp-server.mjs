@@ -178,7 +178,36 @@ server.registerTool("query_table", {
   }
   if (sortBy) { const sc = cm.get(sortBy.toLowerCase()); if (sc) rows.sort((a, b) => { const c = String(a.cells[sc.id] ?? "").localeCompare(String(b.cells[sc.id] ?? ""), undefined, { numeric: true }); return sortDir === "desc" ? -c : c; }); }
   if (limit > 0) rows = rows.slice(0, limit);
-  return ok({ table: table.title, rowCount: rows.length, totalRows: table.rows.length, rows: rows.map((r) => { const o = {}; for (const c of cols) o[c.name] = r.cells[c.id] ?? null; return o; }) });
+  // Resolve relation columns to display labels
+  const relCols = (cols || []).filter((c) => c.type === "relation" && c.relation);
+  const relLabels = {};
+  for (const rc of relCols) {
+    try {
+      const targetDb = await api("GET", `/api/spaces/${encodeURIComponent(rc.relation.targetSpace)}/enhanced-tables/${encodeURIComponent(rc.relation.targetDbId)}`);
+      const dispCol = rc.relation.displayColumnId
+        ? targetDb.columns.find((c) => c.id === rc.relation.displayColumnId)
+        : targetDb.columns.find((c) => c.type === "text") || targetDb.columns[0];
+      if (dispCol) {
+        relLabels[rc.id] = {};
+        for (const tr of targetDb.rows) {
+          relLabels[rc.id][tr.id] = tr.cells[dispCol.id] != null ? String(tr.cells[dispCol.id]) : "";
+        }
+      }
+    } catch { /* skip */ }
+  }
+  return ok({ table: table.title, rowCount: rows.length, totalRows: table.rows.length, rows: rows.map((r) => {
+    const o = {};
+    for (const c of cols) {
+      const val = r.cells[c.id] ?? null;
+      if (val && c.type === "relation" && relLabels[c.id]) {
+        const ids = Array.isArray(val) ? val : [val];
+        o[c.name] = ids.map((id) => relLabels[c.id][id] || id).join(", ");
+      } else {
+        o[c.name] = val;
+      }
+    }
+    return o;
+  }) });
 });
 
 server.registerTool("create_row", {

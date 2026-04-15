@@ -124,6 +124,8 @@ export function QueryBlockNodeView({ node, updateAttributes, editor }: NodeViewP
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [configOpen, setConfigOpen] = useState(!dbId && editable);
+  // Relation label cache: colId -> { rowId -> label }
+  const [relationLabels, setRelationLabels] = useState<Record<string, Record<string, string>>>({});
 
   // Config panel state
   const [tables, setTables] = useState<{ id: string; title: string }[]>([]);
@@ -164,6 +166,25 @@ export function QueryBlockNodeView({ node, updateAttributes, editor }: NodeViewP
   }, [dbId, spaceSlug]);
 
   useEffect(() => { fetchDb(); }, [fetchDb]);
+
+  // Fetch relation labels for relation columns
+  useEffect(() => {
+    if (!db || !spaceSlug) return;
+    const relCols = db.columns.filter((c) => c.type === "relation" && c.relation);
+    for (const col of relCols) {
+      const ids = new Set<string>();
+      for (const row of db.rows) {
+        const val = row.cells[col.id];
+        if (Array.isArray(val)) val.forEach((v: string) => ids.add(v));
+        else if (val) ids.add(String(val));
+      }
+      if (ids.size === 0) continue;
+      fetch(`/api/spaces/${encodeURIComponent(spaceSlug)}/enhanced-tables/${encodeURIComponent(db.id)}/rows/lookup?columnId=${encodeURIComponent(col.id)}&rowIds=${encodeURIComponent([...ids].join(","))}`)
+        .then((r) => r.json())
+        .then((data) => { if (data.labels) setRelationLabels((prev) => ({ ...prev, [col.id]: data.labels })); })
+        .catch(() => {});
+    }
+  }, [db, spaceSlug]);
 
   // Compute results
   const results = (() => {
@@ -429,9 +450,20 @@ export function QueryBlockNodeView({ node, updateAttributes, editor }: NodeViewP
                   <tr key={row.id}>
                     {visibleCols.map((col) => {
                       const val = row.cells[col.id];
-                      const display = val == null || val === "" ? "—"
-                        : Array.isArray(val) ? val.join(", ")
-                        : String(val);
+                      let display: string;
+                      if (val == null || val === "") {
+                        display = "—";
+                      } else if (col.type === "relation" && col.relation) {
+                        // Resolve relation IDs to display labels
+                        const labels = relationLabels[col.id] || {};
+                        const ids = Array.isArray(val) ? val : [val];
+                        const resolved = ids.map((id: string) => labels[id] || id);
+                        display = resolved.join(", ");
+                      } else if (Array.isArray(val)) {
+                        display = val.join(", ");
+                      } else {
+                        display = String(val);
+                      }
                       return (
                         <td key={col.id} className="qb-td">
                           {display === "—" ? <span className="et-cell-empty">—</span> : display}
