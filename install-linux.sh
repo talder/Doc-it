@@ -316,10 +316,14 @@ NPM_SSL=$( $NO_SSL && echo "--strict-ssl=false" || echo "" )
 # (.next/, node_modules/, etc.) are owned correctly from the start.
 if $SERVICE || $SVC_USER_EXISTS; then
   sudo -u "$SERVICE_USER" npm install $NPM_SSL || die "npm install failed"
+  info "Patching known vulnerabilities..."
+  sudo -u "$SERVICE_USER" npm audit fix 2>/dev/null || true
   info "Building production bundle..."
   sudo -u "$SERVICE_USER" npm run build || die "Production build failed"
 else
   npm install $NPM_SSL || die "npm install failed"
+  info "Patching known vulnerabilities..."
+  npm audit fix 2>/dev/null || true
   info "Building production bundle..."
   npm run build || die "Production build failed"
 fi

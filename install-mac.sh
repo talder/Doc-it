@@ -242,6 +242,8 @@ fi
 cd "$INSTALL_DIR"
 info "Installing npm dependencies..."
 npm install $( $NO_SSL && echo "--strict-ssl=false" || echo "" )
+info "Patching known vulnerabilities..."
+npm audit fix 2>/dev/null || true
 info "Building production bundle..."
 npm run build
 

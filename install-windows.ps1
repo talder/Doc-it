@@ -249,6 +249,8 @@ Set-Location $Dir
 Write-Info "Installing npm dependencies..."
 $npmArgs = if ($NoSsl) { @("install","--strict-ssl=false") } else { @("install") }
 & npm @npmArgs
+Write-Info "Patching known vulnerabilities..."
+try { & npm audit fix 2>$null } catch {}
 Write-Info "Building production bundle..."
 npm run build
 
