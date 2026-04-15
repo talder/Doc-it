@@ -1,20 +1,10 @@
-# Installation
-
-## Requirements
-
-| Requirement | Version |
-|---|---|
-| Node.js | 24 or later |
-| npm | 10 or later |
-| Operating System | macOS 12+, Ubuntu/Debian Linux, Windows 10/11 |
-
-No external database server is required — doc-it uses an embedded **SQLite** key-value store (`config/docit.db`) for configuration and Markdown files on disk for documents.
+# Installation & Upgrade Guide
 
 ---
 
-## Quick Install (Recommended)
+## Quick Install
 
-Installer scripts handle all prerequisites automatically: they install Homebrew (macOS), configure NodeSource (Linux), or use winget (Windows), then install git, Node.js 24, clone the repo, and run `npm install` + `npm run build`.
+Installer scripts handle all prerequisites (Homebrew / apt / winget, git, Node.js 24) and clone the repository automatically.
 
 ### macOS (Apple Silicon & Intel)
 
@@ -22,15 +12,11 @@ Installer scripts handle all prerequisites automatically: they install Homebrew 
 bash install-mac.sh
 ```
 
-Installs prerequisites via **Homebrew**. Prompts for sudo when writing to `/opt/doc-it` and `/Library/LaunchDaemons`.
-
 ### Ubuntu / Debian Linux
 
 ```bash
 bash install-linux.sh
 ```
-
-Installs Node.js 24 via the **NodeSource** apt repository. Run as root or with a sudo-capable user.
 
 ### Windows (PowerShell — run as Administrator)
 
@@ -38,42 +24,42 @@ Installs Node.js 24 via the **NodeSource** apt repository. Run as root or with a
 powershell -ExecutionPolicy Bypass -File install-windows.ps1
 ```
 
-Installs prerequisites via **winget**. Falls back to a direct Node.js MSI download from nodejs.org if winget is unavailable (older Windows 10 builds). Requires an elevated PowerShell session.
+On first launch, open [http://localhost:3000/setup](http://localhost:3000/setup) to create the initial admin account.
 
 ---
 
 ## Installer Options
 
-All three scripts support the same set of options:
+All platforms support the same flags (bash uses `--flag`, PowerShell uses `-Flag`):
 
-| Flag (bash) | Flag (PowerShell) | Description |
-|---|---|---|
-| `--upgrade` | `-Upgrade` | Pull latest from GitHub, reinstall deps, rebuild, restart service |
-| `--force` | `-Force` | Override an existing Node.js version conflict |
-| `--no-ssl` | `-NoSsl` | Disable SSL verification (corporate proxy / self-signed cert) |
-| `--service` | `-Service` | Install as a system service (auto-start at boot) |
-| `--check` | `-Check` | Run preflight checks only — exit 0 if all pass, 1 if any fail |
-| `--dir <path>` | `-Dir <path>` | Override install directory |
-| `--help` | `-Help` | Show usage |
+| Flag | Description |
+|---|---|
+| `--upgrade` / `-Upgrade` | Pull latest code, reinstall dependencies, rebuild |
+| `--force` / `-Force` | Override an existing Node.js version conflict |
+| `--no-ssl` / `-NoSsl` | Disable SSL verification (corporate proxies) |
+| `--service` / `-Service` | Install as a system service (auto-start at boot) |
+| `--check` / `-Check` | Run preflight checks only — do not install |
+| `--dir <path>` / `-Dir <path>` | Override install directory |
+| `--branch <name>` / `-Branch <name>` | Git branch to install (default: `main`) |
+| `--help` / `-Help` | Show help |
 
-Default install directories:
-- macOS / Linux: `/opt/doc-it`
+**Default directories:**
+- macOS: `/opt/doc-it`
+- Linux: `/opt/doc-it`
 - Windows: `C:\doc-it`
 
 ---
 
 ## Preflight Checks
 
-Every script runs a preflight check phase before installing. Checks include:
+Before installing, the script runs automated checks and reports status for each:
 
-- OS version and architecture
-- Privilege level (sudo / Administrator)
+- Operating system and architecture
+- sudo / Administrator access
 - git availability
-- Node.js version vs. the `>=24` requirement — shows the `--force` hint if a conflicting version is found
-- `github.com` reachability (with SSL-bypass retry and `-NoSsl` hint)
-- GitHub repo reachability via `git ls-remote`
-- npm registry reachability
-- Available disk space (500 MB minimum)
+- Node.js version (>= 24 required)
+- Network connectivity (github.com, npm registry)
+- Disk space (500 MB minimum)
 - Install directory status
 
 Run checks without installing:
@@ -81,81 +67,86 @@ Run checks without installing:
 ```bash
 bash install-mac.sh --check
 bash install-linux.sh --check
-powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Check
 ```
-
-Exits `0` if all checks pass, `1` if any fail — suitable for CI or pre-deployment validation.
 
 ---
 
-## Node.js Version Conflict
+## What the Installer Does
 
-If another Node.js version is already installed, the script will block with a clear message and show the `--force` flag:
+### Fresh Install
 
-```bash
-bash install-mac.sh --force
-bash install-linux.sh --force
-powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Force
-```
+1. **Installs prerequisites** — Homebrew (macOS), build tools (Linux), git, Node.js 24
+2. **Clones the repository** — `git clone` from GitHub into the install directory
+3. **Installs npm dependencies** — `npm install`
+4. **Patches vulnerabilities** — `npm audit fix` (safe, semver-range only)
+5. **Builds for production** — `npm run build`
+6. **Configures service** (if `--service`) — launchd (macOS), systemd (Linux), NSSM Windows Service
 
-`--force` only bypasses the Node.js conflict check — it does not skip any other preflight validation.
+### Upgrade (`--upgrade`)
 
----
+1. **Stops the running service** (if installed as a service)
+2. **Creates a data snapshot** — copies `config/`, `docs/`, `logs/`, `archive/`, `history/` to `snapshots/{timestamp}_pre-upgrade`
+3. **Pulls latest code** — `git fetch` + `git reset --hard` to the target branch
+4. **Fixes file ownership** (Linux) — ensures the service user owns all files
+5. **Installs dependencies** — `npm install`
+6. **Patches vulnerabilities** — `npm audit fix`
+7. **Rebuilds** — `npm run build`
+8. **Restarts the service**
 
-## Corporate Proxy / SSL Issues
+Only the 5 most recent snapshots are kept; older ones are pruned automatically.
 
-If your network intercepts HTTPS (e.g. a corporate proxy with a self-signed certificate), use `--no-ssl` / `-NoSsl`:
-
-```bash
-bash install-mac.sh --no-ssl
-bash install-linux.sh --no-ssl
-powershell -ExecutionPolicy Bypass -File install-windows.ps1 -NoSsl
-```
-
-This passes `-k` to curl, sets `GIT_SSL_NO_VERIFY=true`, and adds `--strict-ssl=false` to npm.
+If something goes wrong after an upgrade, restore from the snapshot via **Admin → Backup → Data Snapshots**.
 
 ---
 
 ## Service Installation
 
-Add `--service` / `-Service` to register doc-it as a system service that starts automatically at boot:
+### macOS (launchd)
 
 ```bash
 bash install-mac.sh --service
-bash install-linux.sh --service
-powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Service
 ```
 
-### macOS — launchd
-
-- Plist: `/Library/LaunchDaemons/com.talder.docit.plist`
+- Creates `/Library/LaunchDaemons/com.talder.docit.plist`
+- Runs as the current user
+- Auto-starts at boot
 - Logs: `/var/log/doc-it/`
-- Manage:
+- Commands:
   ```bash
-  sudo launchctl load   /Library/LaunchDaemons/com.talder.docit.plist
-  sudo launchctl unload /Library/LaunchDaemons/com.talder.docit.plist
+  sudo launchctl start com.talder.docit
+  sudo launchctl stop  com.talder.docit
+  sudo launchctl list | grep docit
   ```
 
-### Linux — systemd
+### Linux (systemd)
 
-- Unit file: `/etc/systemd/system/doc-it.service`
-- Runs as: `doc-it` system user (no login shell)
-- Logs: `/var/log/doc-it/` + `journalctl -u doc-it`
-- Manage:
+```bash
+bash install-linux.sh --service
+```
+
+- Creates `/etc/systemd/system/doc-it.service`
+- Creates a dedicated `doc-it` system user
+- Auto-starts at boot
+- Logs: `journalctl -u doc-it`
+- Commands:
   ```bash
   sudo systemctl start   doc-it
   sudo systemctl stop    doc-it
+  sudo systemctl restart doc-it
   sudo systemctl status  doc-it
-  sudo journalctl -u doc-it -f
   ```
 
-### Windows — Windows Service (NSSM)
+### Windows (NSSM)
 
-- Installed via [NSSM](https://nssm.cc) (`winget install NSSM.NSSM`)
-- Start type: **delayed auto-start** (avoids network/disk race at boot)
-- Logs: `<install-dir>\logs\service.log` (rotated at 10 MB)
-- Failure recovery: restart at 5 s / 10 s / 30 s
-- Manage:
+```powershell
+powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Service
+```
+
+- Installs NSSM (Non-Sucking Service Manager) via winget
+- Creates a Windows Service with **delayed auto-start**
+- Automatic restart on failure (5s / 10s / 30s intervals)
+- Logs: `<install-dir>\logs\service.log` (auto-rotated at 10 MB)
+- Commands:
   ```powershell
   Start-Service doc-it
   Stop-Service  doc-it
@@ -164,156 +155,149 @@ powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Service
 
 ---
 
-## Upgrading
+## Branches
+
+Doc-it maintains two branches:
+
+| Branch | Purpose | Stability |
+|---|---|---|
+| `main` | Production releases | Stable |
+| `dev` | Development builds | May be unstable |
+
+### Installing from the dev branch
 
 ```bash
 # macOS
-bash install-mac.sh --upgrade
+bash install-mac.sh --branch dev
 
 # Linux
-bash install-linux.sh --upgrade
+bash install-linux.sh --branch dev
 
-# Windows (PowerShell as Administrator)
-powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Upgrade
+# Windows
+powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Branch dev
 ```
 
-The upgrade path:
-1. Stops the running service (if installed)
-2. Runs `git fetch origin main && git reset --hard origin/main` — local changes are discarded; never modify files in the install directory manually
-3. Runs `npm install` as the `doc-it` service user
-4. Runs `npm run build` as the `doc-it` service user
-5. Runs `chown -R doc-it:doc-it` to fix any root-owned files from a previous build
-6. Restarts the service
+### Upgrading a dev installation
 
-> **Important:** Any local changes to files in the install directory are discarded on upgrade. User data (`config/`, `docs/`, `history/`, `logs/`) is never touched by the upgrade process.
+```bash
+bash install-mac.sh --upgrade --branch dev
+bash install-linux.sh --upgrade --branch dev
+```
 
-No database migrations are required. Back up `config/`, `docs/`, `logs/`, and `history/` before upgrading if you want a rollback point.
+Omitting `--branch` always defaults to `main`.
 
 ---
 
-## Manual Installation
+## Manual Install (Without Installer Scripts)
 
-If you prefer not to use the installer scripts:
+### Prerequisites
+
+| Component | Version | Purpose |
+|---|---|---|
+| **Node.js** | 24 LTS or newer | JavaScript runtime |
+| **npm** | 10+ (ships with Node.js 24) | Package manager |
+| **git** | any recent version | Clone the repository |
+| **Python 3** | 3.8+ (optional) | Required by `better-sqlite3` build step on some systems |
+| **C/C++ build tools** | see below | Required to compile native modules |
+
+### Steps
 
 ```bash
+# 1. Clone
 git clone https://github.com/talder/doc-it.git
 cd doc-it
+
+# 2. Install dependencies
 npm install
+
+# 3. Patch vulnerabilities
+npm audit fix
+
+# 4. Build
 npm run build
-npm start
+
+# 5. Start
+npm start              # production (http://localhost:3000)
+# — or —
+npm run dev            # development with hot reload
+```
+
+### Platform-specific build tools
+
+**macOS:**
+```bash
+xcode-select --install    # provides clang/make
+brew install node@24
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt install -y build-essential python3 git curl
+```
+
+**Windows:**
+- Install Node.js from [nodejs.org](https://nodejs.org) and check "Automatically install necessary tools"
+- Or: `npm install -g windows-build-tools`
+
+---
+
+## Docker
+
+```dockerfile
+FROM node:24-alpine
+RUN apk add --no-cache python3 make g++ git
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci && npm audit fix
+COPY . .
+RUN npm run build
+EXPOSE 3000
+CMD ["npm", "start"]
+```
+
+```bash
+docker build -t doc-it .
+docker run -p 3000:3000 -v doc-it-data:/app/config -v doc-it-docs:/app/docs doc-it
 ```
 
 ---
 
-## First-run Setup Wizard
+## First Launch
 
-On the very first visit, doc-it detects that no admin account exists and redirects to `/setup`.
-
-1. Enter a **username** and **password** for the super-admin account.
-2. Submit the form.
-3. You are automatically logged in and taken to the main workspace.
-
-The super-admin can never be deleted and always retains full access to all features.
+1. Open [http://localhost:3000/setup](http://localhost:3000/setup)
+2. Create the initial admin account (username, password, email)
+3. You will be redirected to the login page
+4. Log in and start creating spaces and documents
 
 ---
 
-## File Permissions & Service User
+## Troubleshooting
 
-When installed as a system service (`--service`), doc-it runs under a **dedicated service user** that needs read/write access to the install directory and all runtime data directories.
-
-### How it works per platform
-
-**Linux** — The installer creates a `doc-it` system user and group. All files under the install directory (default `/opt/doc-it`) are owned by `doc-it:doc-it`. The systemd unit runs the process as this user.
-
-**macOS** — The launchd service runs as the user who ran the installer (typically your normal macOS user account). The install directory is owned by that user.
-
-**Windows** — The NSSM service runs as `SYSTEM`, which has full access. No special permission setup is needed.
-
-### Writable directories
-
-The following directories must be writable by the service user. The installer pre-creates them automatically, but if you set up manually or move the install directory you must ensure correct ownership:
-
-```
-<install-dir>/
-├── config/       # SQLite database (docit.db), avatars
-├── docs/         # Markdown documents, databases, attachments
-├── logs/         # Audit logs, crash logs
-├── archive/      # Archived documents
-├── history/      # Document revision history
-├── backups/      # Encrypted backup archives
-├── trash/        # Soft-deleted documents
-└── .next/        # Next.js build cache (written during build + runtime)
-```
-
-### Troubleshooting permission errors
-
-If doc-it starts but returns errors when logging in, creating documents, or saving settings, the service user likely cannot write to the data directories.
-
-**Linux — fix ownership:**
-```bash
-sudo chown -R doc-it:doc-it /opt/doc-it
-```
-
-**macOS — fix ownership** (replace `youruser` with the user that runs the service):
-```bash
-sudo chown -R youruser /opt/doc-it
-```
-
-**Verify the service user:**
-```bash
-# Linux — check which user the service runs as
-ps -eo user,comm | grep node
-
-# Linux — check directory ownership
-ls -la /opt/doc-it/
-```
-
-After fixing permissions, restart the service:
-```bash
-# Linux
-sudo systemctl restart doc-it
-
-# macOS
-sudo launchctl stop com.talder.docit && sudo launchctl start com.talder.docit
-```
-
-### Manual installation note
-
-If you install manually (without `--service`), doc-it runs as the current user and writes to the current working directory. Ensure the user running `npm start` has write access to the project directory.
+| Problem | Solution |
+|---|---|
+| `npm install` fails with `node-gyp` errors | Install C/C++ build tools (see platform instructions above) |
+| `better-sqlite3` build fails | Ensure Python 3 is installed and in PATH |
+| `ERR_MODULE_NOT_FOUND` on startup | Run `npm install` again — a dependency may have failed silently |
+| Port 3000 already in use | Set `PORT=3001 npm start` or stop the other process |
+| `EACCES` permission errors on Linux | Don't run with `sudo` — fix ownership: `sudo chown -R doc-it:doc-it /opt/doc-it` |
+| Canvas / Excalidraw errors during build | Expected in SSR — the app works correctly |
+| Service won't stop during upgrade | The installer sends a 60-second shutdown countdown to all connected users, saves their work, and invalidates all sessions before stopping |
 
 ---
 
-## Data Storage
+## Graceful Shutdown During Upgrades
 
-All data is stored on disk in several top-level directories (created automatically on first run):
+When the service is stopped for an upgrade:
 
+1. All connected browser sessions receive a **60-second countdown warning**
+2. Any open documents are **auto-saved** immediately
+3. After the countdown, all **sessions are invalidated** (users redirected to login)
+4. The service exits cleanly
+
+The installer can also trigger this countdown via the admin API before stopping:
+
+```bash
+curl -X POST http://localhost:3000/api/admin/shutdown \
+  -H "Authorization: Bearer dk_s_your_service_key"
+# Wait 70 seconds, then stop the service
 ```
-config/
-├── docit.db              # SQLite KV store (WAL mode) — users, spaces,
-│                         #   settings, service keys, helpdesk, assets,
-│                         #   blob registry, attachment references
-├── avatars/              # User avatar images
-└── blobstore/            # Content-addressed attachments ({sha256} files)
-docs/
-└── <space-slug>/
-    ├── <category>/
-    │   ├── document.md   # Markdown documents
-    │   ├── template.mdt  # Template documents
-    │   └── attachments/  # Legacy attachment location (migrated to blobstore)
-    ├── .databases/
-    │   └── <id>.db.json  # Database schema + rows (one file per database)
-    ├── .doc-status.json  # Document workflow statuses
-    └── .customization.json
-archive/
-└── <space-slug>/         # Archived (soft-deleted) documents
-history/
-└── <space-slug>/
-    └── <category>/
-        └── <docname>/    # Revision snapshots (1.md, 1.json, 2.md, ...)
-logs/
-└── audit-YYYY-MM-DD.jsonl  # Audit log files (one per day)
-backups/
-└── docit-backup-*.tar.gz.enc  # Encrypted backup archives
-```
-
-Back up the `config/`, `docs/`, `history/`, and `logs/` directories to protect your content. Alternatively, use the built-in [Backup](features/backup.md) feature for automated encrypted backups.
