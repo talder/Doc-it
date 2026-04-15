@@ -48,7 +48,8 @@ Doc-it is a self-hosted documentation platform built as a single **Next.js 16 Ap
 - `helpdesk.ts` / `helpdesk-portal.ts` — ticketing system and portal user auth (separate from main auth)
 - `audit.ts` — NIS2 audit logging with encryption and syslog forwarding
 - `crypto.ts` — AES-256-GCM field encryption and key rotation
-- `enhanced-table.ts` — enhanced table CRUD (JSON files per space)
+- `enhanced-table.ts` — enhanced table CRUD (JSON files per space), revision history (auto-snapshot on write, list/restore revisions, max 50 per table), webhook helpers (`fireWebhooks` — fire-and-forget HTTP POST on row create/update/delete), relation helpers (label resolution, bidirectional sync)
+- `clipboard.ts` — client-safe clipboard utility with `execCommand('copy')` fallback for non-HTTPS contexts
 - `journal.ts` — encrypted personal and space journals
 - `cmdb.ts` — CMDB module (CI registry, types, relationships, services, compliance, vulnerabilities, change requests, SLA, cost, templates, maintenance windows, scanning)
 - `cmdb-shared.ts` — client-safe CMDB helpers (lifecycle state, location path)
@@ -63,7 +64,7 @@ Doc-it is a self-hosted documentation platform built as a single **Next.js 16 Ap
 - `Editor.tsx` — main TipTap editor with bubble menu, markdown import/export via `marked`+`turndown`
 - `sidebar/Sidebar.tsx` — main sidebar with categories, docs, tags, enhanced tables, favorites
 - `extensions/` — all custom TipTap node/mark extensions
-- `enhanced-table/` — enhanced table views (table, kanban, gallery, calendar), row edit modal, query block node view
+- `enhanced-table/` — enhanced table views (table, kanban, gallery, calendar), row edit modal, query block node view, formula evaluator, toolbar, filter/sort panels
 - `helpdesk/` — helpdesk UI components (ticket panel, form designer, portal page designer, SLA/rule editors)
 - `modals/` — modal dialogs for CRUD operations
 
@@ -73,7 +74,7 @@ Security headers (CSP, HSTS, X-Frame-Options, etc.) are configured in `next.conf
 
 ### MCP Server (`mcp-server.mjs`)
 
-Standalone MCP (Model Context Protocol) server for AI assistant integration (Warp, Claude, Cursor). Uses stdio transport. Connects to Doc-it via REST API with a `DOCIT_API_KEY`. Exposes 20 tools:
+Standalone MCP (Model Context Protocol) server for AI assistant integration (Warp, Claude, Cursor). Uses stdio transport. Connects to Doc-it via REST API with a `DOCIT_API_KEY`. Exposes 24 tools:
 
 - **Spaces**: `list_spaces`
 - **Documents**: `list_docs`, `read_doc`, `create_doc`, `update_doc`, `search_docs`
