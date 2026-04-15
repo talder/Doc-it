@@ -121,19 +121,11 @@ server.registerTool("search_docs", {
 // ── Enhanced Tables ──────────────────────────────────────────────────────────
 
 server.registerTool("list_tables", {
-  description: "List enhanced tables in a space",
+  description: "List enhanced tables in a space with IDs, titles, columns, and row counts",
   inputSchema: z.object({ space: z.string().optional().describe("Space slug") }),
 }, async ({ space }) => {
   const s = sp(space); if (!s) return ok("Error: No space specified.");
-  const tables = await api("GET", `/api/spaces/${encodeURIComponent(s)}/enhanced-tables`);
-  if (!Array.isArray(tables)) return ok(tables); // forward error responses as-is
-  return ok(tables.map((t) => ({
-    id: t.id,
-    title: t.title,
-    columns: (t.columns || []).map((c) => `${c.name} (${c.type})`),
-    rowCount: t.rowCount ?? (t.rows ? t.rows.length : 0),
-    tags: t.tags || [],
-  })));
+  return ok(await api("GET", `/api/spaces/${encodeURIComponent(s)}/enhanced-tables`));
 });
 
 server.registerTool("read_table", {
