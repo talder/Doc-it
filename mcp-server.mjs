@@ -26,9 +26,14 @@ async function api(method, path, body) {
   if (API_KEY) headers["Authorization"] = `Bearer ${API_KEY}`;
   const opts = { method, headers };
   if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(`${BASE_URL}${path}`, opts);
+  let res;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, opts);
+  } catch (err) {
+    throw new Error(`Connection failed: ${err.message}. Is Doc-it running at ${BASE_URL}?`);
+  }
   const txt = await res.text();
-  if (!res.ok) throw new Error(`${method} ${path} → ${res.status}: ${txt.slice(0, 200)}`);
+  if (!res.ok) throw new Error(`${method} ${path} → ${res.status}: ${txt.slice(0, 300)}`);
   try { return JSON.parse(txt); } catch { return txt; }
 }
 
@@ -121,7 +126,14 @@ server.registerTool("list_tables", {
 }, async ({ space }) => {
   const s = sp(space); if (!s) return ok("Error: No space specified.");
   const tables = await api("GET", `/api/spaces/${encodeURIComponent(s)}/enhanced-tables`);
-  return ok(tables.map((t) => ({ id: t.id, title: t.title, columns: t.columns.map((c) => `${c.name} (${c.type})`), rowCount: t.rows.length })));
+  if (!Array.isArray(tables)) return ok(tables); // forward error responses as-is
+  return ok(tables.map((t) => ({
+    id: t.id,
+    title: t.title,
+    columns: (t.columns || []).map((c) => `${c.name} (${c.type})`),
+    rowCount: t.rowCount ?? (t.rows ? t.rows.length : 0),
+    tags: t.tags || [],
+  })));
 });
 
 server.registerTool("read_table", {
