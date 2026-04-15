@@ -12,6 +12,7 @@
 #    --service        Install as systemd service (auto-start at boot)
 #    --check          Preflight checks only — do not install
 #    --dir <path>     Override install directory (default: /opt/doc-it)
+#    --branch <name>  Git branch to install (default: main, use 'dev' for development)
 #    --help           Show this help
 # ==============================================================
 
@@ -27,6 +28,7 @@ R='\033[0;31m' G='\033[0;32m' Y='\033[1;33m' B='\033[0;34m' BOLD='\033[1m' NC='\
 
 UPGRADE=false; FORCE=false; NO_SSL=false; SERVICE=false; CHECK_ONLY=false
 INSTALL_DIR="$DEFAULT_DIR"
+BRANCH="main"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -36,6 +38,7 @@ while [[ $# -gt 0 ]]; do
     --service)  SERVICE=true ;;
     --check)    CHECK_ONLY=true ;;
     --dir)      shift; INSTALL_DIR="${1:?--dir requires a path}" ;;
+    --branch)   shift; BRANCH="${1:?--branch requires a name}" ;;
     --help|-h)  grep '^#' "$0" | grep -v '!/usr/bin' | sed 's/^# \{0,1\}//' | head -20; exit 0 ;;
     *)          echo -e "${R}Unknown option: $1  (use --help)${NC}" >&2; exit 1 ;;
   esac; shift
@@ -68,6 +71,7 @@ echo -e "${BOLD}  Linux Installer${NC}  ·  Node.js ${REQUIRED_NODE}+  ·  https
 $NO_SSL  && warn "SSL verification DISABLED (--no-ssl)"
 $FORCE   && warn "Node.js conflict override ENABLED (--force)"
 $UPGRADE && info "Mode: UPGRADE existing installation"
+[[ "$BRANCH" != "main" ]] && warn "Branch: $BRANCH"
 echo ""
 
 # ── Preflight checks ───────────────────────────────────────────
@@ -252,9 +256,10 @@ if $UPGRADE; then
     done
   fi
 
-  info "Pulling latest from GitHub..."
-  $SUDO git $GIT_SSL -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR" fetch origin main
-  $SUDO git $GIT_SSL -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR" reset --hard origin/main
+  info "Pulling latest from GitHub ($BRANCH)..."
+  $SUDO git $GIT_SSL -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR" fetch origin "$BRANCH"
+  $SUDO git $GIT_SSL -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR" checkout "$BRANCH" 2>/dev/null || $SUDO git $GIT_SSL -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR" checkout -b "$BRANCH" "origin/$BRANCH" 2>/dev/null || true
+  $SUDO git $GIT_SSL -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR" reset --hard "origin/$BRANCH"
 
   # Show changed files since previous version
   NEW_HEAD=$($SUDO git -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR" rev-parse HEAD 2>/dev/null || echo "")
@@ -269,9 +274,9 @@ else
   if [[ -d "$INSTALL_DIR" && -f "$INSTALL_DIR/package.json" ]]; then
     die "$INSTALL_DIR already contains an installation. Use --upgrade to update it, or --dir to pick another path."
   fi
-  info "Cloning https://github.com/talder/doc-it → $INSTALL_DIR ..."
+  info "Cloning https://github.com/talder/doc-it ($BRANCH) → $INSTALL_DIR ..."
   $SUDO mkdir -p "$INSTALL_DIR"
-  $SUDO git $GIT_SSL clone "$REPO" "$INSTALL_DIR"
+  $SUDO git $GIT_SSL clone -b "$BRANCH" "$REPO" "$INSTALL_DIR"
 fi
 
 # ── 4. Service user & permissions ──────────────────────────────

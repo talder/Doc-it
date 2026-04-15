@@ -12,6 +12,7 @@
 #    -Service         Install as Windows Service (delayed auto-start)
 #    -Check           Preflight checks only — do not install
 #    -Dir <path>      Override install directory (default: C:\doc-it)
+#    -Branch <name>   Git branch to install (default: main, use 'dev' for development)
 #    -Help            Show this help
 # ==============================================================
 param(
@@ -21,6 +22,7 @@ param(
   [switch]$Service,
   [switch]$Check,
   [string]$Dir = "C:\doc-it",
+  [string]$Branch = "main",
   [switch]$Help
 )
 
@@ -72,6 +74,7 @@ Write-Host ""
 if ($NoSsl)  { Write-Warn "SSL verification DISABLED (-NoSsl)" }
 if ($Force)  { Write-Warn "Node.js conflict override ENABLED (-Force)" }
 if ($Upgrade){ Write-Info "Mode: UPGRADE existing installation" }
+if ($Branch -ne "main") { Write-Warn "Branch: $Branch" }
 Write-Host ""
 
 # ── Preflight checks ───────────────────────────────────────────
@@ -233,15 +236,17 @@ if ($Upgrade) {
     }
   }
 
-  Write-Info "Pulling latest from GitHub..."
-  git -C $Dir pull --rebase origin main
+  Write-Info "Pulling latest from GitHub ($Branch)..."
+  git -C $Dir fetch origin $Branch
+  git -C $Dir checkout $Branch 2>$null
+  git -C $Dir reset --hard "origin/$Branch"
 } else {
   if ((Test-Path $Dir) -and (Test-Path "$Dir\package.json")) {
     Write-Fail "$Dir already contains an installation. Use -Upgrade to update, or -Dir to choose another path."
   }
-  Write-Info "Cloning https://github.com/talder/doc-it -> $Dir ..."
+  Write-Info "Cloning https://github.com/talder/doc-it ($Branch) -> $Dir ..."
   New-Item -ItemType Directory -Path $Dir -Force | Out-Null
-  git clone $Repo $Dir
+  git clone -b $Branch $Repo $Dir
 }
 
 # ── 4. Dependencies & build ────────────────────────────────────
