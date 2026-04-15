@@ -81,10 +81,29 @@ export default function DatabaseFilter({ columns, filters, filterLogic, onChange
                   <option value="">—</option>
                   {(col.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
+              ) : needsValue && col?.type === "date" ? (
+                <div className="et-filter-date-wrap">
+                  <input
+                    className="et-filter-input"
+                    type="date"
+                    value={String(f.value ?? "")}
+                    onChange={(e) => updateFilter(idx, { value: e.target.value })}
+                  />
+                  <div className="et-filter-date-presets">
+                    {[
+                      { label: "Today", fn: () => new Date().toISOString().slice(0, 10) },
+                      { label: "7d", fn: () => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10); } },
+                      { label: "30d", fn: () => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); } },
+                      { label: "This month", fn: () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; } },
+                    ].map((p) => (
+                      <button key={p.label} className="et-filter-date-preset" onClick={() => updateFilter(idx, { value: p.fn() })} title={p.label}>{p.label}</button>
+                    ))}
+                  </div>
+                </div>
               ) : needsValue ? (
                 <input
                   className="et-filter-input"
-                  type={col?.type === "number" ? "number" : col?.type === "date" ? "date" : "text"}
+                  type={col?.type === "number" ? "number" : "text"}
                   placeholder="value"
                   value={String(f.value ?? "")}
                   onChange={(e) => updateFilter(idx, { value: col?.type === "number" ? Number(e.target.value) : e.target.value })}

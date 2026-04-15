@@ -165,6 +165,41 @@ export default function DatabaseTable({
   const [bulkEditColId, setBulkEditColId] = useState("");
   const [bulkEditValue, setBulkEditValue] = useState<string>("");
 
+  // Undo/redo stack
+  const undoStack = useRef<{ rowId: string; colId: string; oldValue: unknown; newValue: unknown }[]>([]);
+  const redoStack = useRef<{ rowId: string; colId: string; oldValue: unknown; newValue: unknown }[]>([]);
+
+  const pushUndo = useCallback((rowId: string, colId: string, oldValue: unknown, newValue: unknown) => {
+    undoStack.current.push({ rowId, colId, oldValue, newValue });
+    if (undoStack.current.length > 100) undoStack.current.shift();
+    redoStack.current = []; // clear redo on new edit
+  }, []);
+
+  // Keyboard handler for undo/redo
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!canWrite) return;
+      const isMod = e.metaKey || e.ctrlKey;
+      if (isMod && e.key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        const entry = undoStack.current.pop();
+        if (entry) {
+          redoStack.current.push(entry);
+          onUpdateRow(entry.rowId, { [entry.colId]: entry.oldValue });
+        }
+      } else if (isMod && e.key === "z" && e.shiftKey) {
+        e.preventDefault();
+        const entry = redoStack.current.pop();
+        if (entry) {
+          undoStack.current.push(entry);
+          onUpdateRow(entry.rowId, { [entry.colId]: entry.newValue });
+        }
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [canWrite, onUpdateRow]);
+
   const colMenuRef = useRef<HTMLDivElement>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
   const tabNavigating = useRef(false);
@@ -268,9 +303,10 @@ export default function DatabaseTable({
     let val: unknown = editValue;
     if (col?.type === "number") val = editValue === "" ? null : Number(editValue);
     else if (col?.type === "checkbox") val = editValue === "true";
+    pushUndo(editCell.rowId, editCell.colId, db.rows.find((r) => r.id === editCell.rowId)?.cells[editCell.colId], val);
     onUpdateRow(editCell.rowId, { [editCell.colId]: val });
     setEditCell(null);
-  }, [editCell, editValue, db.columns, onUpdateRow]);
+  }, [editCell, editValue, db.columns, db.rows, onUpdateRow, pushUndo]);
 
   // Navigate to next/prev editable cell (shared by all cell types for Tab)
   const tabToNextCell = useCallback((e: React.KeyboardEvent) => {

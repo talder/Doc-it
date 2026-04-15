@@ -365,25 +365,34 @@ export default function RowEditModal({
         </div>
 
         {/* Footer */}
-        {canWrite && (
-          <div className="rem-footer">
-            <button className="rem-btn rem-btn-secondary" onClick={() => { onDuplicateRow({ ...cells }); }}>
-              <Copy className="w-3.5 h-3.5" /> Duplicate
-            </button>
-            <div className="rem-footer-spacer" />
-            {confirmDelete ? (
-              <div className="rem-delete-confirm">
-                <span className="text-xs text-red-500 font-medium">Delete this row?</span>
-                <button className="rem-btn rem-btn-danger" onClick={() => { onDeleteRow(row.id); onClose(); }}>Yes, delete</button>
-                <button className="rem-btn rem-btn-secondary" onClick={() => setConfirmDelete(false)}>Cancel</button>
-              </div>
-            ) : (
-              <button className="rem-btn rem-btn-danger-outline" onClick={() => setConfirmDelete(true)}>
-                <Trash2 className="w-3.5 h-3.5" /> Delete
+        <div className="rem-footer">
+          {/* Copy permalink */}
+          <button className="rem-btn rem-btn-secondary" onClick={() => {
+            const url = `${window.location.origin}/spaces/${encodeURIComponent(spaceSlug || "")}/tables/${encodeURIComponent(db.id)}/row/${encodeURIComponent(row.id)}`;
+            navigator.clipboard.writeText(url).catch(() => {});
+          }} title="Copy row link">
+            <Link2 className="w-3.5 h-3.5" /> Copy Link
+          </button>
+          {canWrite && (
+            <>
+              <button className="rem-btn rem-btn-secondary" onClick={() => { onDuplicateRow({ ...cells }); }}>
+                <Copy className="w-3.5 h-3.5" /> Duplicate
               </button>
-            )}
-          </div>
-        )}
+              <div className="rem-footer-spacer" />
+              {confirmDelete ? (
+                <div className="rem-delete-confirm">
+                  <span className="text-xs text-red-500 font-medium">Delete this row?</span>
+                  <button className="rem-btn rem-btn-danger" onClick={() => { onDeleteRow(row.id); onClose(); }}>Yes, delete</button>
+                  <button className="rem-btn rem-btn-secondary" onClick={() => setConfirmDelete(false)}>Cancel</button>
+                </div>
+              ) : (
+                <button className="rem-btn rem-btn-danger-outline" onClick={() => setConfirmDelete(true)}>
+                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                </button>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
