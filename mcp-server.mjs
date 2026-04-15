@@ -2,8 +2,7 @@
 /**
  * Doc-it MCP Server
  *
- * A Model Context Protocol server that connects AI assistants (Warp, Claude, Cursor, etc.)
- * to a Doc-it instance via its REST API.
+ * Connects AI assistants (Warp, Claude, Cursor, etc.) to Doc-it via its REST API.
  *
  * Usage:
  *   DOCIT_URL=http://localhost:3000 DOCIT_API_KEY=dk_u_... node mcp-server.mjs
@@ -11,371 +10,229 @@
  * Environment variables:
  *   DOCIT_URL      - Base URL of the Doc-it instance (default: http://localhost:3000)
  *   DOCIT_API_KEY  - API key (dk_u_... for user key, dk_s_... for service key)
- *   DOCIT_SPACE    - Default space slug (optional, tools will prompt if not set)
+ *   DOCIT_SPACE    - Default space slug (optional)
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
+import { z } from "zod/v4";
 
 const BASE_URL = process.env.DOCIT_URL || "http://localhost:3000";
 const API_KEY = process.env.DOCIT_API_KEY || "";
 const DEFAULT_SPACE = process.env.DOCIT_SPACE || "";
 
-// ── HTTP helper ──────────────────────────────────────────────────────────────
-
 async function api(method, path, body) {
-  const url = `${BASE_URL}${path}`;
   const headers = { "Content-Type": "application/json" };
   if (API_KEY) headers["Authorization"] = `Bearer ${API_KEY}`;
   const opts = { method, headers };
   if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(url, opts);
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`${method} ${path} → ${res.status}: ${text.slice(0, 200)}`);
-  }
-  try { return JSON.parse(text); } catch { return text; }
+  const res = await fetch(`${BASE_URL}${path}`, opts);
+  const txt = await res.text();
+  if (!res.ok) throw new Error(`${method} ${path} → ${res.status}: ${txt.slice(0, 200)}`);
+  try { return JSON.parse(txt); } catch { return txt; }
 }
 
-function text(content) {
+function ok(content) {
   return { content: [{ type: "text", text: typeof content === "string" ? content : JSON.stringify(content, null, 2) }] };
 }
 
-function spaceSlug(input) {
-  return input || DEFAULT_SPACE;
-}
-
-// ── MCP Server ───────────────────────────────────────────────────────────────
+function sp(input) { return input || DEFAULT_SPACE; }
 
 const server = new McpServer(
   { name: "docit", version: "1.0.0" },
-  {
-    instructions: `Doc-it MCP server. Connected to: ${BASE_URL}
-${DEFAULT_SPACE ? `Default space: ${DEFAULT_SPACE}` : "No default space set — always provide the 'space' parameter."}
-
-Available tool categories:
-- Spaces: list_spaces
-- Documents: list_docs, read_doc, create_doc, update_doc, search_docs
-- Enhanced Tables: list_tables, read_table, query_table, create_row, update_row, delete_row
-- Tags: list_tags
-- System: get_version
-
-Always use list_spaces first if you don't know the available spaces.
-Use list_docs or search_docs to find documents before reading them.
-Use list_tables to find enhanced tables before querying them.`
-  }
+  { instructions: `Doc-it MCP server → ${BASE_URL}. ${DEFAULT_SPACE ? `Default space: ${DEFAULT_SPACE}.` : "Provide 'space' param."} Use list_spaces first.` }
 );
 
-// ── Space tools ──────────────────────────────────────────────────────────────
+// ── Spaces ───────────────────────────────────────────────────────────────────
 
-server.tool(
-  "list_spaces",
-  "List all accessible documentation spaces",
-  {},
-  async () => {
-    const spaces = await api("GET", "/api/spaces");
-    return text(spaces);
-  }
-);
+server.registerTool("list_spaces", { description: "List all accessible documentation spaces" }, async () => {
+  return ok(await api("GET", "/api/spaces"));
+});
 
-// ── Document tools ───────────────────────────────────────────────────────────
+// ── Documents ────────────────────────────────────────────────────────────────
 
-server.tool(
-  "list_docs",
-  "List all documents in a space. Returns names, categories, and filenames.",
-  { space: z.string().optional().describe("Space slug (uses default if not set)") },
-  async ({ space }) => {
-    const s = spaceSlug(space);
-    if (!s) return text("Error: No space specified. Use list_spaces to find available spaces.");
-    const docs = await api("GET", `/api/spaces/${encodeURIComponent(s)}/docs`);
-    return text(docs);
-  }
-);
+server.registerTool("list_docs", {
+  description: "List all documents in a space",
+  inputSchema: z.object({ space: z.string().optional().describe("Space slug") }),
+}, async ({ space }) => {
+  const s = sp(space); if (!s) return ok("Error: No space specified.");
+  return ok(await api("GET", `/api/spaces/${encodeURIComponent(s)}/docs`));
+});
 
-server.tool(
-  "read_doc",
-  "Read the full content of a document (markdown) including metadata.",
-  {
+server.registerTool("read_doc", {
+  description: "Read a document's full markdown content and metadata",
+  inputSchema: z.object({
     space: z.string().optional().describe("Space slug"),
-    name: z.string().describe("Document name (without .md extension)"),
-    category: z.string().describe("Category path (e.g. 'General' or 'Software/Guides')"),
-  },
-  async ({ space, name, category }) => {
-    const s = spaceSlug(space);
-    if (!s) return text("Error: No space specified.");
-    const doc = await api("GET", `/api/spaces/${encodeURIComponent(s)}/docs/${encodeURIComponent(name)}?category=${encodeURIComponent(category)}`);
-    return text(doc);
-  }
-);
+    name: z.string().describe("Document name (without .md)"),
+    category: z.string().describe("Category path"),
+  }),
+}, async ({ space, name, category }) => {
+  const s = sp(space); if (!s) return ok("Error: No space specified.");
+  return ok(await api("GET", `/api/spaces/${encodeURIComponent(s)}/docs/${encodeURIComponent(name)}?category=${encodeURIComponent(category)}`));
+});
 
-server.tool(
-  "create_doc",
-  "Create a new document in a space.",
-  {
+server.registerTool("create_doc", {
+  description: "Create a new document",
+  inputSchema: z.object({
     space: z.string().optional().describe("Space slug"),
     name: z.string().describe("Document name"),
     category: z.string().describe("Category path"),
-    content: z.string().optional().describe("Markdown content (optional, default template used if empty)"),
-  },
-  async ({ space, name, category, content }) => {
-    const s = spaceSlug(space);
-    if (!s) return text("Error: No space specified.");
-    const result = await api("POST", `/api/spaces/${encodeURIComponent(s)}/docs`, { name, category, content });
-    return text(result);
-  }
-);
+    content: z.string().optional().describe("Markdown content"),
+  }),
+}, async ({ space, name, category, content }) => {
+  const s = sp(space); if (!s) return ok("Error: No space specified.");
+  return ok(await api("POST", `/api/spaces/${encodeURIComponent(s)}/docs`, { name, category, content }));
+});
 
-server.tool(
-  "update_doc",
-  "Update the content of an existing document.",
-  {
+server.registerTool("update_doc", {
+  description: "Update an existing document's content",
+  inputSchema: z.object({
     space: z.string().optional().describe("Space slug"),
     name: z.string().describe("Document name"),
     category: z.string().describe("Category path"),
     content: z.string().describe("New markdown content"),
-  },
-  async ({ space, name, category, content }) => {
-    const s = spaceSlug(space);
-    if (!s) return text("Error: No space specified.");
-    const result = await api("PUT", `/api/spaces/${encodeURIComponent(s)}/docs/${encodeURIComponent(name)}`, { content, category });
-    return text(result);
-  }
-);
+  }),
+}, async ({ space, name, category, content }) => {
+  const s = sp(space); if (!s) return ok("Error: No space specified.");
+  return ok(await api("PUT", `/api/spaces/${encodeURIComponent(s)}/docs/${encodeURIComponent(name)}`, { content, category }));
+});
 
-server.tool(
-  "search_docs",
-  "Search across all documents in a space. Returns matching documents with snippets.",
-  {
+server.registerTool("search_docs", {
+  description: "Search documents in a space",
+  inputSchema: z.object({
     space: z.string().optional().describe("Space slug"),
-    query: z.string().describe("Search query (min 2 characters)"),
+    query: z.string().describe("Search query"),
     category: z.string().optional().describe("Filter by category"),
     tag: z.string().optional().describe("Filter by tag"),
-  },
-  async ({ space, query, category, tag }) => {
-    const s = spaceSlug(space);
-    if (!s) return text("Error: No space specified.");
-    const params = new URLSearchParams({ q: query });
-    if (category) params.set("category", category);
-    if (tag) params.set("tag", tag);
-    const result = await api("GET", `/api/spaces/${encodeURIComponent(s)}/search?${params}`);
-    return text(result);
-  }
-);
+  }),
+}, async ({ space, query, category, tag }) => {
+  const s = sp(space); if (!s) return ok("Error: No space specified.");
+  const p = new URLSearchParams({ q: query });
+  if (category) p.set("category", category);
+  if (tag) p.set("tag", tag);
+  return ok(await api("GET", `/api/spaces/${encodeURIComponent(s)}/search?${p}`));
+});
 
-// ── Enhanced Table tools ─────────────────────────────────────────────────────
+// ── Enhanced Tables ──────────────────────────────────────────────────────────
 
-server.tool(
-  "list_tables",
-  "List all enhanced tables in a space with their IDs, titles, and row counts.",
-  { space: z.string().optional().describe("Space slug") },
-  async ({ space }) => {
-    const s = spaceSlug(space);
-    if (!s) return text("Error: No space specified.");
-    const tables = await api("GET", `/api/spaces/${encodeURIComponent(s)}/enhanced-tables`);
-    const summary = tables.map((t) => ({
-      id: t.id,
-      title: t.title,
-      columns: t.columns.map((c) => `${c.name} (${c.type})`),
-      rowCount: t.rows.length,
-      tags: t.tags,
-    }));
-    return text(summary);
-  }
-);
+server.registerTool("list_tables", {
+  description: "List enhanced tables in a space",
+  inputSchema: z.object({ space: z.string().optional().describe("Space slug") }),
+}, async ({ space }) => {
+  const s = sp(space); if (!s) return ok("Error: No space specified.");
+  const tables = await api("GET", `/api/spaces/${encodeURIComponent(s)}/enhanced-tables`);
+  return ok(tables.map((t) => ({ id: t.id, title: t.title, columns: t.columns.map((c) => `${c.name} (${c.type})`), rowCount: t.rows.length })));
+});
 
-server.tool(
-  "read_table",
-  "Read the full data of an enhanced table including all columns and rows.",
-  {
+server.registerTool("read_table", {
+  description: "Read full enhanced table data",
+  inputSchema: z.object({
     space: z.string().optional().describe("Space slug"),
-    tableId: z.string().describe("Enhanced table ID"),
-  },
-  async ({ space, tableId }) => {
-    const s = spaceSlug(space);
-    if (!s) return text("Error: No space specified.");
-    const table = await api("GET", `/api/spaces/${encodeURIComponent(s)}/enhanced-tables/${encodeURIComponent(tableId)}`);
-    return text(table);
-  }
-);
+    tableId: z.string().describe("Table ID"),
+  }),
+}, async ({ space, tableId }) => {
+  const s = sp(space); if (!s) return ok("Error: No space specified.");
+  return ok(await api("GET", `/api/spaces/${encodeURIComponent(s)}/enhanced-tables/${encodeURIComponent(tableId)}`));
+});
 
-server.tool(
-  "query_table",
-  "Query an enhanced table with column selection, filtering, and sorting. Returns matching rows.",
-  {
+server.registerTool("query_table", {
+  description: "Query an enhanced table with filtering, sorting, and column selection",
+  inputSchema: z.object({
     space: z.string().optional().describe("Space slug"),
-    tableId: z.string().describe("Enhanced table ID"),
-    columns: z.array(z.string()).optional().describe("Column names to include (all if empty)"),
-    filter: z.object({
-      column: z.string().describe("Column name"),
-      op: z.enum(["eq", "neq", "contains", "gt", "lt", "isEmpty", "isNotEmpty"]).describe("Operator"),
-      value: z.string().optional().describe("Value to compare"),
-    }).optional().describe("Filter condition"),
-    sortBy: z.string().optional().describe("Column name to sort by"),
+    tableId: z.string().describe("Table ID"),
+    columns: z.array(z.string()).optional().describe("Column names to include"),
+    filterColumn: z.string().optional().describe("Column to filter"),
+    filterOp: z.enum(["eq", "neq", "contains", "gt", "lt", "isEmpty", "isNotEmpty"]).optional().describe("Filter operator"),
+    filterValue: z.string().optional().describe("Filter value"),
+    sortBy: z.string().optional().describe("Sort column"),
     sortDir: z.enum(["asc", "desc"]).optional().describe("Sort direction"),
-    limit: z.number().optional().describe("Max rows to return"),
-  },
-  async ({ space, tableId, columns, filter, sortBy, sortDir, limit }) => {
-    const s = spaceSlug(space);
-    if (!s) return text("Error: No space specified.");
-    const table = await api("GET", `/api/spaces/${encodeURIComponent(s)}/enhanced-tables/${encodeURIComponent(tableId)}`);
-
-    // Resolve column names to IDs
-    const colMap = new Map(table.columns.map((c) => [c.name.toLowerCase(), c]));
-    const selectedCols = columns?.length
-      ? columns.map((n) => colMap.get(n.toLowerCase())).filter(Boolean)
-      : table.columns;
-
-    // Filter rows
-    let rows = [...table.rows];
-    if (filter) {
-      const filterCol = colMap.get(filter.column.toLowerCase());
-      if (filterCol) {
-        rows = rows.filter((r) => {
-          const v = r.cells[filterCol.id];
-          const vs = v != null ? String(v) : "";
-          const fv = filter.value || "";
-          switch (filter.op) {
-            case "eq": return vs === fv;
-            case "neq": return vs !== fv;
-            case "contains": return vs.toLowerCase().includes(fv.toLowerCase());
-            case "gt": return Number(v) > Number(fv);
-            case "lt": return Number(v) < Number(fv);
-            case "isEmpty": return vs === "";
-            case "isNotEmpty": return vs !== "";
-            default: return true;
-          }
-        });
+    limit: z.number().optional().describe("Max rows"),
+  }),
+}, async ({ space, tableId, columns, filterColumn, filterOp, filterValue, sortBy, sortDir, limit }) => {
+  const s = sp(space); if (!s) return ok("Error: No space specified.");
+  const table = await api("GET", `/api/spaces/${encodeURIComponent(s)}/enhanced-tables/${encodeURIComponent(tableId)}`);
+  const cm = new Map(table.columns.map((c) => [c.name.toLowerCase(), c]));
+  const cols = columns?.length ? columns.map((n) => cm.get(n.toLowerCase())).filter(Boolean) : table.columns;
+  let rows = [...table.rows];
+  if (filterColumn && filterOp) {
+    const fc = cm.get(filterColumn.toLowerCase());
+    if (fc) rows = rows.filter((r) => {
+      const v = r.cells[fc.id], vs = v != null ? String(v) : "", fv = filterValue || "";
+      switch (filterOp) {
+        case "eq": return vs === fv; case "neq": return vs !== fv;
+        case "contains": return vs.toLowerCase().includes(fv.toLowerCase());
+        case "gt": return Number(v) > Number(fv); case "lt": return Number(v) < Number(fv);
+        case "isEmpty": return vs === ""; case "isNotEmpty": return vs !== "";
+        default: return true;
       }
-    }
-
-    // Sort
-    if (sortBy) {
-      const sortCol = colMap.get(sortBy.toLowerCase());
-      if (sortCol) {
-        rows.sort((a, b) => {
-          const av = String(a.cells[sortCol.id] ?? "");
-          const bv = String(b.cells[sortCol.id] ?? "");
-          const cmp = av.localeCompare(bv, undefined, { numeric: true });
-          return sortDir === "desc" ? -cmp : cmp;
-        });
-      }
-    }
-
-    // Limit
-    if (limit && limit > 0) rows = rows.slice(0, limit);
-
-    // Format output
-    const result = rows.map((r) => {
-      const obj = {};
-      for (const col of selectedCols) {
-        const v = r.cells[col.id];
-        obj[col.name] = v != null ? (Array.isArray(v) ? v.join(", ") : v) : null;
-      }
-      return obj;
     });
-
-    return text({ table: table.title, rowCount: result.length, totalRows: table.rows.length, rows: result });
   }
-);
+  if (sortBy) { const sc = cm.get(sortBy.toLowerCase()); if (sc) rows.sort((a, b) => { const c = String(a.cells[sc.id] ?? "").localeCompare(String(b.cells[sc.id] ?? ""), undefined, { numeric: true }); return sortDir === "desc" ? -c : c; }); }
+  if (limit > 0) rows = rows.slice(0, limit);
+  return ok({ table: table.title, rowCount: rows.length, totalRows: table.rows.length, rows: rows.map((r) => { const o = {}; for (const c of cols) o[c.name] = r.cells[c.id] ?? null; return o; }) });
+});
 
-server.tool(
-  "create_row",
-  "Add a new row to an enhanced table.",
-  {
+server.registerTool("create_row", {
+  description: "Add a row to an enhanced table",
+  inputSchema: z.object({
     space: z.string().optional().describe("Space slug"),
-    tableId: z.string().describe("Enhanced table ID"),
-    data: z.record(z.unknown()).describe("Object mapping column names to values"),
-  },
-  async ({ space, tableId, data }) => {
-    const s = spaceSlug(space);
-    if (!s) return text("Error: No space specified.");
-    // Resolve column names to IDs
-    const table = await api("GET", `/api/spaces/${encodeURIComponent(s)}/enhanced-tables/${encodeURIComponent(tableId)}`);
-    const cells = {};
-    for (const [name, value] of Object.entries(data)) {
-      const col = table.columns.find((c) => c.name.toLowerCase() === name.toLowerCase());
-      if (col) cells[col.id] = value;
-    }
-    const row = await api("POST", `/api/spaces/${encodeURIComponent(s)}/enhanced-tables/${encodeURIComponent(tableId)}/rows`, { cells });
-    return text(row);
-  }
-);
+    tableId: z.string().describe("Table ID"),
+    data: z.record(z.string(), z.unknown()).describe("Column name → value"),
+  }),
+}, async ({ space, tableId, data }) => {
+  const s = sp(space); if (!s) return ok("Error: No space specified.");
+  const table = await api("GET", `/api/spaces/${encodeURIComponent(s)}/enhanced-tables/${encodeURIComponent(tableId)}`);
+  const cells = {};
+  for (const [n, v] of Object.entries(data)) { const c = table.columns.find((x) => x.name.toLowerCase() === n.toLowerCase()); if (c) cells[c.id] = v; }
+  return ok(await api("POST", `/api/spaces/${encodeURIComponent(s)}/enhanced-tables/${encodeURIComponent(tableId)}/rows`, { cells }));
+});
 
-server.tool(
-  "update_row",
-  "Update a row in an enhanced table.",
-  {
+server.registerTool("update_row", {
+  description: "Update a row in an enhanced table",
+  inputSchema: z.object({
     space: z.string().optional().describe("Space slug"),
-    tableId: z.string().describe("Enhanced table ID"),
+    tableId: z.string().describe("Table ID"),
     rowId: z.string().describe("Row ID"),
-    data: z.record(z.unknown()).describe("Object mapping column names to new values"),
-  },
-  async ({ space, tableId, rowId, data }) => {
-    const s = spaceSlug(space);
-    if (!s) return text("Error: No space specified.");
-    const table = await api("GET", `/api/spaces/${encodeURIComponent(s)}/enhanced-tables/${encodeURIComponent(tableId)}`);
-    const cells = {};
-    for (const [name, value] of Object.entries(data)) {
-      const col = table.columns.find((c) => c.name.toLowerCase() === name.toLowerCase());
-      if (col) cells[col.id] = value;
-    }
-    const result = await api("PUT", `/api/spaces/${encodeURIComponent(s)}/enhanced-tables/${encodeURIComponent(tableId)}/rows/${encodeURIComponent(rowId)}`, { cells });
-    return text(result);
-  }
-);
+    data: z.record(z.string(), z.unknown()).describe("Column name → new value"),
+  }),
+}, async ({ space, tableId, rowId, data }) => {
+  const s = sp(space); if (!s) return ok("Error: No space specified.");
+  const table = await api("GET", `/api/spaces/${encodeURIComponent(s)}/enhanced-tables/${encodeURIComponent(tableId)}`);
+  const cells = {};
+  for (const [n, v] of Object.entries(data)) { const c = table.columns.find((x) => x.name.toLowerCase() === n.toLowerCase()); if (c) cells[c.id] = v; }
+  return ok(await api("PUT", `/api/spaces/${encodeURIComponent(s)}/enhanced-tables/${encodeURIComponent(tableId)}/rows/${encodeURIComponent(rowId)}`, { cells }));
+});
 
-server.tool(
-  "delete_row",
-  "Delete a row from an enhanced table.",
-  {
+server.registerTool("delete_row", {
+  description: "Delete a row from an enhanced table",
+  inputSchema: z.object({
     space: z.string().optional().describe("Space slug"),
-    tableId: z.string().describe("Enhanced table ID"),
+    tableId: z.string().describe("Table ID"),
     rowId: z.string().describe("Row ID"),
-  },
-  async ({ space, tableId, rowId }) => {
-    const s = spaceSlug(space);
-    if (!s) return text("Error: No space specified.");
-    const result = await api("DELETE", `/api/spaces/${encodeURIComponent(s)}/enhanced-tables/${encodeURIComponent(tableId)}/rows/${encodeURIComponent(rowId)}`);
-    return text(result);
-  }
-);
+  }),
+}, async ({ space, tableId, rowId }) => {
+  const s = sp(space); if (!s) return ok("Error: No space specified.");
+  return ok(await api("DELETE", `/api/spaces/${encodeURIComponent(s)}/enhanced-tables/${encodeURIComponent(tableId)}/rows/${encodeURIComponent(rowId)}`));
+});
 
-// ── Tag tools ────────────────────────────────────────────────────────────────
+// ── Tags ─────────────────────────────────────────────────────────────────────
 
-server.tool(
-  "list_tags",
-  "List all tags in a space with document counts.",
-  { space: z.string().optional().describe("Space slug") },
-  async ({ space }) => {
-    const s = spaceSlug(space);
-    if (!s) return text("Error: No space specified.");
-    const tags = await api("GET", `/api/spaces/${encodeURIComponent(s)}/tags`);
-    return text(tags);
-  }
-);
+server.registerTool("list_tags", {
+  description: "List all tags in a space with document counts",
+  inputSchema: z.object({ space: z.string().optional().describe("Space slug") }),
+}, async ({ space }) => {
+  const s = sp(space); if (!s) return ok("Error: No space specified.");
+  return ok(await api("GET", `/api/spaces/${encodeURIComponent(s)}/tags`));
+});
 
-// ── System tools ─────────────────────────────────────────────────────────────
+// ── System ───────────────────────────────────────────────────────────────────
 
-server.tool(
-  "get_version",
-  "Get the Doc-it server version.",
-  {},
-  async () => {
-    const version = await api("GET", "/api/version");
-    return text(version);
-  }
-);
+server.registerTool("get_version", { description: "Get Doc-it server version" }, async () => {
+  return ok(await api("GET", "/api/version"));
+});
 
 // ── Start ────────────────────────────────────────────────────────────────────
 
-async function main() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error(`[docit-mcp] Connected to ${BASE_URL}`);
-}
-
-main().catch((err) => {
-  console.error("[docit-mcp] Fatal:", err);
-  process.exit(1);
-});
+const transport = new StdioServerTransport();
+await server.connect(transport);
+console.error(`[docit-mcp] Connected to ${BASE_URL}`);
