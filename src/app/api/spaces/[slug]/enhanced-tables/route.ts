@@ -11,12 +11,23 @@ export async function GET(_request: NextRequest, { params }: Params) {
   try { await requireSpaceRole(slug, "reader"); }
   catch (err) { return NextResponse.json({ error: String(err) }, { status: 403 }); }
 
-  const dbs = await listEnhancedTables(slug);
-  // Return lightweight list (no rows) for perf
-  return NextResponse.json(dbs.map((db) => {
-    const { rows, ...rest } = db;
-    return { ...rest, rowCount: Array.isArray(rows) ? rows.length : 0, tags: rest.tags || [] };
-  }));
+  try {
+    const dbs = await listEnhancedTables(slug);
+    // Return lightweight list (no rows) for perf
+    return NextResponse.json(dbs.map((db) => {
+      const rows = db.rows;
+      const { rows: _r, ...rest } = db;
+      return {
+        ...rest,
+        rowCount: Array.isArray(rows) ? rows.length : 0,
+        columns: Array.isArray(rest.columns) ? rest.columns : [],
+        views: Array.isArray(rest.views) ? rest.views : [],
+        tags: rest.tags || [],
+      };
+    }));
+  } catch (err) {
+    return NextResponse.json({ error: `Failed to list enhanced tables: ${err instanceof Error ? err.message : String(err)}` }, { status: 500 });
+  }
 }
 
 export async function POST(request: NextRequest, { params }: Params) {
