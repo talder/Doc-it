@@ -12,6 +12,10 @@ interface QueryConfig {
   filters: DbFilter[];
   sorts: DbSort[];
   limit: number;
+  join?: {
+    relationColumnId: string;
+    targetColumns: string[];  // column IDs on target table
+  };
 }
 
 function decodeConfig(b64: string): QueryConfig {
@@ -26,19 +30,22 @@ function decodeConfig(b64: string): QueryConfig {
       filters: typeof raw.filters === "string" ? JSON.parse(raw.filters) : (raw.filters || []),
       sorts: typeof raw.sorts === "string" ? JSON.parse(raw.sorts) : (raw.sorts || []),
       limit: raw.limit || 0,
+      join: raw.join || undefined,
     };
   } catch { return empty; }
 }
 
 function encodeConfig(cfg: QueryConfig): string {
-  return btoa(JSON.stringify({
+  const obj: Record<string, unknown> = {
     spaceSlug: cfg.spaceSlug,
     dbId: cfg.dbId,
     columns: cfg.columns,
     filters: cfg.filters,
     sorts: cfg.sorts,
     limit: cfg.limit,
-  }));
+  };
+  if (cfg.join) obj.join = cfg.join;
+  return btoa(JSON.stringify(obj));
 }
 
 interface NodeViewProps {
@@ -117,7 +124,7 @@ function applySorts(rows: DbRow[], sorts: DbSort[], columns: DbColumn[]): DbRow[
 
 export function QueryBlockNodeView({ node, updateAttributes, editor }: NodeViewProps) {
   const cfg = decodeConfig(node.attrs.config);
-  const { spaceSlug, dbId, columns: selectedColumns, filters: queryFilters, sorts: querySorts, limit } = cfg;
+  const { spaceSlug, dbId, columns: selectedColumns, filters: queryFilters, sorts: querySorts, limit, join: queryJoin } = cfg;
   const editable = editor?.isEditable ?? false;
 
   const [db, setDb] = useState<EnhancedTable | null>(null);
@@ -126,6 +133,10 @@ export function QueryBlockNodeView({ node, updateAttributes, editor }: NodeViewP
   const [configOpen, setConfigOpen] = useState(!dbId && editable);
   // Relation label cache: colId -> { rowId -> label }
   const [relationLabels, setRelationLabels] = useState<Record<string, Record<string, string>>>({});
+  // Join results
+  const [joinedRows, setJoinedRows] = useState<{ id: string; cells: Record<string, unknown>; _joined: Record<string, unknown> }[] | null>(null);
+  const [joinedColumns, setJoinedColumns] = useState<{ id: string; name: string; type: string }[]>([]);
+  const [joinTargetTitle, setJoinTargetTitle] = useState("");
 
   // Config panel state
   const [tables, setTables] = useState<{ id: string; title: string }[]>([]);
@@ -135,6 +146,11 @@ export function QueryBlockNodeView({ node, updateAttributes, editor }: NodeViewP
   const [cfgSorts, setCfgSorts] = useState<DbSort[]>(querySorts);
   const [cfgLimit, setCfgLimit] = useState(limit);
   const [cfgTargetDb, setCfgTargetDb] = useState<EnhancedTable | null>(null);
+
+  // Join config state
+  const [cfgJoinRelCol, setCfgJoinRelCol] = useState(queryJoin?.relationColumnId || "");
+  const [cfgJoinTargetCols, setCfgJoinTargetCols] = useState<string[]>(queryJoin?.targetColumns || []);
+  const [cfgJoinTargetDb, setCfgJoinTargetDb] = useState<EnhancedTable | null>(null);
 
   // Fetch table list for picker
   useEffect(() => {
@@ -154,16 +170,52 @@ export function QueryBlockNodeView({ node, updateAttributes, editor }: NodeViewP
       .catch(() => setCfgTargetDb(null));
   }, [cfgDbId, spaceSlug]);
 
+  // Fetch join target table for config panel
+  useEffect(() => {
+    if (!cfgJoinRelCol || !cfgTargetDb) { setCfgJoinTargetDb(null); return; }
+    const relCol = cfgTargetDb.columns.find((c) => c.id === cfgJoinRelCol);
+    if (!relCol?.relation) { setCfgJoinTargetDb(null); return; }
+    fetch(`/api/spaces/${encodeURIComponent(relCol.relation.targetSpace)}/enhanced-tables/${encodeURIComponent(relCol.relation.targetDbId)}`)
+      .then((r) => r.json())
+      .then((data: EnhancedTable) => setCfgJoinTargetDb(data))
+      .catch(() => setCfgJoinTargetDb(null));
+  }, [cfgJoinRelCol, cfgTargetDb]);
+
   // Fetch the configured table for results
   const fetchDb = useCallback(async () => {
     if (!dbId || !spaceSlug) { setLoading(false); return; }
     try {
       const res = await fetch(`/api/spaces/${encodeURIComponent(spaceSlug)}/enhanced-tables/${encodeURIComponent(dbId)}`);
       if (!res.ok) throw new Error("Not found");
-      setDb(await res.json());
+      const data = await res.json();
+      setDb(data);
+      // If join is configured, fetch joined results via the join API
+      if (queryJoin?.relationColumnId && queryJoin.targetColumns.length > 0) {
+        const relCol = data.columns.find((c: DbColumn) => c.id === queryJoin.relationColumnId);
+        if (relCol?.relation) {
+          const joinRes = await fetch(`/api/spaces/${encodeURIComponent(spaceSlug)}/enhanced-tables/${encodeURIComponent(dbId)}/join`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              targetDbId: relCol.relation.targetDbId,
+              relationColumnId: queryJoin.relationColumnId,
+              targetColumns: queryJoin.targetColumns,
+              filters: queryFilters,
+              sorts: querySorts,
+              limit: limit > 0 ? limit : undefined,
+            }),
+          });
+          if (joinRes.ok) {
+            const joinData = await joinRes.json();
+            setJoinedRows(joinData.rows);
+            setJoinedColumns(joinData.joinedColumns);
+            setJoinTargetTitle(joinData.targetTable);
+          }
+        }
+      }
     } catch { setError("Table not found"); }
     finally { setLoading(false); }
-  }, [dbId, spaceSlug]);
+  }, [dbId, spaceSlug, queryJoin, queryFilters, querySorts, limit]);
 
   useEffect(() => { fetchDb(); }, [fetchDb]);
 
@@ -205,6 +257,9 @@ export function QueryBlockNodeView({ node, updateAttributes, editor }: NodeViewP
 
   // Save config
   const handleSaveConfig = () => {
+    const joinCfg = cfgJoinRelCol && cfgJoinTargetCols.length > 0
+      ? { relationColumnId: cfgJoinRelCol, targetColumns: cfgJoinTargetCols }
+      : undefined;
     const newConfig = encodeConfig({
       spaceSlug,
       dbId: cfgDbId,
@@ -212,12 +267,14 @@ export function QueryBlockNodeView({ node, updateAttributes, editor }: NodeViewP
       filters: cfgFilters,
       sorts: cfgSorts,
       limit: cfgLimit,
+      join: joinCfg,
     });
     updateAttributes({ config: newConfig });
     setConfigOpen(false);
     // Trigger re-fetch
     setLoading(true);
     setDb(null);
+    setJoinedRows(null);
   };
 
   // ── Not configured yet ──────────────────────────────────────────────────────
@@ -372,6 +429,34 @@ export function QueryBlockNodeView({ node, updateAttributes, editor }: NodeViewP
                   </button>
                 </div>
 
+                {/* Join */}
+                <div className="qb-section">
+                  <span className="qb-section-title">Join Table</span>
+                  <select className="qb-select" value={cfgJoinRelCol} onChange={(e) => { setCfgJoinRelCol(e.target.value); setCfgJoinTargetCols([]); }}>
+                    <option value="">No join</option>
+                    {targetCols.filter((c) => c.type === "relation" && c.relation).map((c) => (
+                      <option key={c.id} value={c.id}>{c.name} →</option>
+                    ))}
+                  </select>
+                  {cfgJoinRelCol && cfgJoinTargetDb && (
+                    <div className="qb-checkboxes" style={{ marginTop: 4 }}>
+                      <span className="text-[10px] text-text-muted" style={{ width: "100%" }}>Include columns from {cfgJoinTargetDb.title}:</span>
+                      {cfgJoinTargetDb.columns.filter((c) => c.type !== "relation" && c.type !== "lookup").map((c) => (
+                        <label key={c.id} className="qb-check">
+                          <input
+                            type="checkbox"
+                            checked={cfgJoinTargetCols.includes(c.name)}
+                            onChange={(e) => {
+                              setCfgJoinTargetCols(e.target.checked ? [...cfgJoinTargetCols, c.name] : cfgJoinTargetCols.filter((n) => n !== c.name));
+                            }}
+                          />
+                          {c.name}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 {/* Limit */}
                 <label className="qb-label">
                   Row limit <span className="text-text-muted">(0 = all)</span>
@@ -409,6 +494,10 @@ export function QueryBlockNodeView({ node, updateAttributes, editor }: NodeViewP
   }
 
   // ── Results table ───────────────────────────────────────────────────────────
+  const hasJoin = joinedRows !== null && joinedColumns.length > 0;
+  const displayRows = hasJoin ? joinedRows! : results;
+  const rowCount = displayRows.length;
+
   return (
     <NodeViewWrapper className="my-3" contentEditable={false}>
       <div className="et-block">
@@ -416,10 +505,11 @@ export function QueryBlockNodeView({ node, updateAttributes, editor }: NodeViewP
           <DbIcon className="w-4 h-4 text-accent" />
           <span className="et-block-title">
             {db.title}
+            {hasJoin && <span className="qb-badge">⇒ {joinTargetTitle}</span>}
             {queryFilters.length > 0 && <span className="qb-badge">{queryFilters.length} filter{queryFilters.length > 1 ? "s" : ""}</span>}
             {limit > 0 && <span className="qb-badge">limit {limit}</span>}
           </span>
-          <span className="text-[10px] text-text-muted">{results.length} row{results.length !== 1 ? "s" : ""}</span>
+          <span className="text-[10px] text-text-muted">{rowCount} row{rowCount !== 1 ? "s" : ""}</span>
           {editable && (
             <button className="et-display-btn" onClick={() => {
               setCfgDbId(dbId);
@@ -427,13 +517,15 @@ export function QueryBlockNodeView({ node, updateAttributes, editor }: NodeViewP
               setCfgFilters(queryFilters);
               setCfgSorts(querySorts);
               setCfgLimit(limit);
+              setCfgJoinRelCol(queryJoin?.relationColumnId || "");
+              setCfgJoinTargetCols(queryJoin?.targetColumns || []);
               setConfigOpen(true);
             }} title="Configure query">
               <Settings className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
-        {results.length === 0 ? (
+        {rowCount === 0 ? (
           <div className="qb-empty">No matching rows</div>
         ) : (
           <div className="et-table-wrap">
@@ -443,10 +535,13 @@ export function QueryBlockNodeView({ node, updateAttributes, editor }: NodeViewP
                   {visibleCols.map((col) => (
                     <th key={col.id} className="qb-th">{col.name}</th>
                   ))}
+                  {hasJoin && joinedColumns.map((jc) => (
+                    <th key={`j_${jc.id}`} className="qb-th qb-th-joined">{joinTargetTitle}.{jc.name}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {results.map((row) => (
+                {displayRows.map((row) => (
                   <tr key={row.id}>
                     {visibleCols.map((col) => {
                       const val = row.cells[col.id];
@@ -454,7 +549,6 @@ export function QueryBlockNodeView({ node, updateAttributes, editor }: NodeViewP
                       if (val == null || val === "") {
                         display = "—";
                       } else if (col.type === "relation" && col.relation) {
-                        // Resolve relation IDs to display labels
                         const labels = relationLabels[col.id] || {};
                         const ids = Array.isArray(val) ? val : [val];
                         const resolved = ids.map((id: string) => labels[id] || id);
@@ -467,6 +561,16 @@ export function QueryBlockNodeView({ node, updateAttributes, editor }: NodeViewP
                       return (
                         <td key={col.id} className="qb-td">
                           {display === "—" ? <span className="et-cell-empty">—</span> : display}
+                        </td>
+                      );
+                    })}
+                    {hasJoin && joinedColumns.map((jc) => {
+                      const jRow = row as { _joined?: Record<string, unknown> };
+                      const jval = jRow._joined?.[jc.name];
+                      const jdisp = jval == null || jval === "" ? "—" : Array.isArray(jval) ? jval.join(", ") : String(jval);
+                      return (
+                        <td key={`j_${jc.id}`} className="qb-td qb-td-joined">
+                          {jdisp === "—" ? <span className="et-cell-empty">—</span> : jdisp}
                         </td>
                       );
                     })}

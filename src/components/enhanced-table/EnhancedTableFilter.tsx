@@ -1,7 +1,8 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Plus, X } from "lucide-react";
-import type { DbColumn, DbFilter, DbFilterOp } from "@/lib/types";
+import type { DbColumn, DbFilter, DbFilterOp, EnhancedTable } from "@/lib/types";
 
 const OPS_BY_TYPE: Record<string, { value: DbFilterOp; label: string }[]> = {
   text:        [{ value: "contains", label: "contains" }, { value: "eq", label: "equals" }, { value: "notContains", label: "not contains" }, { value: "isEmpty", label: "is empty" }, { value: "isNotEmpty", label: "is not empty" }],
@@ -22,14 +23,43 @@ interface Props {
   filterLogic: "and" | "or";
   onChange: (filters: DbFilter[], logic: "and" | "or") => void;
   onClose: () => void;
+  spaceSlug?: string;
 }
 
-export default function DatabaseFilter({ columns, filters, filterLogic, onChange, onClose }: Props) {
+export default function DatabaseFilter({ columns, filters, filterLogic, onChange, onClose, spaceSlug }: Props) {
+  // Cache of target table columns for cross-table filters: "space/dbId" -> DbColumn[]
+  const [targetColsCache, setTargetColsCache] = useState<Record<string, { title: string; columns: DbColumn[] }>>({});
+
+  // Fetch target table columns when a relation column is used in a filter
+  useEffect(() => {
+    if (!spaceSlug) return;
+    for (const f of filters) {
+      if (!f.throughRelation) continue;
+      const relCol = columns.find((c) => c.id === f.throughRelation!.relationColumnId);
+      if (!relCol?.relation) continue;
+      const key = `${relCol.relation.targetSpace}/${relCol.relation.targetDbId}`;
+      if (targetColsCache[key]) continue;
+      fetch(`/api/spaces/${encodeURIComponent(relCol.relation.targetSpace)}/enhanced-tables/${encodeURIComponent(relCol.relation.targetDbId)}`)
+        .then((r) => r.json())
+        .then((data: EnhancedTable) => {
+          setTargetColsCache((prev) => ({ ...prev, [key]: { title: data.title, columns: data.columns } }));
+        })
+        .catch(() => {});
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters, columns, spaceSlug]);
   const addFilter = () => {
     const col = columns[0];
     if (!col) return;
     const ops = OPS_BY_TYPE[col.type] || OPS_BY_TYPE.text;
     onChange([...filters, { columnId: col.id, op: ops[0].value, value: "" }], filterLogic);
+  };
+
+  // Helper to get target table info for a relation column
+  const getTargetInfo = (relCol: DbColumn) => {
+    if (!relCol.relation) return null;
+    const key = `${relCol.relation.targetSpace}/${relCol.relation.targetDbId}`;
+    return targetColsCache[key] || null;
   };
 
   const updateFilter = (idx: number, partial: Partial<DbFilter>) => {
@@ -56,32 +86,96 @@ export default function DatabaseFilter({ columns, filters, filterLogic, onChange
       <div className="et-filter-rows">
         {filters.map((f, idx) => {
           const col = columns.find((c) => c.id === f.columnId);
-          const ops = OPS_BY_TYPE[col?.type || "text"] || OPS_BY_TYPE.text;
+          const isRelation = col?.type === "relation" && col.relation;
+          const isCrossTable = !!f.throughRelation;
+
+          // For cross-table filters, resolve the effective column type from the target table
+          let effectiveType = col?.type || "text";
+          let effectiveCol = col;
+          if (isCrossTable && isRelation) {
+            const target = getTargetInfo(col!);
+            if (target) {
+              const tc = target.columns.find((c) => c.id === f.throughRelation!.targetColumnId);
+              if (tc) { effectiveType = tc.type; effectiveCol = tc; }
+            }
+          }
+
+          const ops = OPS_BY_TYPE[effectiveType] || OPS_BY_TYPE.text;
           const needsValue = !NO_VALUE_OPS.includes(f.op);
           return (
             <div key={idx} className="et-filter-row">
               <select
                 className="et-filter-select"
-                value={f.columnId}
+                value={isCrossTable ? f.throughRelation!.relationColumnId : f.columnId}
                 onChange={(e) => {
                   const newCol = columns.find((c) => c.id === e.target.value);
-                  const newOps = OPS_BY_TYPE[newCol?.type || "text"] || OPS_BY_TYPE.text;
-                  updateFilter(idx, { columnId: e.target.value, op: newOps[0].value, value: "" });
+                  if (newCol?.type === "relation" && newCol.relation) {
+                    // Switching to a relation column — set up cross-table filter
+                    const target = getTargetInfo(newCol);
+                    const firstTargetCol = target?.columns.find((c) => c.type !== "relation" && c.type !== "lookup") || target?.columns[0];
+                    const targetOps = OPS_BY_TYPE[firstTargetCol?.type || "text"] || OPS_BY_TYPE.text;
+                    updateFilter(idx, {
+                      columnId: newCol.id,
+                      op: targetOps[0].value,
+                      value: "",
+                      throughRelation: {
+                        relationColumnId: newCol.id,
+                        targetColumnId: firstTargetCol?.id || "",
+                      },
+                    });
+                    // Trigger target table fetch if not cached
+                    if (!target && spaceSlug) {
+                      fetch(`/api/spaces/${encodeURIComponent(newCol.relation.targetSpace)}/enhanced-tables/${encodeURIComponent(newCol.relation.targetDbId)}`)
+                        .then((r) => r.json())
+                        .then((data: EnhancedTable) => {
+                          const key = `${newCol.relation!.targetSpace}/${newCol.relation!.targetDbId}`;
+                          setTargetColsCache((prev) => ({ ...prev, [key]: { title: data.title, columns: data.columns } }));
+                        })
+                        .catch(() => {});
+                    }
+                  } else {
+                    const newOps = OPS_BY_TYPE[newCol?.type || "text"] || OPS_BY_TYPE.text;
+                    updateFilter(idx, { columnId: e.target.value, op: newOps[0].value, value: "", throughRelation: undefined });
+                  }
                 }}
               >
                 {columns.filter((c) => c.type !== "formula").map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                  <option key={c.id} value={c.id}>{c.name}{c.type === "relation" ? " →" : ""}</option>
                 ))}
               </select>
+              {/* Cross-table: show target field picker */}
+              {isCrossTable && isRelation && (() => {
+                const target = getTargetInfo(col!);
+                return (
+                  <select
+                    className="et-filter-select"
+                    value={f.throughRelation!.targetColumnId}
+                    onChange={(e) => {
+                      const tc = target?.columns.find((c) => c.id === e.target.value);
+                      const newOps = OPS_BY_TYPE[tc?.type || "text"] || OPS_BY_TYPE.text;
+                      updateFilter(idx, {
+                        op: newOps[0].value,
+                        value: "",
+                        throughRelation: { ...f.throughRelation!, targetColumnId: e.target.value },
+                      });
+                    }}
+                  >
+                    {!target && <option value="">Loading…</option>}
+                    {target?.columns.filter((c) => c.type !== "relation" && c.type !== "lookup").map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                );
+              })()}
               <select className="et-filter-select" value={f.op} onChange={(e) => updateFilter(idx, { op: e.target.value as DbFilterOp })}>
                 {ops.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
-              {needsValue && col?.type === "select" ? (
+              {needsValue && effectiveCol?.type === "select" ? (
                 <select className="et-filter-select" value={String(f.value || "")} onChange={(e) => updateFilter(idx, { value: e.target.value })}>
                   <option value="">—</option>
-                  {(col.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
+                  {(effectiveCol.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
-              ) : needsValue && col?.type === "date" ? (
+              ) : needsValue && effectiveType === "date" ? (
                 <div className="et-filter-date-wrap">
                   <input
                     className="et-filter-input"
@@ -103,10 +197,10 @@ export default function DatabaseFilter({ columns, filters, filterLogic, onChange
               ) : needsValue ? (
                 <input
                   className="et-filter-input"
-                  type={col?.type === "number" ? "number" : "text"}
+                  type={effectiveType === "number" ? "number" : "text"}
                   placeholder="value"
                   value={String(f.value ?? "")}
-                  onChange={(e) => updateFilter(idx, { value: col?.type === "number" ? Number(e.target.value) : e.target.value })}
+                  onChange={(e) => updateFilter(idx, { value: effectiveType === "number" ? Number(e.target.value) : e.target.value })}
                 />
               ) : null}
               <button className="et-filter-remove" onClick={() => removeFilter(idx)}><X className="w-3 h-3" /></button>

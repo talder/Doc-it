@@ -309,6 +309,11 @@ export interface DbFilter {
   columnId: string;
   op: DbFilterOp;
   value?: unknown;
+  /** When set, the filter follows a relation column to filter on a target table field. */
+  throughRelation?: {
+    relationColumnId: string;   // the relation column on this table
+    targetColumnId: string;     // the column on the target table to evaluate
+  };
 }
 
 export interface DbSort {

@@ -15,24 +15,20 @@ import { generateCSV, downloadCSV, parseCSV } from "@/lib/csv";
 
 // ── Filter / Sort / Search helpers ──────────────────────────────────────────
 
-function matchesFilter(row: DbRow, filter: DbFilter, columns: DbColumn[]): boolean {
-  const col = columns.find((c) => c.id === filter.columnId);
-  if (!col) return true;
-  const raw = row.cells[col.id];
+function matchesFilterValue(raw: unknown, op: DbFilterOp, filterValue: unknown): boolean {
   const v = raw != null ? String(raw) : "";
-  const fv = filter.value != null ? String(filter.value) : "";
-
-  switch (filter.op) {
+  const fv = filterValue != null ? String(filterValue) : "";
+  switch (op) {
     case "eq": case "is": return v === fv;
     case "neq": case "isNot": return v !== fv;
     case "contains": return v.toLowerCase().includes(fv.toLowerCase());
     case "notContains": return !v.toLowerCase().includes(fv.toLowerCase());
     case "isEmpty": return v === "";
     case "isNotEmpty": return v !== "";
-    case "gt": return Number(raw) > Number(filter.value);
-    case "gte": return Number(raw) >= Number(filter.value);
-    case "lt": return Number(raw) < Number(filter.value);
-    case "lte": return Number(raw) <= Number(filter.value);
+    case "gt": return Number(raw) > Number(filterValue);
+    case "gte": return Number(raw) >= Number(filterValue);
+    case "lt": return Number(raw) < Number(filterValue);
+    case "lte": return Number(raw) <= Number(filterValue);
     case "before": return v < fv;
     case "after": return v > fv;
     case "isTrue": return !!raw;
@@ -41,10 +37,34 @@ function matchesFilter(row: DbRow, filter: DbFilter, columns: DbColumn[]): boole
   }
 }
 
-function applyFilters(rows: DbRow[], filters: DbFilter[], logic: "and" | "or", columns: DbColumn[]): DbRow[] {
+function matchesFilter(row: DbRow, filter: DbFilter, columns: DbColumn[], targetTableCache?: Record<string, EnhancedTable>): boolean {
+  // Cross-table filter: follow a relation column to evaluate on the target table
+  if (filter.throughRelation && targetTableCache) {
+    const relCol = columns.find((c) => c.id === filter.throughRelation!.relationColumnId);
+    if (!relCol?.relation) return true;
+    const key = `${relCol.relation.targetSpace}/${relCol.relation.targetDbId}`;
+    const targetDb = targetTableCache[key];
+    if (!targetDb) return true; // target not loaded yet — don't filter out
+    const linkedVal = row.cells[relCol.id];
+    const linkedIds: string[] = Array.isArray(linkedVal) ? linkedVal.map(String) : linkedVal ? [String(linkedVal)] : [];
+    if (linkedIds.length === 0) return matchesFilterValue(undefined, filter.op, filter.value);
+    // At least one linked row must match the target filter
+    return linkedIds.some((rid) => {
+      const targetRow = targetDb.rows.find((r) => r.id === rid);
+      if (!targetRow) return false;
+      const targetVal = targetRow.cells[filter.throughRelation!.targetColumnId];
+      return matchesFilterValue(targetVal, filter.op, filter.value);
+    });
+  }
+  const col = columns.find((c) => c.id === filter.columnId);
+  if (!col) return true;
+  return matchesFilterValue(row.cells[col.id], filter.op, filter.value);
+}
+
+function applyFilters(rows: DbRow[], filters: DbFilter[], logic: "and" | "or", columns: DbColumn[], targetTableCache?: Record<string, EnhancedTable>): DbRow[] {
   if (filters.length === 0) return rows;
   return rows.filter((row) => {
-    const results = filters.map((f) => matchesFilter(row, f, columns));
+    const results = filters.map((f) => matchesFilter(row, f, columns, targetTableCache));
     return logic === "or" ? results.some(Boolean) : results.every(Boolean);
   });
 }
@@ -488,18 +508,24 @@ export default function EnhancedTableView({ dbId, spaceSlug, canWrite, onClose, 
     if (csvInputRef.current) csvInputRef.current.value = "";
   }, [db, handleAddRow]);
 
-  // Fetch target tables for lookup columns
+  // Fetch target tables for lookup columns and cross-table filters
   useEffect(() => {
     if (!db) return;
-    const lookupCols = db.columns.filter((c) => c.type === "lookup" && c.lookup);
-    if (lookupCols.length === 0) return;
     const needed = new Map<string, { space: string; dbId: string }>();
-    for (const lc of lookupCols) {
+    // Lookup columns need target tables
+    for (const lc of db.columns.filter((c) => c.type === "lookup" && c.lookup)) {
       const relCol = db.columns.find((c) => c.id === lc.lookup!.relationColumnId);
       if (!relCol?.relation) continue;
       const key = `${relCol.relation.targetSpace}/${relCol.relation.targetDbId}`;
       if (!targetTableCache[key] && !needed.has(key)) {
         needed.set(key, { space: relCol.relation.targetSpace, dbId: relCol.relation.targetDbId });
+      }
+    }
+    // Relation columns also need target tables (for cross-table filters & hover preview)
+    for (const rc of db.columns.filter((c) => c.type === "relation" && c.relation)) {
+      const key = `${rc.relation!.targetSpace}/${rc.relation!.targetDbId}`;
+      if (!targetTableCache[key] && !needed.has(key)) {
+        needed.set(key, { space: rc.relation!.targetSpace, dbId: rc.relation!.targetDbId });
       }
     }
     for (const [key, { space, dbId: tDbId }] of needed) {
@@ -578,7 +604,7 @@ export default function EnhancedTableView({ dbId, spaceSlug, canWrite, onClose, 
         return { ...row, cells };
       });
     }
-    result = applyFilters(result, activeView.filters, activeView.filterLogic || "and", db.columns);
+    result = applyFilters(result, activeView.filters, activeView.filterLogic || "and", db.columns, targetTableCache);
     result = applySearch(result, search, db.columns);
 
     // Build a key from sort config + row IDs (sorted) to detect structural changes
@@ -749,6 +775,7 @@ export default function EnhancedTableView({ dbId, spaceSlug, canWrite, onClose, 
             filterLogic={activeView.filterLogic || "and"}
             onChange={handleFilterChange}
             onClose={() => setShowFilter(false)}
+            spaceSlug={spaceSlug}
           />
         )}
         {showSort && activeView && (

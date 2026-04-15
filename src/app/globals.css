@@ -6877,7 +6877,17 @@ textarea.modal-input {
   border-bottom: none;
 }
 
-/* ── Column context menu ───────────────────────────────────────────────── */
+.qb-th-joined {
+  background: var(--color-accent-light);
+  color: var(--color-accent-text);
+  font-style: italic;
+}
+
+.qb-td-joined {
+  background: color-mix(in srgb, var(--color-accent-light) 30%, transparent);
+}
+
+/* ── Column context menu ───────────────────────────────────────── */
 
 .et-col-menu {
   position: absolute;
