@@ -4,6 +4,8 @@ import crypto from "crypto";
 import { getSpaceDir, getStorageRoot, ensureDir } from "./config";
 import type { EnhancedTable, DbColumn } from "./types";
 
+const MAX_REVISIONS = 50;
+
 export function generateId(): string {
   return crypto.randomBytes(6).toString("hex");
 }
@@ -56,6 +58,8 @@ export async function readEnhancedTable(spaceSlug: string, dbId: string): Promis
 export async function writeEnhancedTable(spaceSlug: string, dbId: string, db: EnhancedTable): Promise<void> {
   const dir = getEnhancedTableDir(spaceSlug);
   await ensureDir(dir);
+  // Snapshot current file before overwriting (revision history)
+  await snapshotRevision(spaceSlug, dbId);
   await fs.writeFile(dbPath(spaceSlug, dbId), JSON.stringify(db, null, 2), "utf-8");
 }
 
@@ -113,6 +117,123 @@ export async function unarchiveEnhancedTable(spaceSlug: string, dbId: string): P
     return true;
   } catch {
     return false;
+  }
+}
+
+// ── Revision history ──────────────────────────────────────────────────────────
+
+function getHistoryDir(spaceSlug: string, dbId: string): string {
+  return path.join(getStorageRoot(), "history", spaceSlug, ".databases", dbId);
+}
+
+/**
+ * Copy the current .db.json into the history dir before overwriting.
+ * Filenames are ISO timestamps (colons replaced for FS safety).
+ */
+async function snapshotRevision(spaceSlug: string, dbId: string): Promise<void> {
+  const src = dbPath(spaceSlug, dbId);
+  try {
+    await fs.access(src);
+  } catch {
+    return; // nothing to snapshot on first create
+  }
+  const histDir = getHistoryDir(spaceSlug, dbId);
+  await ensureDir(histDir);
+  const ts = new Date().toISOString().replace(/:/g, "-");
+  await fs.copyFile(src, path.join(histDir, `${ts}.json`));
+  // Prune old revisions beyond MAX_REVISIONS
+  const files = (await fs.readdir(histDir)).filter((f) => f.endsWith(".json")).sort();
+  const excess = files.length - MAX_REVISIONS;
+  if (excess > 0) {
+    for (let i = 0; i < excess; i++) {
+      await fs.unlink(path.join(histDir, files[i])).catch(() => {});
+    }
+  }
+}
+
+export interface TableRevision {
+  filename: string;
+  timestamp: string;
+  rowCount: number;
+  columnCount: number;
+}
+
+/**
+ * List revision snapshots for a table, newest first.
+ */
+export async function listTableRevisions(spaceSlug: string, dbId: string): Promise<TableRevision[]> {
+  const histDir = getHistoryDir(spaceSlug, dbId);
+  let files: string[];
+  try {
+    files = (await fs.readdir(histDir)).filter((f) => f.endsWith(".json")).sort().reverse();
+  } catch {
+    return [];
+  }
+  const revisions: TableRevision[] = [];
+  for (const f of files) {
+    try {
+      const raw = await fs.readFile(path.join(histDir, f), "utf-8");
+      const parsed = JSON.parse(raw);
+      // Use the table's updatedAt if available, otherwise derive from filename
+      const timestamp = parsed.updatedAt || f.replace(".json", "").replace(/T(\d{2})-(\d{2})-(\d{2})/, "T$1:$2:$3");
+      revisions.push({
+        filename: f,
+        timestamp,
+        rowCount: Array.isArray(parsed.rows) ? parsed.rows.length : 0,
+        columnCount: Array.isArray(parsed.columns) ? parsed.columns.length : 0,
+      });
+    } catch { /* skip corrupt */ }
+  }
+  return revisions;
+}
+
+/**
+ * Restore a table from a specific revision snapshot.
+ */
+export async function restoreTableRevision(spaceSlug: string, dbId: string, filename: string): Promise<boolean> {
+  const histDir = getHistoryDir(spaceSlug, dbId);
+  const revPath = path.join(histDir, filename);
+  try {
+    const raw = await fs.readFile(revPath, "utf-8");
+    const parsed = JSON.parse(raw) as EnhancedTable;
+    // Write restores through the normal path (which creates a new snapshot of the pre-restore state)
+    await writeEnhancedTable(spaceSlug, dbId, parsed);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ── Webhook helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Fire matching webhooks for a table event. Non-blocking — errors are silently ignored.
+ */
+export function fireWebhooks(
+  db: EnhancedTable,
+  event: "create" | "update" | "delete",
+  row: { id: string; cells: Record<string, unknown> },
+  spaceSlug: string,
+): void {
+  if (!db.webhooks || db.webhooks.length === 0) return;
+  for (const wh of db.webhooks) {
+    if (!wh.enabled) continue;
+    if (!wh.events.includes(event)) continue;
+    // Fire-and-forget HTTP POST
+    const payload = {
+      event,
+      tableId: db.id,
+      tableTitle: db.title,
+      spaceSlug,
+      row,
+      timestamp: new Date().toISOString(),
+    };
+    fetch(wh.url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10_000),
+    }).catch(() => { /* silently ignore webhook failures */ });
   }
 }
 

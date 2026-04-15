@@ -146,6 +146,13 @@ export default function DatabaseTable({
   // Relation label cache: columnId -> { rowId -> label }
   const [relationLabels, setRelationLabels] = useState<Record<string, Record<string, string>>>({});
 
+  // Relation preview hover state
+  const [previewData, setPreviewData] = useState<{ tableTitle: string; fields: { name: string; type: string; value: unknown }[] } | null>(null);
+  const [previewPos, setPreviewPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previewCache = useRef<Record<string, { tableTitle: string; fields: { name: string; type: string; value: unknown }[] }>>({});
+
   // Tag cell editor state
   const [tagSearch, setTagSearch] = useState("");
   const [spaceTags, setSpaceTags] = useState<string[]>([]);
@@ -204,6 +211,34 @@ export default function DatabaseTable({
   const selectAllRef = useRef<HTMLInputElement>(null);
   const tabNavigating = useRef(false);
   const tableWrapRef = useRef<HTMLDivElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
+
+  const cancelPreview = useCallback(() => {
+    if (previewTimer.current) { clearTimeout(previewTimer.current); previewTimer.current = null; }
+    setPreviewVisible(false);
+  }, []);
+
+  const showPreview = useCallback((targetSpace: string, targetDbId: string, rowId: string, rect: DOMRect) => {
+    cancelPreview();
+    previewTimer.current = setTimeout(async () => {
+      // Position card below the chip
+      setPreviewPos({ top: rect.bottom + 4, left: rect.left });
+      const cacheKey = `${targetSpace}/${targetDbId}/${rowId}`;
+      if (previewCache.current[cacheKey]) {
+        setPreviewData(previewCache.current[cacheKey]);
+        setPreviewVisible(true);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/spaces/${encodeURIComponent(targetSpace)}/enhanced-tables/${encodeURIComponent(targetDbId)}/rows/${encodeURIComponent(rowId)}/preview`);
+        if (!res.ok) return;
+        const data = await res.json();
+        previewCache.current[cacheKey] = data;
+        setPreviewData(data);
+        setPreviewVisible(true);
+      } catch { /* ignore */ }
+    }, 300);
+  }, [cancelPreview]);
 
   // Virtual scrolling: only render visible rows when > 100 rows
   const ROW_HEIGHT = 32;
@@ -683,6 +718,11 @@ export default function DatabaseTable({
                   onOpenDatabase(col.relation!.targetDbId, labels[id] || "");
                 }
               }}
+              onMouseEnter={(e) => {
+                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                showPreview(col.relation!.targetSpace, col.relation!.targetDbId, id, rect);
+              }}
+              onMouseLeave={cancelPreview}
               title={canNavigate ? `Open in ${col.relation!.targetDbId}` : "Linked record (cross-space)"}
             >
               <Link2 className="w-3 h-3 inline mr-0.5" />
@@ -1451,6 +1491,27 @@ export default function DatabaseTable({
               <button className="qb-save-btn" onClick={handleBulkEditApply} disabled={!bulkEditColId}>Apply</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Relation preview card */}
+      {previewVisible && previewData && (
+        <div
+          ref={previewRef}
+          className="et-relation-preview"
+          style={{ top: previewPos.top, left: previewPos.left }}
+          onMouseEnter={() => { if (previewTimer.current) { clearTimeout(previewTimer.current); previewTimer.current = null; } }}
+          onMouseLeave={cancelPreview}
+        >
+          <div className="et-relation-preview-title">{previewData.tableTitle}</div>
+          {previewData.fields.map((f, i) => (
+            <div key={i} className="et-relation-preview-field">
+              <span className="et-relation-preview-label">{f.name}</span>
+              <span className="et-relation-preview-value">
+                {f.value == null ? "—" : Array.isArray(f.value) ? f.value.join(", ") : String(f.value)}
+              </span>
+            </div>
+          ))}
         </div>
       )}
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Filter, ArrowUpDown, Plus, LayoutGrid, Columns3, Calendar, GalleryHorizontalEnd, Search, Eye, Pencil, X, Download, Upload, Palette } from "lucide-react";
+import { Filter, ArrowUpDown, Plus, LayoutGrid, Columns3, Calendar, GalleryHorizontalEnd, Search, Eye, Pencil, X, Download, Upload, Palette, History, Zap } from "lucide-react";
 import type { EnhancedTable, DbView, DbViewType } from "@/lib/types";
 
 const VIEW_ICONS: Record<DbViewType, typeof LayoutGrid> = {
@@ -34,6 +34,8 @@ interface Props {
   showConditionalFormat?: boolean;
   onToggleConditionalFormat?: () => void;
   conditionalFormatCount?: number;
+  onShowHistory?: () => void;
+  onShowWebhooks?: () => void;
 }
 
 export default function DatabaseToolbar({
@@ -41,6 +43,8 @@ export default function DatabaseToolbar({
   showFilter, onToggleFilter, showSort, onToggleSort,
   filterCount, sortCount, search, onSearch, canWrite, onShowHidden, hiddenCount,
   onExportCSV, onImportCSV, showConditionalFormat, onToggleConditionalFormat, conditionalFormatCount = 0,
+  onShowHistory,
+  onShowWebhooks,
 }: Props) {
   const [addOpen, setAddOpen] = useState(false);
   const [renameId, setRenameId] = useState<string | null>(null);
@@ -148,6 +152,16 @@ export default function DatabaseToolbar({
         {onImportCSV && canWrite && (
           <button className="et-toolbar-btn" onClick={onImportCSV} title="Import CSV">
             <Upload className="w-3.5 h-3.5" /> Import
+          </button>
+        )}
+        {onShowHistory && (
+          <button className="et-toolbar-btn" onClick={onShowHistory} title="Revision history">
+            <History className="w-3.5 h-3.5" /> History
+          </button>
+        )}
+        {onShowWebhooks && (
+          <button className="et-toolbar-btn" onClick={onShowWebhooks} title="Automations">
+            <Zap className="w-3.5 h-3.5" /> Automations
           </button>
         )}
         <div className="et-toolbar-search">

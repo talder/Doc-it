@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Database as DbIcon, Loader2, ArrowLeft, X } from "lucide-react";
-import type { EnhancedTable, DbColumn, DbRow, DbView, DbViewType, DbFilter, DbSort, DbFilterOp, DbLookupAggregate, DbConditionalFormat } from "@/lib/types";
+import { Database as DbIcon, Loader2, ArrowLeft, X, RotateCcw, Trash2 } from "lucide-react";
+import type { EnhancedTable, DbColumn, DbRow, DbView, DbViewType, DbFilter, DbSort, DbFilterOp, DbLookupAggregate, DbConditionalFormat, DbWebhook } from "@/lib/types";
 import EnhancedTableGrid from "./EnhancedTableGrid";
 import EnhancedTableKanban from "./EnhancedTableKanban";
 import EnhancedTableCalendar from "./EnhancedTableCalendar";
@@ -180,6 +180,19 @@ export default function EnhancedTableView({ dbId, spaceSlug, canWrite, onClose, 
   const [members, setMembers] = useState<{ username: string; fullName?: string }[]>([]);
   // Cache of target tables for lookup column resolution: "space/dbId" -> EnhancedTable
   const [targetTableCache, setTargetTableCache] = useState<Record<string, EnhancedTable>>({});
+
+  // History modal state
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyRevisions, setHistoryRevisions] = useState<{ filename: string; timestamp: string; rowCount: number; columnCount: number }[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyRestoring, setHistoryRestoring] = useState<string | null>(null);
+
+  // Webhooks modal state
+  const [showWebhooks, setShowWebhooks] = useState(false);
+  const [webhooks, setWebhooks] = useState<DbWebhook[]>([]);
+  const [webhooksLoading, setWebhooksLoading] = useState(false);
+  const [newWhUrl, setNewWhUrl] = useState("");
+  const [newWhEvents, setNewWhEvents] = useState<("create" | "update" | "delete")[]>(["create", "update", "delete"]);
 
   const api = `/api/spaces/${encodeURIComponent(spaceSlug)}/enhanced-tables/${encodeURIComponent(dbId)}`;
 
@@ -359,6 +372,90 @@ export default function EnhancedTableView({ dbId, spaceSlug, canWrite, onClose, 
   const handleConditionalFormatChange = useCallback((conditionalFormats: DbConditionalFormat[]) => {
     handleUpdateView({ conditionalFormats });
   }, [handleUpdateView]);
+
+  // History handlers
+  const handleShowHistory = useCallback(async () => {
+    setShowHistory(true);
+    setHistoryLoading(true);
+    try {
+      const res = await fetch(`${api}/history`);
+      if (res.ok) {
+        const data = await res.json();
+        setHistoryRevisions(data.revisions || []);
+      }
+    } catch { /* ignore */ }
+    finally { setHistoryLoading(false); }
+  }, [api]);
+
+  const handleRestoreRevision = useCallback(async (filename: string) => {
+    if (!confirm("Restore this revision? The current state will be saved as a new revision before restoring.")) return;
+    setHistoryRestoring(filename);
+    try {
+      const res = await fetch(`${api}/history`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename }),
+      });
+      if (res.ok) {
+        setShowHistory(false);
+        await fetchDb();
+      }
+    } catch { /* ignore */ }
+    finally { setHistoryRestoring(null); }
+  }, [api, fetchDb]);
+
+  // Webhooks handlers
+  const handleShowWebhooks = useCallback(async () => {
+    setShowWebhooks(true);
+    setWebhooksLoading(true);
+    try {
+      const res = await fetch(`${api}/webhooks`);
+      if (res.ok) {
+        const data = await res.json();
+        setWebhooks(data.webhooks || []);
+      }
+    } catch { /* ignore */ }
+    finally { setWebhooksLoading(false); }
+  }, [api]);
+
+  const handleAddWebhook = useCallback(async () => {
+    if (!newWhUrl.trim() || newWhEvents.length === 0) return;
+    try {
+      const res = await fetch(`${api}/webhooks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: newWhUrl.trim(), events: newWhEvents }),
+      });
+      if (res.ok) {
+        const wh = await res.json();
+        setWebhooks((prev) => [...prev, wh]);
+        setNewWhUrl("");
+        setNewWhEvents(["create", "update", "delete"]);
+      }
+    } catch { /* ignore */ }
+  }, [api, newWhUrl, newWhEvents]);
+
+  const handleToggleWebhook = useCallback(async (id: string, enabled: boolean) => {
+    try {
+      await fetch(`${api}/webhooks`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, enabled }),
+      });
+      setWebhooks((prev) => prev.map((w) => w.id === id ? { ...w, enabled } : w));
+    } catch { /* ignore */ }
+  }, [api]);
+
+  const handleDeleteWebhook = useCallback(async (id: string) => {
+    try {
+      await fetch(`${api}/webhooks`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      setWebhooks((prev) => prev.filter((w) => w.id !== id));
+    } catch { /* ignore */ }
+  }, [api]);
 
   // CSV import handler
   const csvInputRef = useRef<HTMLInputElement>(null);
@@ -639,6 +736,8 @@ export default function EnhancedTableView({ dbId, spaceSlug, canWrite, onClose, 
             showConditionalFormat={showConditionalFormat}
             onToggleConditionalFormat={() => setShowConditionalFormat((v) => !v)}
             conditionalFormatCount={activeView.conditionalFormats?.length || 0}
+            onShowHistory={handleShowHistory}
+            onShowWebhooks={canWrite ? handleShowWebhooks : undefined}
           />
         )}
         {/* Hidden CSV file input */}
@@ -766,6 +865,99 @@ export default function EnhancedTableView({ dbId, spaceSlug, canWrite, onClose, 
           />
         )}
       </div>
+
+      {/* History modal */}
+      {showHistory && (
+        <div className="et-history-overlay" onClick={() => setShowHistory(false)}>
+          <div className="et-history-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="et-history-header">
+              <span className="et-history-title">Revision History</span>
+              <button className="et-history-close" onClick={() => setShowHistory(false)}><X className="w-4 h-4" /></button>
+            </div>
+            <div className="et-history-body">
+              {historyLoading && <div className="et-history-loading">Loading revisions…</div>}
+              {!historyLoading && historyRevisions.length === 0 && <div className="et-history-empty">No revisions yet. Changes are automatically saved as revisions.</div>}
+              {historyRevisions.map((rev) => (
+                <div key={rev.filename} className="et-history-row">
+                  <div className="et-history-row-info">
+                    <span className="et-history-row-date">{new Date(rev.timestamp).toLocaleString()}</span>
+                    <span className="et-history-row-meta">{rev.rowCount} rows · {rev.columnCount} columns</span>
+                  </div>
+                  {canWrite && (
+                    <button
+                      className="et-history-restore-btn"
+                      disabled={historyRestoring === rev.filename}
+                      onClick={() => handleRestoreRevision(rev.filename)}
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      {historyRestoring === rev.filename ? "Restoring…" : "Restore"}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Webhooks modal */}
+      {showWebhooks && (
+        <div className="et-history-overlay" onClick={() => setShowWebhooks(false)}>
+          <div className="et-history-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="et-history-header">
+              <span className="et-history-title">Automations</span>
+              <button className="et-history-close" onClick={() => setShowWebhooks(false)}><X className="w-4 h-4" /></button>
+            </div>
+            <div className="et-history-body">
+              {webhooksLoading && <div className="et-history-loading">Loading…</div>}
+              {!webhooksLoading && webhooks.length === 0 && (
+                <div className="et-history-empty">No webhooks configured. Webhooks send an HTTP POST when rows are created, updated, or deleted.</div>
+              )}
+              {webhooks.map((wh) => (
+                <div key={wh.id} className="et-wh-row">
+                  <div className="et-wh-row-info">
+                    <span className="et-wh-row-url">{wh.url}</span>
+                    <span className="et-history-row-meta">{wh.events.join(", ")}</span>
+                  </div>
+                  <div className="et-wh-row-actions">
+                    <label className="et-wh-toggle" title={wh.enabled ? "Enabled" : "Disabled"}>
+                      <input type="checkbox" checked={wh.enabled} onChange={(e) => handleToggleWebhook(wh.id, e.target.checked)} />
+                    </label>
+                    <button className="et-wh-delete" onClick={() => handleDeleteWebhook(wh.id)} title="Delete webhook">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {/* Add new webhook form */}
+              <div className="et-wh-add">
+                <input
+                  className="qb-input"
+                  placeholder="https://example.com/webhook"
+                  value={newWhUrl}
+                  onChange={(e) => setNewWhUrl(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleAddWebhook(); }}
+                />
+                <div className="et-wh-event-checks">
+                  {(["create", "update", "delete"] as const).map((evt) => (
+                    <label key={evt} className="qb-check">
+                      <input
+                        type="checkbox"
+                        checked={newWhEvents.includes(evt)}
+                        onChange={(e) => {
+                          setNewWhEvents((prev) => e.target.checked ? [...prev, evt] : prev.filter((v) => v !== evt));
+                        }}
+                      />
+                      {evt}
+                    </label>
+                  ))}
+                </div>
+                <button className="qb-save-btn" onClick={handleAddWebhook} disabled={!newWhUrl.trim() || newWhEvents.length === 0}>Add webhook</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

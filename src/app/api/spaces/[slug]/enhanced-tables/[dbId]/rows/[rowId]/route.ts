@@ -6,6 +6,7 @@ import {
   syncBidirectionalAdd,
   syncBidirectionalRemove,
   cleanupBidirectionalOnRowDelete,
+  fireWebhooks,
 } from "@/lib/enhanced-table";
 
 type Params = { params: Promise<{ slug: string; dbId: string; rowId: string }> };
@@ -52,6 +53,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
   row.cells = { ...row.cells, ...cells };
   db.updatedAt = new Date().toISOString();
   await writeEnhancedTable(slug, dbId, db);
+  fireWebhooks(db, "update", row, slug);
   return NextResponse.json(row);
 }
 
@@ -74,5 +76,6 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
   db.rows.splice(idx, 1);
   db.updatedAt = new Date().toISOString();
   await writeEnhancedTable(slug, dbId, db);
+  fireWebhooks(db, "delete", row, slug);
   return NextResponse.json({ success: true });
 }

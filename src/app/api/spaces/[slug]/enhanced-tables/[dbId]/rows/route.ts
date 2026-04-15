@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSpaceRole } from "@/lib/permissions";
 import { getCurrentUser } from "@/lib/auth";
-import { readEnhancedTable, writeEnhancedTable, generateId } from "@/lib/enhanced-table";
+import { readEnhancedTable, writeEnhancedTable, generateId, fireWebhooks } from "@/lib/enhanced-table";
 import type { DbRow } from "@/lib/types";
 
 type Params = { params: Promise<{ slug: string; dbId: string }> };
@@ -51,5 +51,6 @@ export async function POST(request: NextRequest, { params }: Params) {
   db.rows.push(row);
   db.updatedAt = new Date().toISOString();
   await writeEnhancedTable(slug, dbId, db);
+  fireWebhooks(db, "create", row, slug);
   return NextResponse.json(row, { status: 201 });
 }
