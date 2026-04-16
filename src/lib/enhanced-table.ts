@@ -16,6 +16,10 @@ function dbPath(spaceSlug: string, dbId: string): string {
   return path.join(getEnhancedTableDir(spaceSlug), `${dbId}.db.json`);
 }
 
+function indexPath(spaceSlug: string): string {
+  return path.join(getEnhancedTableDir(spaceSlug), "_index.json");
+}
+
 /**
  * Lightweight metadata for table listing (no row data loaded).
  */
@@ -32,27 +36,82 @@ export interface EnhancedTableMeta {
   updatedAt?: string;
 }
 
+/** Extract metadata from a full EnhancedTable object. */
+function extractMeta(db: EnhancedTable): EnhancedTableMeta {
+  return {
+    id: db.id,
+    title: db.title || "",
+    rowCount: Array.isArray(db.rows) ? db.rows.length : 0,
+    columnCount: Array.isArray(db.columns) ? db.columns.length : 0,
+    columns: (db.columns || []).map((c) => ({ id: c.id, name: c.name, type: c.type })),
+    views: (db.views || []).map((v) => ({ id: v.id, name: v.name, type: v.type })),
+    tags: db.tags || [],
+    createdAt: db.createdAt,
+    createdBy: db.createdBy,
+    updatedAt: db.updatedAt,
+  };
+}
+
+/** Read the metadata index. Returns a map of dbId → meta. */
+async function readIndex(spaceSlug: string): Promise<Record<string, EnhancedTableMeta>> {
+  try {
+    const raw = await fs.readFile(indexPath(spaceSlug), "utf-8");
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+/** Write the metadata index atomically. */
+async function writeIndex(spaceSlug: string, index: Record<string, EnhancedTableMeta>): Promise<void> {
+  const dir = getEnhancedTableDir(spaceSlug);
+  await ensureDir(dir);
+  await fs.writeFile(indexPath(spaceSlug), JSON.stringify(index), "utf-8");
+}
+
+/** Update one entry in the index (called after write). */
+async function updateIndexEntry(spaceSlug: string, db: EnhancedTable): Promise<void> {
+  const index = await readIndex(spaceSlug);
+  index[db.id] = extractMeta(db);
+  await writeIndex(spaceSlug, index);
+}
+
+/** Remove one entry from the index (called after delete). */
+async function removeIndexEntry(spaceSlug: string, dbId: string): Promise<void> {
+  const index = await readIndex(spaceSlug);
+  delete index[dbId];
+  await writeIndex(spaceSlug, index);
+}
+
 /**
- * List enhanced tables — reads only metadata, NOT full row data.
- * Use readEnhancedTable() when you need the actual rows.
+ * List enhanced tables — reads only the lightweight _index.json file.
+ * Falls back to scanning .db.json files if the index doesn't exist yet.
  */
 export async function listEnhancedTablesMeta(spaceSlug: string): Promise<EnhancedTableMeta[]> {
   const dir = getEnhancedTableDir(spaceSlug);
   await ensureDir(dir);
+
+  // Fast path: read from index
+  const index = await readIndex(spaceSlug);
+  if (Object.keys(index).length > 0) {
+    return Object.values(index).sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+  }
+
+  // Slow path: index missing or empty — rebuild from .db.json files
   let files: string[];
   try {
     files = await fs.readdir(dir);
   } catch {
     return [];
   }
-  const results: EnhancedTableMeta[] = [];
+  const rebuilt: Record<string, EnhancedTableMeta> = {};
   for (const f of files) {
     if (!f.endsWith(".db.json")) continue;
     try {
       const raw = await fs.readFile(path.join(dir, f), "utf-8");
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === "object" && parsed.id) {
-        results.push({
+        rebuilt[parsed.id] = {
           id: parsed.id,
           title: parsed.title || f.replace(".db.json", ""),
           rowCount: Array.isArray(parsed.rows) ? parsed.rows.length : 0,
@@ -63,11 +122,15 @@ export async function listEnhancedTablesMeta(spaceSlug: string): Promise<Enhance
           createdAt: parsed.createdAt,
           createdBy: parsed.createdBy,
           updatedAt: parsed.updatedAt,
-        });
+        };
       }
     } catch { /* skip corrupt */ }
   }
-  return results.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+  // Persist the rebuilt index for next time
+  if (Object.keys(rebuilt).length > 0) {
+    await writeIndex(spaceSlug, rebuilt).catch(() => {});
+  }
+  return Object.values(rebuilt).sort((a, b) => (a.title || "").localeCompare(b.title || ""));
 }
 
 /** @deprecated Use listEnhancedTablesMeta for listing. This loads full row data. */
@@ -111,11 +174,14 @@ export async function writeEnhancedTable(spaceSlug: string, dbId: string, db: En
   const dir = getEnhancedTableDir(spaceSlug);
   await ensureDir(dir);
   await fs.writeFile(dbPath(spaceSlug, dbId), JSON.stringify(db, null, 2), "utf-8");
+  // Update the lightweight index (non-blocking — don't let index errors break writes)
+  updateIndexEntry(spaceSlug, db).catch(() => {});
 }
 
 export async function deleteEnhancedTable(spaceSlug: string, dbId: string): Promise<boolean> {
   try {
     await fs.unlink(dbPath(spaceSlug, dbId));
+    removeIndexEntry(spaceSlug, dbId).catch(() => {});
     return true;
   } catch {
     return false;
