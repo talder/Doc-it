@@ -277,9 +277,9 @@ export default function CategoryLanding({ spaceSlug, categoryPath, onOpenDoc, on
                       {db.title}
                     </td>
                     <td className="cat-landing-cell">
-                      {db.tags.length > 0 ? (
+                      {(db.tags || []).length > 0 ? (
                         <div className="flex flex-wrap gap-1">
-                          {db.tags.slice(0, 3).map((t) => (
+                          {(db.tags || []).slice(0, 3).map((t: string) => (
                             <span key={t} className="cat-landing-tag">#{t}</span>
                           ))}
                         </div>

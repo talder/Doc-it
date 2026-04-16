@@ -4,8 +4,6 @@ import crypto from "crypto";
 import { getSpaceDir, getStorageRoot, ensureDir } from "./config";
 import type { EnhancedTable, DbColumn } from "./types";
 
-const MAX_REVISIONS = 50;
-
 export function generateId(): string {
   return crypto.randomBytes(6).toString("hex");
 }
@@ -28,7 +26,7 @@ export interface EnhancedTableMeta {
   columnCount: number;
   columns: { id: string; name: string; type: string }[];
   views: { id: string; name: string; type: string }[];
-  tags?: string[];
+  tags: string[];
   createdAt?: string;
   createdBy?: string;
   updatedAt?: string;
@@ -61,7 +59,7 @@ export async function listEnhancedTablesMeta(spaceSlug: string): Promise<Enhance
           columnCount: Array.isArray(parsed.columns) ? parsed.columns.length : 0,
           columns: (parsed.columns || []).map((c: any) => ({ id: c.id, name: c.name, type: c.type })),
           views: (parsed.views || []).map((v: any) => ({ id: v.id, name: v.name, type: v.type })),
-          tags: parsed.tags,
+          tags: parsed.tags || [],
           createdAt: parsed.createdAt,
           createdBy: parsed.createdBy,
           updatedAt: parsed.updatedAt,
@@ -172,35 +170,10 @@ export async function unarchiveEnhancedTable(spaceSlug: string, dbId: string): P
   }
 }
 
-// ── Revision history ──────────────────────────────────────────────────────────
+// ── Revision history (read-only — snapshots are no longer created on write) ───
 
 function getHistoryDir(spaceSlug: string, dbId: string): string {
   return path.join(getStorageRoot(), "history", spaceSlug, ".databases", dbId);
-}
-
-/**
- * Copy the current .db.json into the history dir before overwriting.
- * Filenames are ISO timestamps (colons replaced for FS safety).
- */
-async function snapshotRevision(spaceSlug: string, dbId: string): Promise<void> {
-  const src = dbPath(spaceSlug, dbId);
-  try {
-    await fs.access(src);
-  } catch {
-    return; // nothing to snapshot on first create
-  }
-  const histDir = getHistoryDir(spaceSlug, dbId);
-  await ensureDir(histDir);
-  const ts = new Date().toISOString().replace(/:/g, "-");
-  await fs.copyFile(src, path.join(histDir, `${ts}.json`));
-  // Prune old revisions beyond MAX_REVISIONS
-  const files = (await fs.readdir(histDir)).filter((f) => f.endsWith(".json")).sort();
-  const excess = files.length - MAX_REVISIONS;
-  if (excess > 0) {
-    for (let i = 0; i < excess; i++) {
-      await fs.unlink(path.join(histDir, files[i])).catch(() => {});
-    }
-  }
 }
 
 export interface TableRevision {
