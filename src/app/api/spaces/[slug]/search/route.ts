@@ -5,7 +5,7 @@ import { requireSpaceRole } from "@/lib/permissions";
 import { getSpaceDir } from "@/lib/config";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { getDb } from "@/lib/config";
-import { listEnhancedTables } from "@/lib/enhanced-table";
+import { listEnhancedTablesMeta, readEnhancedTable } from "@/lib/enhanced-table";
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -207,13 +207,15 @@ export async function GET(request: NextRequest, { params }: Params) {
     } catch { /* blobstore tables not yet initialised — skip silently */ }
   }
 
-  // Enhanced table row search
+  // Enhanced table row search — read tables individually to avoid loading all row data upfront
   const dbResults: { dbId: string; dbTitle: string; rowId: string; matchValues: string[] }[] = [];
   if (results.length < MAX_RESULTS) {
     try {
-      const tables = await listEnhancedTables(slug);
-      for (const table of tables) {
+      const tableMetas = await listEnhancedTablesMeta(slug);
+      for (const meta of tableMetas) {
         if (dbResults.length >= 10) break;
+        const table = await readEnhancedTable(slug, meta.id);
+        if (!table) continue;
         for (const row of table.rows) {
           const matchVals: string[] = [];
           for (const col of table.columns) {

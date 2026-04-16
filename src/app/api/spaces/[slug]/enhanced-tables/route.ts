@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSpaceRole } from "@/lib/permissions";
-import { listEnhancedTables, writeEnhancedTable, generateId } from "@/lib/enhanced-table";
+import { listEnhancedTablesMeta, writeEnhancedTable, generateId } from "@/lib/enhanced-table";
 import { invalidateSpaceCache } from "@/lib/space-cache";
 import type { EnhancedTable, DbColumn, DbView } from "@/lib/types";
 
@@ -12,19 +12,8 @@ export async function GET(_request: NextRequest, { params }: Params) {
   catch (err) { return NextResponse.json({ error: String(err) }, { status: 403 }); }
 
   try {
-    const dbs = await listEnhancedTables(slug);
-    // Return lightweight list (no rows) for perf
-    return NextResponse.json(dbs.map((db) => {
-      const rows = db.rows;
-      const { rows: _r, ...rest } = db;
-      return {
-        ...rest,
-        rowCount: Array.isArray(rows) ? rows.length : 0,
-        columns: Array.isArray(rest.columns) ? rest.columns : [],
-        views: Array.isArray(rest.views) ? rest.views : [],
-        tags: rest.tags || [],
-      };
-    }));
+    const dbs = await listEnhancedTablesMeta(slug);
+    return NextResponse.json(dbs);
   } catch (err) {
     return NextResponse.json({ error: `Failed to list enhanced tables: ${err instanceof Error ? err.message : String(err)}` }, { status: 500 });
   }

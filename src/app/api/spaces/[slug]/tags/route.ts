@@ -6,7 +6,7 @@ import { getSpaceDir, readCustomization, writeCustomization } from "@/lib/config
 import { extractHashtags, buildTagsIndex, normalizeTag } from "@/lib/tags";
 import { parseFrontmatter, stringifyFrontmatter } from "@/lib/frontmatter";
 import { invalidateSpaceCache } from "@/lib/space-cache";
-import { listEnhancedTables, readEnhancedTable, writeEnhancedTable, getEnhancedTableDir } from "@/lib/enhanced-table";
+import { listEnhancedTablesMeta, listEnhancedTables, readEnhancedTable, writeEnhancedTable, getEnhancedTableDir } from "@/lib/enhanced-table";
 import type { EnhancedTable } from "@/lib/types";
 
 const EXCLUDED = ["attachments", ".git", ".DS_Store"];
@@ -49,7 +49,7 @@ async function scanDocsForTags(
 
 /** Scan enhanced tables for tags and return as { name, tags } entries. */
 async function scanDbsForTags(slug: string): Promise<{ name: string; tags: string[] }[]> {
-  const dbs = await listEnhancedTables(slug);
+  const dbs = await listEnhancedTablesMeta(slug);
   return dbs
     .filter((db) => db.tags && db.tags.length > 0)
     .map((db) => ({ name: `[db] ${db.title}`, tags: db.tags!.map((t) => t.toLowerCase()) }));

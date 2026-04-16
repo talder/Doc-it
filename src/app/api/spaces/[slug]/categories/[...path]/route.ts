@@ -7,7 +7,7 @@ import { getSpaceDir, getArchiveCategoryDir, getTrashDir, ensureDir } from "@/li
 import { invalidateSpaceCache } from "@/lib/space-cache";
 import { auditLog } from "@/lib/audit";
 import { parseFrontmatter } from "@/lib/frontmatter";
-import { listEnhancedTables } from "@/lib/enhanced-table";
+import { listEnhancedTablesMeta } from "@/lib/enhanced-table";
 
 type Params = { params: Promise<{ slug: string; path: string[] }> };
 
@@ -112,16 +112,8 @@ export async function GET(_req: NextRequest, { params }: Params) {
     subDocs[subPath] = await scanDocsInDir(subDir, subPath);
   }
 
-  // Enhanced tables
-  const allDbs = await listEnhancedTables(slug);
-  const databases = allDbs.map((db) => ({
-    id: db.id,
-    title: db.title,
-    tags: db.tags || [],
-    rowCount: Array.isArray(db.rows) ? db.rows.length : 0,
-    createdAt: db.createdAt,
-    createdBy: db.createdBy,
-  }));
+  // Enhanced tables (lightweight metadata only)
+  const databases = await listEnhancedTablesMeta(slug);
 
   let totalDocs = docs.length;
   for (const sc of subCategories) totalDocs += sc.docCount;

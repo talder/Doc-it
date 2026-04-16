@@ -18,6 +18,61 @@ function dbPath(spaceSlug: string, dbId: string): string {
   return path.join(getEnhancedTableDir(spaceSlug), `${dbId}.db.json`);
 }
 
+/**
+ * Lightweight metadata for table listing (no row data loaded).
+ */
+export interface EnhancedTableMeta {
+  id: string;
+  title: string;
+  rowCount: number;
+  columnCount: number;
+  columns: { id: string; name: string; type: string }[];
+  views: { id: string; name: string; type: string }[];
+  tags?: string[];
+  createdAt?: string;
+  createdBy?: string;
+  updatedAt?: string;
+}
+
+/**
+ * List enhanced tables — reads only metadata, NOT full row data.
+ * Use readEnhancedTable() when you need the actual rows.
+ */
+export async function listEnhancedTablesMeta(spaceSlug: string): Promise<EnhancedTableMeta[]> {
+  const dir = getEnhancedTableDir(spaceSlug);
+  await ensureDir(dir);
+  let files: string[];
+  try {
+    files = await fs.readdir(dir);
+  } catch {
+    return [];
+  }
+  const results: EnhancedTableMeta[] = [];
+  for (const f of files) {
+    if (!f.endsWith(".db.json")) continue;
+    try {
+      const raw = await fs.readFile(path.join(dir, f), "utf-8");
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && parsed.id) {
+        results.push({
+          id: parsed.id,
+          title: parsed.title || f.replace(".db.json", ""),
+          rowCount: Array.isArray(parsed.rows) ? parsed.rows.length : 0,
+          columnCount: Array.isArray(parsed.columns) ? parsed.columns.length : 0,
+          columns: (parsed.columns || []).map((c: any) => ({ id: c.id, name: c.name, type: c.type })),
+          views: (parsed.views || []).map((v: any) => ({ id: v.id, name: v.name, type: v.type })),
+          tags: parsed.tags,
+          createdAt: parsed.createdAt,
+          createdBy: parsed.createdBy,
+          updatedAt: parsed.updatedAt,
+        });
+      }
+    } catch { /* skip corrupt */ }
+  }
+  return results.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+}
+
+/** @deprecated Use listEnhancedTablesMeta for listing. This loads full row data. */
 export async function listEnhancedTables(spaceSlug: string): Promise<EnhancedTable[]> {
   const dir = getEnhancedTableDir(spaceSlug);
   await ensureDir(dir);
@@ -33,7 +88,6 @@ export async function listEnhancedTables(spaceSlug: string): Promise<EnhancedTab
     try {
       const raw = await fs.readFile(path.join(dir, f), "utf-8");
       const parsed = JSON.parse(raw);
-      // Ensure required fields exist
       if (parsed && typeof parsed === "object" && parsed.id) {
         if (!parsed.title) parsed.title = f.replace(".db.json", "");
         if (!Array.isArray(parsed.rows)) parsed.rows = [];
@@ -55,14 +109,9 @@ export async function readEnhancedTable(spaceSlug: string, dbId: string): Promis
   }
 }
 
-export async function writeEnhancedTable(spaceSlug: string, dbId: string, db: EnhancedTable, options?: { skipSnapshot?: boolean }): Promise<void> {
+export async function writeEnhancedTable(spaceSlug: string, dbId: string, db: EnhancedTable): Promise<void> {
   const dir = getEnhancedTableDir(spaceSlug);
   await ensureDir(dir);
-  // Snapshot current file before overwriting (revision history)
-  // Skip snapshot for internal sync operations (bidirectional relation updates)
-  if (!options?.skipSnapshot) {
-    await snapshotRevision(spaceSlug, dbId);
-  }
   await fs.writeFile(dbPath(spaceSlug, dbId), JSON.stringify(db, null, 2), "utf-8");
 }
 
@@ -292,7 +341,7 @@ export async function syncBidirectionalAdd(
     arr.push(sourceRowId);
     row.cells[reverseColId] = arr;
     db.updatedAt = new Date().toISOString();
-    await writeEnhancedTable(targetSpace, targetDbId, db, { skipSnapshot: true });
+    await writeEnhancedTable(targetSpace, targetDbId, db);
   }
 }
 
@@ -314,7 +363,7 @@ export async function syncBidirectionalRemove(
   const arr = Array.isArray(current) ? current.filter((id: string) => id !== sourceRowId) : [];
   row.cells[reverseColId] = arr;
   db.updatedAt = new Date().toISOString();
-  await writeEnhancedTable(targetSpace, targetDbId, db, { skipSnapshot: true });
+  await writeEnhancedTable(targetSpace, targetDbId, db);
 }
 
 /**
