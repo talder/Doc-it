@@ -39,18 +39,20 @@ export async function GET(_request: NextRequest, { params }: Params) {
 
   // Cache miss — run all scans in parallel (single auth check above already done)
   const spaceDir = getSpaceDir(slug);
+  const initStart = Date.now();
 
-  const [categories, docs, tags, templates, allUsers, customization, rawDbs, statuses] =
+  const [categories, docs, tags, templates, allUsers, customization, databases, statuses] =
     await Promise.all([
-      buildCategoryTree(spaceDir),
-      scanDocs(spaceDir, slug),
-      getTagsIndex(slug),
-      scanTemplates(spaceDir, slug),
-      getUsers(),
-      readCustomization(slug),
-      listEnhancedTables(slug),
-      readDocStatusMap(slug),
+      buildCategoryTree(spaceDir).then(r => { console.log(`[init] buildCategoryTree: ${Date.now()-initStart}ms`); return r; }),
+      scanDocs(spaceDir, slug).then(r => { console.log(`[init] scanDocs: ${Date.now()-initStart}ms`); return r; }),
+      getTagsIndex(slug).then(r => { console.log(`[init] getTagsIndex: ${Date.now()-initStart}ms`); return r; }),
+      scanTemplates(spaceDir, slug).then(r => { console.log(`[init] scanTemplates: ${Date.now()-initStart}ms`); return r; }),
+      getUsers().then(r => { console.log(`[init] getUsers: ${Date.now()-initStart}ms`); return r; }),
+      readCustomization(slug).then(r => { console.log(`[init] readCustomization: ${Date.now()-initStart}ms`); return r; }),
+      listEnhancedTablesMeta(slug).then(r => { console.log(`[init] listEnhancedTablesMeta: ${Date.now()-initStart}ms`); return r; }),
+      readDocStatusMap(slug).then(r => { console.log(`[init] readDocStatusMap: ${Date.now()-initStart}ms`); return r; }),
     ]);
+  console.log(`[init] total: ${Date.now()-initStart}ms, docs: ${docs.length}, tables: ${databases.length}`);
 
   // Members: admins + users with writer/admin role in this space
   const members = allUsers

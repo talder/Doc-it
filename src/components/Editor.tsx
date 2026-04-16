@@ -1297,8 +1297,12 @@ export default function Editor({ filename, initialMarkdown, onSave, onTitleChang
         // Use requestIdleCallback (or setTimeout fallback) to avoid blocking the UI
         const run = () => {
           try {
+            const t0 = performance.now();
             const html = editor.getHTML();
+            const t1 = performance.now();
             const md = turndown.turndown(html);
+            const t2 = performance.now();
+            console.log(`[save] getHTML: ${(t1-t0).toFixed(0)}ms, turndown: ${(t2-t1).toFixed(0)}ms, html size: ${html.length}`);
             capturedSave(md);
             if (titlePendingRef.current) {
               titlePendingRef.current = false;
