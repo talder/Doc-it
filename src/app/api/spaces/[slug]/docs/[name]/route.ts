@@ -79,9 +79,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     return NextResponse.json({ error: String(err) }, { status: 403 });
   }
 
-  const saveStart = Date.now();
   const { content, category, isTemplate, metadata } = await request.json();
-  console.log(`[doc-save] parse body: ${Date.now()-saveStart}ms, content size: ${content?.length || 0}`);
   if (category === undefined) {
     return NextResponse.json({ error: "Category required" }, { status: 400 });
   }
@@ -125,7 +123,6 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
   const fileContent = stringifyFrontmatter(content, merged);
   await fs.writeFile(resolved.filePath, fileContent, "utf-8");
-  console.log(`[doc-save] total: ${Date.now()-saveStart}ms`);
   auditLog(request, { event: "document.update", outcome: "success", actor: user.username, spaceSlug: slug, resource: `${category}/${name}`, resourceType: "document" });
   return NextResponse.json({ success: true, metadata: merged });
 }
