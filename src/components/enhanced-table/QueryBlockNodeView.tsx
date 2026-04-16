@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { NodeViewWrapper } from "@tiptap/react";
 import { Database as DbIcon, Settings, Loader2, X, Plus, Trash2 } from "lucide-react";
 import type { EnhancedTable, DbColumn, DbRow, DbFilter, DbFilterOp, DbSort } from "@/lib/types";
@@ -123,7 +123,7 @@ function applySorts(rows: DbRow[], sorts: DbSort[], columns: DbColumn[]): DbRow[
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export function QueryBlockNodeView({ node, updateAttributes, editor }: NodeViewProps) {
-  const cfg = decodeConfig(node.attrs.config);
+  const cfg = useMemo(() => decodeConfig(node.attrs.config), [node.attrs.config]);
   const { spaceSlug, dbId, columns: selectedColumns, filters: queryFilters, sorts: querySorts, limit, join: queryJoin } = cfg;
   const editable = editor?.isEditable ?? false;
 
