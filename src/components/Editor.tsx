@@ -1294,17 +1294,24 @@ export default function Editor({ filename, initialMarkdown, onSave, onTitleChang
       // correct document even if the user switches docs before it fires.
       const capturedSave = onSaveRef.current;
       const doSave = () => {
-        try {
-          const html = editor.getHTML();
-          const md = turndown.turndown(html);
-          capturedSave(md);
-          // Fire pending title rename on save
-          if (titlePendingRef.current) {
-            titlePendingRef.current = false;
-            onTitleChangeRef.current?.(titleValue.trim());
-          }
-        } catch {}
-        pendingSaveFnRef.current = null;
+        // Use requestIdleCallback (or setTimeout fallback) to avoid blocking the UI
+        const run = () => {
+          try {
+            const html = editor.getHTML();
+            const md = turndown.turndown(html);
+            capturedSave(md);
+            if (titlePendingRef.current) {
+              titlePendingRef.current = false;
+              onTitleChangeRef.current?.(titleValue.trim());
+            }
+          } catch {}
+          pendingSaveFnRef.current = null;
+        };
+        if (typeof requestIdleCallback === "function") {
+          requestIdleCallback(run, { timeout: 2000 });
+        } else {
+          setTimeout(run, 0);
+        }
       };
       pendingSaveFnRef.current = doSave;
       saveTimeoutRef.current = setTimeout(doSave, 10000);
@@ -1320,15 +1327,15 @@ export default function Editor({ filename, initialMarkdown, onSave, onTitleChang
   // Load markdown content
   useEffect(() => {
     if (!editor) return;
-    // Flush any pending debounced save for the PREVIOUS document before
-    // replacing the editor content. The pending doSave closure captured the
-    // old save handler and the editor still holds the old content, so the
-    // flush correctly saves the previous document.
+    // Flush any pending debounced save for the PREVIOUS document.
+    // Fire-and-forget: don't block navigation waiting for save to complete.
     if (saveTimeoutRef.current && pendingSaveFnRef.current) {
       clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = null;
-      try { pendingSaveFnRef.current(); } catch {}
+      const pendingSave = pendingSaveFnRef.current;
       pendingSaveFnRef.current = null;
+      // Run in microtask to avoid blocking the content switch
+      Promise.resolve().then(() => { try { pendingSave(); } catch {} });
     }
     isLoadingRef.current = true;
     const html = marked.parse(initialMarkdown, { async: false }) as string;
