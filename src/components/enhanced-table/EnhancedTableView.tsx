@@ -222,10 +222,11 @@ export default function EnhancedTableView({ dbId, spaceSlug, canWrite, onClose, 
       if (!res.ok) throw new Error("Not found");
       const data = await res.json();
       setDb(data);
-      if (!activeViewId && data.views.length > 0) setActiveViewId(data.views[0].id);
+      // Set initial view ID only once (don't include activeViewId in deps to avoid fetch loop)
+      setActiveViewId((prev) => prev || (data.views.length > 0 ? data.views[0].id : ""));
     } catch { setError("Enhanced table not found"); }
     finally { setLoading(false); }
-  }, [api, activeViewId]);
+  }, [api]);
 
   useEffect(() => { fetchDb(); }, [fetchDb]);
 

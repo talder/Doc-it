@@ -110,10 +110,10 @@ export function EnhancedTableBlockNodeView({ node, updateAttributes }: NodeViewP
       if (!res.ok) throw new Error("Not found");
       const data = await res.json();
       setDb(data);
-      if (!activeViewId && data.views.length > 0) setActiveViewId(data.views[0].id);
+      setActiveViewId((prev) => prev || (data.views.length > 0 ? data.views[0].id : ""));
     } catch { setError("Database not found"); }
     finally { setLoading(false); }
-  }, [api, activeViewId]);
+  }, [api]);
 
   useEffect(() => { fetchDb(); }, [fetchDb]);
 
