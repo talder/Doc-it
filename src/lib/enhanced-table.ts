@@ -55,11 +55,14 @@ export async function readEnhancedTable(spaceSlug: string, dbId: string): Promis
   }
 }
 
-export async function writeEnhancedTable(spaceSlug: string, dbId: string, db: EnhancedTable): Promise<void> {
+export async function writeEnhancedTable(spaceSlug: string, dbId: string, db: EnhancedTable, options?: { skipSnapshot?: boolean }): Promise<void> {
   const dir = getEnhancedTableDir(spaceSlug);
   await ensureDir(dir);
   // Snapshot current file before overwriting (revision history)
-  await snapshotRevision(spaceSlug, dbId);
+  // Skip snapshot for internal sync operations (bidirectional relation updates)
+  if (!options?.skipSnapshot) {
+    await snapshotRevision(spaceSlug, dbId);
+  }
   await fs.writeFile(dbPath(spaceSlug, dbId), JSON.stringify(db, null, 2), "utf-8");
 }
 
@@ -289,7 +292,7 @@ export async function syncBidirectionalAdd(
     arr.push(sourceRowId);
     row.cells[reverseColId] = arr;
     db.updatedAt = new Date().toISOString();
-    await writeEnhancedTable(targetSpace, targetDbId, db);
+    await writeEnhancedTable(targetSpace, targetDbId, db, { skipSnapshot: true });
   }
 }
 
@@ -311,7 +314,7 @@ export async function syncBidirectionalRemove(
   const arr = Array.isArray(current) ? current.filter((id: string) => id !== sourceRowId) : [];
   row.cells[reverseColId] = arr;
   db.updatedAt = new Date().toISOString();
-  await writeEnhancedTable(targetSpace, targetDbId, db);
+  await writeEnhancedTable(targetSpace, targetDbId, db, { skipSnapshot: true });
 }
 
 /**

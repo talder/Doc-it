@@ -275,13 +275,27 @@ export default function DatabaseTable({
 
   const getWidth = (col: DbColumn) => view.columnWidths?.[col.id] || col.width || 150;
 
-  // Fetch relation labels for all relation columns on mount / db change
+  // Fetch relation labels for all relation columns on mount / db ID change
+  // Use db.id as the stable dependency — NOT db.rows (which changes on every cell edit)
+  const relationLabelsFetched = useRef<string>("");
   useEffect(() => {
     if (!spaceSlug) return;
     const relCols = db.columns.filter((c) => c.type === "relation" && c.relation);
     if (relCols.length === 0) return;
+    // Build a stable key from all relation cell values to avoid redundant fetches
+    const allIds: string[] = [];
     for (const col of relCols) {
-      // Collect all row IDs referenced by this column
+      for (const row of db.rows) {
+        const val = row.cells[col.id];
+        if (Array.isArray(val)) val.forEach((v: string) => allIds.push(`${col.id}:${v}`));
+        else if (val) allIds.push(`${col.id}:${val}`);
+      }
+    }
+    const key = allIds.sort().join(",");
+    if (key === relationLabelsFetched.current) return; // no change in linked IDs
+    relationLabelsFetched.current = key;
+
+    for (const col of relCols) {
       const ids = new Set<string>();
       for (const row of db.rows) {
         const val = row.cells[col.id];
@@ -297,7 +311,8 @@ export default function DatabaseTable({
         })
         .catch(() => {});
     }
-  }, [db.columns, db.rows, db.id, spaceSlug]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db.id, db.rows, spaceSlug]);
 
   // Close menus on outside click
   useEffect(() => {
