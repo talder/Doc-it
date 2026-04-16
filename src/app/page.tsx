@@ -22,14 +22,17 @@ import NewTemplateModal from "@/components/modals/NewTemplateModal";
 import DatabaseCreateModal from "@/components/modals/EnhancedTableCreateModal";
 import TrashBinModal from "@/components/modals/TrashBinModal";
 import TagManagerModal from "@/components/modals/TagManagerModal";
-import DatabaseView from "@/components/enhanced-table/EnhancedTableView";
+const DatabaseView = dynamic(() => import("@/components/enhanced-table/EnhancedTableView"), {
+  ssr: false,
+  loading: () => <div className="flex-1 flex items-center justify-center text-text-muted gap-2"><Loader2 className="w-5 h-5 animate-spin" /><span className="text-sm">Loading table…</span></div>,
+});
 import type { Space, SanitizedUser, Category, DocFile, TagsIndex, TemplateInfo, DocStatusEntry, DocStatusMap, ReviewItem, SpaceCustomization, DocMetadata, DocClassification, FavoriteItem, DashboardRole } from "@/lib/types";
 import DocStatsFooter from "@/components/DocStatsFooter";
 import DocStatusPopover from "@/components/DocStatusPopover";
 import DocInfoPanel from "@/components/DocInfoPanel";
 import SpaceHome from "@/components/SpaceHome";
-import CategoryLanding from "@/components/CategoryLanding";
-import SearchModal from "@/components/SearchModal";
+const CategoryLanding = dynamic(() => import("@/components/CategoryLanding"), { ssr: false });
+const SearchModal = dynamic(() => import("@/components/SearchModal"), { ssr: false });
 import { usePresence } from "@/hooks/usePresence";
 import { useDocWatcher } from "@/hooks/useDocWatcher";
 import { copyToClipboard } from "@/lib/clipboard";
