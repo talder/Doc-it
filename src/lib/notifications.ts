@@ -14,6 +14,23 @@ import { broadcastNotification } from "./notification-bus";
 
 const NOTIF_DIR = path.join(process.cwd(), "config", "notifications");
 
+/**
+ * Sanitize a username so it is safe to use as a filename component.
+ * Only allow alphanumerics, underscore and hyphen; replace others with "_".
+ */
+function sanitizeUsernameForPath(username: string): string {
+  const trimmed = username.trim();
+  // Replace any character that is not A-Z, a-z, 0-9, underscore or hyphen
+  let safe = trimmed.replace(/[^a-zA-Z0-9_-]/g, "_");
+  // Collapse multiple underscores
+  safe = safe.replace(/_+/g, "_");
+  // Avoid empty filenames
+  if (!safe) {
+    safe = "unknown";
+  }
+  return safe;
+}
+
 // ---------------------------------------------------------------------------
 // Notification types
 // ---------------------------------------------------------------------------
@@ -38,7 +55,8 @@ export interface AppNotification {
 
 async function notifPath(username: string): Promise<string> {
   await ensureDir(NOTIF_DIR);
-  return path.join(NOTIF_DIR, `${username}.json`);
+  const safeUsername = sanitizeUsernameForPath(username);
+  return path.join(NOTIF_DIR, `${safeUsername}.json`);
 }
 
 export async function readNotifications(username: string): Promise<AppNotification[]> {
