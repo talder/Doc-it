@@ -325,7 +325,11 @@ export async function fetchVMs(config: VmwareConfig): Promise<VmRecord[]> {
     // 1. Get all ESXi hosts
     const hosts = await vcGet<VcHostSummary[]>(base, "/api/vcenter/host", token, ignoreSslErrors);
 
-    // 2. Build vmId → hostName map: query each host's VM list.
+    // 2. Build hostId → hostName map (used by the placement fallback)
+    const hostMap: Record<string, string> = {};
+    for (const h of hosts) hostMap[h.host] = h.name;
+
+    // 3. Build vmId → hostName map: query each host's VM list.
     //    URL-encode the host ID (some vCenter versions require this).
     const vmHostMap: Record<string, string> = {};
     await Promise.all(
