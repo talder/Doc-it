@@ -14,6 +14,15 @@ const MIN_WIDTH = 200;
 const MAX_WIDTH = 600;
 const DEFAULT_WIDTH = 280;
 const STORAGE_KEY = "docit-sidebar-width";
+const SIDEBAR_UI_KEY = "docit-sidebar-ui";
+const SIDEBAR_CATS_PREFIX = "docit-sidebar-cats-";
+
+interface SavedUiState {
+  mode: import("./SidebarNavigation").SidebarMode;
+  categoriesCollapsed: boolean;
+  databasesCollapsed: boolean;
+  templatesCollapsed: boolean;
+}
 
 interface DbSummary {
   id: string;
@@ -107,13 +116,26 @@ export default function Sidebar({
   onOpenCategory,
 }: SidebarProps) {
   const importInputRef = useRef<HTMLInputElement>(null);
-  const [mode, setMode] = useState<SidebarMode>("documents");
+
+  // ── Persistent sidebar state ─────────────────────────────────────────────
+  // UI state (mode + section visibility) is global; category collapse state
+  // is stored per space slug so switching spaces restores each independently.
+
+  const [savedUiState] = useState<SavedUiState | null>(() => {
+    try {
+      const raw = typeof window !== "undefined" ? localStorage.getItem(SIDEBAR_UI_KEY) : null;
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  });
+
+  const [mode, setMode] = useState<SidebarMode>(savedUiState?.mode ?? "documents");
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
-  const [categoriesCollapsed, setCategoriesCollapsed] = useState(true);
+  const [categoriesCollapsed, setCategoriesCollapsed] = useState(savedUiState?.categoriesCollapsed ?? true);
   const [tagsCollapsed, setTagsCollapsed] = useState(true);
-  const [databasesCollapsed, setDatabasesCollapsed] = useState(true);
-  const [templatesCollapsed, setTemplatesCollapsed] = useState(true);
+  const [databasesCollapsed, setDatabasesCollapsed] = useState(savedUiState?.databasesCollapsed ?? true);
+  const [templatesCollapsed, setTemplatesCollapsed] = useState(savedUiState?.templatesCollapsed ?? true);
   const initializedCategories = useRef(false);
+  const prevSpaceSlugRef = useRef<string | undefined>(undefined);
 
   // Resizable sidebar
   const [width, setWidth] = useState(DEFAULT_WIDTH);
@@ -121,13 +143,54 @@ export default function Sidebar({
   const startX = useRef(0);
   const startWidth = useRef(DEFAULT_WIDTH);
 
-  // Auto-collapse all categories on first load
+  // Detect space switch → reset category tree so the new space's state is loaded
+  useEffect(() => {
+    if (currentSpaceSlug && currentSpaceSlug !== prevSpaceSlugRef.current) {
+      prevSpaceSlugRef.current = currentSpaceSlug;
+      if (initializedCategories.current) {
+        initializedCategories.current = false;
+        setCollapsedCategories(new Set());
+      }
+    }
+  }, [currentSpaceSlug]);
+
+  // Auto-collapse categories on first load — restore saved state if available,
+  // otherwise fall back to collapsing everything (existing default behaviour).
   useEffect(() => {
     if (!initializedCategories.current && categories.length > 0) {
       initializedCategories.current = true;
+      if (currentSpaceSlug) {
+        try {
+          const raw = localStorage.getItem(`${SIDEBAR_CATS_PREFIX}${currentSpaceSlug}`);
+          if (raw) {
+            setCollapsedCategories(new Set(JSON.parse(raw)));
+            return;
+          }
+        } catch { /* fall through */ }
+      }
+      // No saved state — collapse everything (first visit)
       setCollapsedCategories(new Set(categories.map((c) => c.path)));
     }
-  }, [categories]);
+  }, [categories, currentSpaceSlug]);
+
+  // Persist global UI state whenever it changes
+  useEffect(() => {
+    try {
+      const state: SavedUiState = { mode, categoriesCollapsed, databasesCollapsed, templatesCollapsed };
+      localStorage.setItem(SIDEBAR_UI_KEY, JSON.stringify(state));
+    } catch { /* ignore */ }
+  }, [mode, categoriesCollapsed, databasesCollapsed, templatesCollapsed]);
+
+  // Persist per-space category collapse state whenever it changes
+  useEffect(() => {
+    if (!currentSpaceSlug || !initializedCategories.current) return;
+    try {
+      localStorage.setItem(
+        `${SIDEBAR_CATS_PREFIX}${currentSpaceSlug}`,
+        JSON.stringify(Array.from(collapsedCategories)),
+      );
+    } catch { /* ignore */ }
+  }, [collapsedCategories, currentSpaceSlug]);
 
   const handleImportFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
