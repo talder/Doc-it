@@ -7,7 +7,7 @@ import PasswordStrengthMeter from "@/components/PasswordStrengthMeter";
 import { isPasswordValid } from "@/lib/password-policy";
 import type { SanitizedUser, Space, SpaceRole, AuditConfig, AuditEntry, UserGroup, AdConfig, AdGroupMapping, DashboardAccessConfig, CrashEntry, SnapshotEntry } from "@/lib/types";
 import { copyToClipboard } from "@/lib/clipboard";
-type Tab = "users" | "spaces" | "service-keys" | "groups" | "settings" | "audit" | "backup" | "crash-logs";
+type Tab = "users" | "spaces" | "service-keys" | "groups" | "settings" | "audit" | "backup" | "crash-logs" | "vmware";
 
 interface BackupEntry { filename: string; sizeBytes: number; createdAt: string; }
 interface BackupTargetForm { id: string; type: "local" | "cifs" | "sftp"; label: string; path: string; host: string; port: number; share: string; remotePath: string; username: string; password: string; privateKey: string; }
@@ -192,6 +192,15 @@ function AdminContent() {
   const [newOnCallUser, setNewOnCallUser] = useState("");
   const [newOnCallRecipient, setNewOnCallRecipient] = useState("");
 
+  // VMware settings state
+  const [vmwareCfg, setVmwareCfg] = useState({ enabled: false, vcenterUrl: "", username: "", password: "", passwordSet: false, ignoreSslErrors: false, allowedUsers: [] as string[] });
+  const [vmwareCfgLoaded, setVmwareCfgLoaded] = useState(false);
+  const [vmwareSaving, setVmwareSaving] = useState(false);
+  const [vmwareTesting, setVmwareTesting] = useState(false);
+  const [vmwareTestResult, setVmwareTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [newVmwareUser, setNewVmwareUser] = useState("");
+  const [showVmwarePassword, setShowVmwarePassword] = useState(false);
+
   // Crash logs state
   const [crashEntries, setCrashEntries] = useState<CrashEntry[]>([]);
   const [crashTotal, setCrashTotal] = useState(0);
@@ -328,6 +337,23 @@ function AdminContent() {
         emailSendTime: data.emailSendTime ?? "08:00",
       });
       setOnCallSettingsLoaded(true);
+    }
+  }, []);
+
+  const fetchVmwareConfig = useCallback(async () => {
+    const res = await fetch("/api/vmware/config");
+    if (res.ok) {
+      const data = await res.json();
+      setVmwareCfg({
+        enabled: !!data.enabled,
+        vcenterUrl: data.vcenterUrl || "",
+        username: data.username || "",
+        password: "",
+        passwordSet: !!data.passwordSet,
+        ignoreSslErrors: !!data.ignoreSslErrors,
+        allowedUsers: Array.isArray(data.allowedUsers) ? data.allowedUsers : [],
+      });
+      setVmwareCfgLoaded(true);
     }
   }, []);
 
@@ -725,6 +751,15 @@ function AdminContent() {
           >
             <AlertTriangle className="w-4 h-4" />
             Crash Logs
+          </button>
+          <button
+            onClick={() => { setTab("vmware"); if (!vmwareCfgLoaded) fetchVmwareConfig(); }}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
+              tab === "vmware" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
+            }`}
+          >
+            <Network className="w-4 h-4" />
+            VMware
           </button>
         </div>
 
@@ -3031,6 +3066,184 @@ function AdminContent() {
             </div>
           </div>
         </>)}
+
+        {/* VMware Tab */}
+        {tab === "vmware" && (
+          <div className="bg-surface rounded-xl shadow-sm border border-border">
+            <div className="px-6 py-4 border-b border-border flex items-center gap-2">
+              <Network className="w-4 h-4 text-accent" />
+              <h2 className="text-lg font-semibold text-text-primary">VMware Inventory</h2>
+              <p className="ml-2 text-xs text-text-muted">Configure vCenter connection credentials and access control.</p>
+            </div>
+            <div className="px-6 py-6 space-y-6">
+
+              {/* Enable toggle */}
+              <div className="flex items-center gap-3">
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <div
+                    className={`w-10 h-5 rounded-full transition-colors ${vmwareCfg.enabled ? "bg-accent" : "bg-gray-300"}`}
+                    onClick={() => setVmwareCfg({ ...vmwareCfg, enabled: !vmwareCfg.enabled })}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${vmwareCfg.enabled ? "translate-x-5" : ""}`} />
+                  </div>
+                </label>
+                <span className="text-sm font-medium text-text-primary">Enable VMware Inventory module</span>
+              </div>
+
+              {/* vCenter URL */}
+              <div className="max-w-md">
+                <label className="block text-xs font-medium text-gray-600 mb-1">vCenter URL</label>
+                <input
+                  type="url"
+                  value={vmwareCfg.vcenterUrl}
+                  onChange={(e) => setVmwareCfg({ ...vmwareCfg, vcenterUrl: e.target.value })}
+                  className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="https://vcenter.example.com"
+                />
+              </div>
+
+              {/* Username */}
+              <div className="max-w-md">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Username</label>
+                <input
+                  type="text"
+                  value={vmwareCfg.username}
+                  onChange={(e) => setVmwareCfg({ ...vmwareCfg, username: e.target.value })}
+                  className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="administrator@vsphere.local"
+                />
+              </div>
+
+              {/* Password */}
+              <div className="max-w-md">
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Password {vmwareCfg.passwordSet && !vmwareCfg.password && <span className="text-green-600 font-normal">(set)</span>}
+                </label>
+                <div className="relative">
+                  <input
+                    type={showVmwarePassword ? "text" : "password"}
+                    value={vmwareCfg.password}
+                    onChange={(e) => setVmwareCfg({ ...vmwareCfg, password: e.target.value })}
+                    className="w-full px-3 py-1.5 pr-9 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder={vmwareCfg.passwordSet ? "Leave blank to keep current" : "Enter password"}
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                    onClick={() => setShowVmwarePassword((v) => !v)}
+                  >
+                    {showVmwarePassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Ignore SSL */}
+              <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={vmwareCfg.ignoreSslErrors}
+                  onChange={(e) => setVmwareCfg({ ...vmwareCfg, ignoreSslErrors: e.target.checked })}
+                  className="rounded"
+                />
+                Ignore SSL certificate errors (for self-signed vCenter certificates)
+              </label>
+
+              {/* Allowed users */}
+              <div>
+                <h3 className="text-sm font-semibold text-text-primary mb-1">Allowed Users</h3>
+                <p className="text-xs text-text-muted mb-3">Users who can access the VMware Inventory module. Admins always have access.</p>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {vmwareCfg.allowedUsers.map((u, i) => (
+                    <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-accent/10 text-accent rounded-full">
+                      {u}
+                      <button onClick={() => setVmwareCfg({ ...vmwareCfg, allowedUsers: vmwareCfg.allowedUsers.filter((_, j) => j !== i) })} className="hover:text-red-600"><X className="w-3 h-3" /></button>
+                    </span>
+                  ))}
+                  {vmwareCfg.allowedUsers.length === 0 && <span className="text-xs text-text-muted">No users configured (admins only)</span>}
+                </div>
+                <div className="flex gap-2 max-w-xs">
+                  <input
+                    type="text"
+                    value={newVmwareUser}
+                    onChange={(e) => setNewVmwareUser(e.target.value)}
+                    placeholder="username"
+                    className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onKeyDown={(e) => { if (e.key === "Enter" && newVmwareUser.trim()) { setVmwareCfg({ ...vmwareCfg, allowedUsers: [...vmwareCfg.allowedUsers, newVmwareUser.trim()] }); setNewVmwareUser(""); } }}
+                  />
+                  <button
+                    disabled={!newVmwareUser.trim()}
+                    onClick={() => { setVmwareCfg({ ...vmwareCfg, allowedUsers: [...vmwareCfg.allowedUsers, newVmwareUser.trim()] }); setNewVmwareUser(""); }}
+                    className="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50"
+                  >Add</button>
+                </div>
+              </div>
+
+              {/* Test result */}
+              {vmwareTestResult && (
+                <div className={`text-sm px-4 py-3 rounded-lg border ${
+                  vmwareTestResult.ok
+                    ? "bg-green-50 border-green-300 text-green-800"
+                    : "bg-red-50 border-red-300 text-red-800"
+                }`}>
+                  {vmwareTestResult.message}
+                </div>
+              )}
+
+              {/* Action buttons */}
+              <div className="flex items-center gap-3">
+                <button
+                  disabled={vmwareSaving}
+                  onClick={async () => {
+                    setVmwareSaving(true);
+                    const body: Record<string, unknown> = {
+                      enabled: vmwareCfg.enabled,
+                      vcenterUrl: vmwareCfg.vcenterUrl.trim(),
+                      username: vmwareCfg.username.trim(),
+                      ignoreSslErrors: vmwareCfg.ignoreSslErrors,
+                      allowedUsers: vmwareCfg.allowedUsers,
+                    };
+                    if (vmwareCfg.password) body.password = vmwareCfg.password;
+                    const res = await fetch("/api/vmware/config", {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(body),
+                    });
+                    setVmwareSaving(false);
+                    if (res.ok) {
+                      setVmwareCfg({ ...vmwareCfg, password: "", passwordSet: vmwareCfg.password ? true : vmwareCfg.passwordSet });
+                      flash("VMware settings saved", "success");
+                    } else {
+                      const d = await res.json();
+                      flash(d.error || "Failed to save VMware settings", "error");
+                    }
+                  }}
+                  className="px-4 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50 transition-colors"
+                >
+                  {vmwareSaving ? "Saving…" : "Save VMware Settings"}
+                </button>
+                <button
+                  disabled={vmwareTesting}
+                  onClick={async () => {
+                    setVmwareTesting(true);
+                    setVmwareTestResult(null);
+                    const res = await fetch("/api/vmware/vms");
+                    setVmwareTesting(false);
+                    if (res.ok) {
+                      const d = await res.json();
+                      setVmwareTestResult({ ok: true, message: `Connection successful — ${d.vms?.length ?? 0} VM(s) found` });
+                    } else {
+                      const d = await res.json();
+                      setVmwareTestResult({ ok: false, message: d.error || `HTTP ${res.status}` });
+                    }
+                  }}
+                  className="px-4 py-2 text-sm font-medium border border-border text-text-muted rounded-lg hover:bg-muted disabled:opacity-50 transition-colors"
+                >
+                  {vmwareTesting ? "Testing…" : "Test Connection"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Crash Logs Tab */}
         {tab === "crash-logs" && (

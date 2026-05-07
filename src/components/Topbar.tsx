@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Search, LogOut, Settings, Sun, Moon, Archive, User, Bell, X, FileText, BookOpen, Check, HardDriveDownload, Home, Trophy, Share2, Trash2, Lock, Clock, BookMarked, ClipboardList, Monitor, Headset, ShieldCheck, Star, Info, Phone } from "lucide-react";
+import { ChevronDown, Search, LogOut, Settings, Sun, Moon, Archive, User, Bell, X, FileText, BookOpen, Check, HardDriveDownload, Home, Trophy, Share2, Trash2, Lock, Clock, BookMarked, ClipboardList, Monitor, Headset, ShieldCheck, Star, Info, Phone, Server } from "lucide-react";
 import OfflineBundleModal from "@/components/OfflineBundleModal";
 import ChangelogModal from "@/components/modals/ChangelogModal";
 import { useTheme, isLightTheme, type Theme } from "@/components/ThemeProvider";
@@ -107,12 +107,17 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
   const [avatarError, setAvatarError] = useState(false);
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [onCallAllowed, setOnCallAllowed] = useState(false);
+  const [vmwareAllowed, setVmwareAllowed] = useState(false);
 
   useEffect(() => {
     if (!user) return;
     fetch("/api/oncall/check")
       .then((r) => r.ok ? r.json() : null)
       .then((d) => { if (d?.allowed) setOnCallAllowed(true); })
+      .catch(() => {});
+    fetch("/api/vmware/check")
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d?.allowed) setVmwareAllowed(true); })
       .catch(() => {});
   }, [user]);
   const spaceRef = useRef<HTMLDivElement>(null);
@@ -265,6 +270,17 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
         >
           <Headset className="w-4 h-4" />
         </button>
+
+        {/* VMware Inventory */}
+        {vmwareAllowed && (
+          <button
+            onClick={() => router.push("/vmware")}
+            className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
+            data-tip="VMware Inventory"
+          >
+            <Server className="w-4 h-4" />
+          </button>
+        )}
 
         {/* On-Call Reports */}
         {onCallAllowed && (
