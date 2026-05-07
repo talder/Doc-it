@@ -196,7 +196,12 @@ interface VcVmDetail {
   cpu?: { count?: number };
   memory?: { size_MiB?: number };
   disks?: Record<string, { capacity?: number }>;
-  placement?: { host?: string };
+  placement?: { host?: string; cluster?: string };
+  /** Some vCenter versions expose runtime host here */
+  runtime?: { host?: string; power_state?: string; connection_state?: string };
+  /** Some vCenter versions use a direct host field */
+  host?: string;
+  [key: string]: unknown; // allow unknown fields for diagnostics
 }
 
 interface VcVmToolsInfo {
@@ -383,7 +388,22 @@ export async function fetchVMs(config: VmwareConfig): Promise<VmRecord[]> {
     // 4. List all VMs (summary)
     const vmList = await vcGet<VcVmSummary[]>(base, "/api/vcenter/vm", token, ignoreSslErrors);
 
-    // 4. Fetch details + tools info in parallel (batch concurrency to avoid overloading)
+    // Diagnostics: log top-level fields from the first VM detail so we can
+    // see exactly which fields vCenter returns (helps identify host field name)
+    if (vmList.length > 0) {
+      try {
+        const sampleDetail = await vcGet<VcVmDetail>(
+          base, `/api/vcenter/vm/${vmList[0].vm}`, token, ignoreSslErrors,
+        );
+        const keys = Object.keys(sampleDetail);
+        console.log(`[vmware] VM detail keys for ${vmList[0].name}:`, keys.join(", "));
+        if (sampleDetail.placement) console.log("[vmware] placement:", JSON.stringify(sampleDetail.placement));
+        if (sampleDetail.runtime) console.log("[vmware] runtime:", JSON.stringify(sampleDetail.runtime));
+        if (sampleDetail.host) console.log("[vmware] host field:", sampleDetail.host);
+      } catch { /* diagnostic only */ }
+    }
+
+    // 5. Fetch details + tools info in parallel (batch concurrency to avoid overloading)
     const CONCURRENCY = 10;
     const results: VmRecord[] = [];
 
@@ -431,11 +451,15 @@ export async function fetchVMs(config: VmwareConfig): Promise<VmRecord[]> {
           let hostName = vmHostMap[vm.vm] || "";
 
           if (!hostName) {
-            // Strategy C — placement.host from VM detail response
-            const dph = detail.placement?.host;
-            if (dph) {
-              const norm = dph.includes(":") ? dph.split(":").pop()! : dph;
-              hostName = hostMap[dph] || hostMap[norm] || norm;
+            // Strategy C — various host fields from VM detail response
+            // Try placement.host, runtime.host, and detail.host (field name varies by vCenter version)
+            const rawHostRef =
+              detail.placement?.host ||
+              detail.runtime?.host ||
+              (typeof detail.host === "string" ? detail.host : undefined);
+            if (rawHostRef) {
+              const norm = rawHostRef.includes(":") ? rawHostRef.split(":").pop()! : rawHostRef;
+              hostName = hostMap[rawHostRef] || hostMap[norm] || norm;
             }
           }
 
