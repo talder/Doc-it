@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
 import { requireSpaceRole } from "@/lib/permissions";
-import { readEnhancedTable, writeEnhancedTable, getEnhancedTableDir, generateId } from "@/lib/enhanced-table";
+import { readEnhancedTable, writeEnhancedTable, getEnhancedTableDir, generateId, removeFromTableIndex } from "@/lib/enhanced-table";
 import { ensureDir, getTrashDir } from "@/lib/config";
 import { auditLog } from "@/lib/audit";
 import { invalidateSpaceCache } from "@/lib/space-cache";
@@ -129,6 +129,8 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
     const content = await fs.readFile(srcPath, "utf-8");
     await fs.writeFile(trashFile, content, "utf-8");
     await fs.unlink(srcPath);
+    // Remove from sidebar index so the table disappears immediately
+    await removeFromTableIndex(slug, dbId).catch(() => {});
   } catch {
     return NextResponse.json({ error: "Failed to move to trash" }, { status: 500 });
   }

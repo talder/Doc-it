@@ -76,11 +76,19 @@ async function updateIndexEntry(spaceSlug: string, db: EnhancedTable): Promise<v
   await writeIndex(spaceSlug, index);
 }
 
-/** Remove one entry from the index (called after delete). */
+/** Remove one entry from the index (called after delete/archive). */
 async function removeIndexEntry(spaceSlug: string, dbId: string): Promise<void> {
   const index = await readIndex(spaceSlug);
   delete index[dbId];
   await writeIndex(spaceSlug, index);
+}
+
+/**
+ * Remove a table's entry from the sidebar index without touching the file.
+ * Use this after you've already removed the file yourself (e.g. trash/archive operations).
+ */
+export async function removeFromTableIndex(spaceSlug: string, dbId: string): Promise<void> {
+  return removeIndexEntry(spaceSlug, dbId);
 }
 
 /**
@@ -196,6 +204,8 @@ export async function archiveEnhancedTable(spaceSlug: string, dbId: string): Pro
   const dest = path.join(archiveDir, `${dbId}.db.json`);
   try {
     await fs.rename(src, dest);
+    // Remove from the sidebar index so the table disappears immediately
+    removeIndexEntry(spaceSlug, dbId).catch(() => {});
     return true;
   } catch {
     return false;
