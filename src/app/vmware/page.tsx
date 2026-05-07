@@ -309,6 +309,8 @@ function ExportTableModal({ vms, onClose }: { vms: VmRecord[]; onClose: () => vo
       });
       if (!updateRes.ok) { const d = await updateRes.json(); setError(d.error || "Failed to populate table"); setExporting(false); return; }
 
+      // Signal main page to switch to this space and open the new table
+      try { sessionStorage.setItem("docit-open-db", JSON.stringify({ spaceSlug, dbId })); } catch {}
       onClose();
       router.push("/");
     } catch (e) { setError(e instanceof Error ? e.message : "Unknown error"); setExporting(false); }

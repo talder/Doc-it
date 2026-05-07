@@ -400,6 +400,29 @@ export default function Home() {
       });
   }, [user, currentSpace]);
 
+  // After navigating from VMware export: auto-open the newly created table
+  useEffect(() => {
+    if (spaces.length === 0) return;
+    try {
+      const raw = sessionStorage.getItem("docit-open-db");
+      if (!raw) return;
+      sessionStorage.removeItem("docit-open-db");
+      const { spaceSlug: targetSlug, dbId } = JSON.parse(raw) as { spaceSlug: string; dbId: string };
+      const targetSpace = spaces.find((s: Space) => s.slug === targetSlug);
+      if (!targetSpace) return;
+      setCurrentSpace(targetSpace);
+      setActiveDoc(null);
+      setMarkdown("");
+      setCategories([]);
+      setDocs([]);
+      setTagsIndex({});
+      setSelectedTag(null);
+      setPendingDatabaseLoad(dbId);
+      setShowHome(false);
+    } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spaces]);
+
   // Fetch all space sidebar data via the combined init endpoint (1 request vs 8)
   const guardedNav = useCallback((action: () => void) => {
     if (!isEditing) { action(); return; }
