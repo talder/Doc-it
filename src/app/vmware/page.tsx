@@ -58,6 +58,17 @@ function fmtTime(iso: string): string {
   try { return new Date(iso).toLocaleString(); } catch { return iso; }
 }
 
+// Cross-browser UUID generator (crypto.randomUUID not available in all browsers)
+function uuid(): string {
+  if (typeof crypto !== "undefined" && typeof (crypto as { randomUUID?: () => string }).randomUUID === "function") {
+    return (crypto as { randomUUID: () => string }).randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    return (c === "x" ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
 const LS_FILTERS_KEY = "docit-vmware-saved-filters";
 function loadSavedFilters(): SavedFilter[] {
   try {
@@ -273,7 +284,7 @@ function ExportTableModal({ vms, onClose }: { vms: VmRecord[]; onClose: () => vo
 
       // Step 2: populate rows via PUT (replaces the 3 empty placeholder rows)
       const rows = vms.map((vm) => ({
-        id: crypto.randomUUID(),
+        id: uuid(),
         cells: {
           [colMap["VM Name"]]: vm.name,
           [colMap["Host"]]: vm.host,
