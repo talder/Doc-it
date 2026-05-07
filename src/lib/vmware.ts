@@ -325,37 +325,62 @@ export async function fetchVMs(config: VmwareConfig): Promise<VmRecord[]> {
     // 1. Get all ESXi hosts
     const hosts = await vcGet<VcHostSummary[]>(base, "/api/vcenter/host", token, ignoreSslErrors);
 
-    // 2. Build hostId → hostName map (used by the placement fallback)
+    // 2. Build hostId → hostName map (needed for MOR lookups in fallback paths)
     const hostMap: Record<string, string> = {};
     for (const h of hosts) hostMap[h.host] = h.name;
 
-    // 3. Build vmId → hostName map: query each host's VM list.
-    //    URL-encode the host ID (some vCenter versions require this).
+    console.log(`[vmware] Found ${hosts.length} hosts: ${hosts.map((h) => `${h.name}(${h.host})`).join(", ")}`);
+
+    // 3. Build vmId → hostName map.
+    //    Strategy A: query each host's VM list via the new REST API filter.
+    //    Strategy B: same query but on the old /vcenter/ path (if A returns nothing).
+    //    Both approaches are tried; strategies C/D are per-VM fallbacks in the loop.
     const vmHostMap: Record<string, string> = {};
+
+    const queryHostVMs = async (apiPath: string, hostName: string, hostId: string) => {
+      const vmsOnHost = await vcGet<VcVmSummary[]>(
+        base, `${apiPath}?filter.hosts=${encodeURIComponent(hostId)}`, token, ignoreSslErrors,
+      );
+      for (const vm of vmsOnHost) vmHostMap[vm.vm] = hostName;
+      return vmsOnHost.length;
+    };
+
+    // Strategy A — new REST API (/api/vcenter/vm)
+    let totalMapped = 0;
     await Promise.all(
       hosts.map(async (host) => {
         try {
-          const vmsOnHost = await vcGet<VcVmSummary[]>(
-            base, `/api/vcenter/vm?filter.hosts=${encodeURIComponent(host.host)}`, token, ignoreSslErrors,
-          );
-          for (const vm of vmsOnHost) {
-            vmHostMap[vm.vm] = host.name;
-          }
+          const n = await queryHostVMs("/api/vcenter/vm", host.name, host.host);
+          totalMapped += n;
         } catch (err) {
-          // Log to server console to help diagnose host mapping failures
-          console.warn(`[vmware] filter.hosts failed for ${host.name} (${host.host}):`, err instanceof Error ? err.message : String(err));
+          console.warn(`[vmware] Strategy A failed for ${host.name} (${host.host}):`, err instanceof Error ? err.message : String(err));
         }
       }),
     );
 
-    // If filter.hosts mapped no VMs (likely unsupported or permissions issue),
-    // flag that we should try the per-VM placement endpoint as a fallback.
-    const usePlacementFallback = Object.keys(vmHostMap).length === 0;
-    if (usePlacementFallback) {
-      console.warn("[vmware] filter.hosts returned no results — will try GET /api/vcenter/vm/{vm}/placement per VM");
+    // Strategy B — old REST API (/vcenter/vm, available in vCenter 6.5–8.0)
+    if (totalMapped === 0) {
+      console.warn("[vmware] Strategy A returned 0 mappings — trying old /vcenter/vm path");
+      await Promise.all(
+        hosts.map(async (host) => {
+          try {
+            const n = await queryHostVMs("/vcenter/vm", host.name, host.host);
+            totalMapped += n;
+          } catch (err) {
+            console.warn(`[vmware] Strategy B failed for ${host.name} (${host.host}):`, err instanceof Error ? err.message : String(err));
+          }
+        }),
+      );
     }
 
-    // 3. List all VMs (summary)
+    const usePlacementFallback = totalMapped === 0;
+    if (usePlacementFallback) {
+      console.warn("[vmware] Both filter strategies returned 0 — will try per-VM placement/detail fallbacks");
+    } else {
+      console.log(`[vmware] Host map built: ${totalMapped} VMs mapped to hosts`);
+    }
+
+    // 4. List all VMs (summary)
     const vmList = await vcGet<VcVmSummary[]>(base, "/api/vcenter/vm", token, ignoreSslErrors);
 
     // 4. Fetch details + tools info in parallel (batch concurrency to avoid overloading)
@@ -399,18 +424,28 @@ export async function fetchVMs(config: VmwareConfig): Promise<VmRecord[]> {
             }
           }
 
-          // ── Host resolution ───────────────────────────────────────────────
-          // Primary: use the filter.hosts map built above.
-          // Fallback: GET /api/vcenter/vm/{vm}/placement (vCenter 7.0 U2+).
+          // ── Host resolution (strategies C & D) ───────────────────────────
+          // Strategy A/B filled vmHostMap above. If still empty for this VM,
+          // try C: read placement.host from the VM detail response (some
+          // vCenter versions include it). Then D: GET /api/vcenter/vm/{vm}/placement.
           let hostName = vmHostMap[vm.vm] || "";
 
+          if (!hostName) {
+            // Strategy C — placement.host from VM detail response
+            const dph = detail.placement?.host;
+            if (dph) {
+              const norm = dph.includes(":") ? dph.split(":").pop()! : dph;
+              hostName = hostMap[dph] || hostMap[norm] || norm;
+            }
+          }
+
           if (!hostName && usePlacementFallback) {
+            // Strategy D — dedicated placement endpoint (vCenter 7.0 U2+)
             try {
               const placement = await vcGet<VcVmPlacement>(
                 base, `/api/vcenter/vm/${vm.vm}/placement`, token, ignoreSslErrors,
               );
               if (placement.host) {
-                // MOR may be prefixed: "HostSystem:host-10" → "host-10"
                 const normalizedId = placement.host.includes(":")
                   ? placement.host.split(":").pop()!
                   : placement.host;
