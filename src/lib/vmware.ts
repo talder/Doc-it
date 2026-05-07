@@ -213,6 +213,27 @@ interface VcGuestIdentity {
   };
 }
 
+/** Placement result for GET /api/vcenter/vm/{vm}/placement */
+interface VcVmPlacement {
+  host?: string;
+  cluster?: string;
+  datastore?: string;
+  folder?: string;
+  resource_pool?: string;
+}
+
+/** Guest memory info for GET /api/vcenter/vm/{vm}/guest/memory */
+interface VcGuestMemoryInfo {
+  /** Total physical memory in the guest (bytes or MiB depending on vCenter version) */
+  physical_memory?: number;
+  /** Memory actively used by guest (bytes) */
+  guest_memory_used?: number;
+  /** Balloon driver size in MiB */
+  balloon_size_MiB?: number;
+  /** Swapped memory in MiB */
+  swap_size_MiB?: number;
+}
+
 // Human-readable OS name mapping (VMware GuestOS enum → display string).
 // These are used as the stable grouping key — never mix with Tools full_name strings.
 function guestOsDisplay(raw?: string): string {
@@ -304,24 +325,31 @@ export async function fetchVMs(config: VmwareConfig): Promise<VmRecord[]> {
     // 1. Get all ESXi hosts
     const hosts = await vcGet<VcHostSummary[]>(base, "/api/vcenter/host", token, ignoreSslErrors);
 
-    // 2. Build vmId → hostName map by querying each host's VM list in parallel.
-    //    This is the only reliable way to map VMs to hosts via the vCenter REST API
-    //    since the VM detail endpoint does not include a placement/host field.
+    // 2. Build vmId → hostName map: query each host's VM list.
+    //    URL-encode the host ID (some vCenter versions require this).
     const vmHostMap: Record<string, string> = {};
     await Promise.all(
       hosts.map(async (host) => {
         try {
           const vmsOnHost = await vcGet<VcVmSummary[]>(
-            base, `/api/vcenter/vm?filter.hosts=${host.host}`, token, ignoreSslErrors,
+            base, `/api/vcenter/vm?filter.hosts=${encodeURIComponent(host.host)}`, token, ignoreSslErrors,
           );
           for (const vm of vmsOnHost) {
             vmHostMap[vm.vm] = host.name;
           }
-        } catch {
-          // non-fatal — host might be temporarily unreachable
+        } catch (err) {
+          // Log to server console to help diagnose host mapping failures
+          console.warn(`[vmware] filter.hosts failed for ${host.name} (${host.host}):`, err instanceof Error ? err.message : String(err));
         }
       }),
     );
+
+    // If filter.hosts mapped no VMs (likely unsupported or permissions issue),
+    // flag that we should try the per-VM placement endpoint as a fallback.
+    const usePlacementFallback = Object.keys(vmHostMap).length === 0;
+    if (usePlacementFallback) {
+      console.warn("[vmware] filter.hosts returned no results — will try GET /api/vcenter/vm/{vm}/placement per VM");
+    }
 
     // 3. List all VMs (summary)
     const vmList = await vcGet<VcVmSummary[]>(base, "/api/vcenter/vm", token, ignoreSslErrors);
@@ -342,17 +370,13 @@ export async function fetchVMs(config: VmwareConfig): Promise<VmRecord[]> {
             detail = await vcGet<VcVmDetail>(
               base, `/api/vcenter/vm/${vm.vm}`, token, ignoreSslErrors,
             );
-          } catch {
-            // non-fatal
-          }
+          } catch { /* non-fatal */ }
 
           try {
             tools = await vcGet<VcVmToolsInfo>(
               base, `/api/vcenter/vm/${vm.vm}/tools`, token, ignoreSslErrors,
             );
-          } catch {
-            // non-fatal
-          }
+          } catch { /* non-fatal */ }
 
           // Guest identity — only used for the full_name display string (not for grouping)
           if (tools.run_state === "RUNNING") {
@@ -360,9 +384,7 @@ export async function fetchVMs(config: VmwareConfig): Promise<VmRecord[]> {
               guestId = await vcGet<VcGuestIdentity>(
                 base, `/api/vcenter/vm/${vm.vm}/guest/identity`, token, ignoreSslErrors,
               );
-            } catch {
-              // non-fatal
-            }
+            } catch { /* non-fatal */ }
           }
 
           // Storage: sum all disk capacities
@@ -373,15 +395,51 @@ export async function fetchVMs(config: VmwareConfig): Promise<VmRecord[]> {
             }
           }
 
-          // Host name from the per-host VM query map
-          const hostName = vmHostMap[vm.vm] || "Unknown";
+          // ── Host resolution ───────────────────────────────────────────────
+          // Primary: use the filter.hosts map built above.
+          // Fallback: GET /api/vcenter/vm/{vm}/placement (vCenter 7.0 U2+).
+          let hostName = vmHostMap[vm.vm] || "";
 
-          // OS info
-          // guestOSDisplay: always use the stable enum-based mapping for consistent grouping
-          // guestOSFullName: the more specific string from VMware Tools (when available)
+          if (!hostName && usePlacementFallback) {
+            try {
+              const placement = await vcGet<VcVmPlacement>(
+                base, `/api/vcenter/vm/${vm.vm}/placement`, token, ignoreSslErrors,
+              );
+              if (placement.host) {
+                // MOR may be prefixed: "HostSystem:host-10" → "host-10"
+                const normalizedId = placement.host.includes(":")
+                  ? placement.host.split(":").pop()!
+                  : placement.host;
+                hostName = hostMap[placement.host] || hostMap[normalizedId] || normalizedId;
+              }
+            } catch { /* not available in this vCenter version */ }
+          }
+
+          if (!hostName) hostName = "Unknown";
+
+          // ── OS info ───────────────────────────────────────────────────────
           const rawGuestOS = detail.guest_OS ?? "";
           const guestOSDisplay = guestOsDisplay(rawGuestOS);
           const guestOSFullName = guestId.full_name?.default_message || "";
+
+          // ── Memory in use ─────────────────────────────────────────────────
+          // Try GET /api/vcenter/vm/{vm}/guest/memory when Tools is running.
+          // The field guest_memory_used may be in bytes (divide by 1024²→MiB).
+          let memoryUsedMiB: number | null = null;
+          if (tools.run_state === "RUNNING") {
+            try {
+              const guestMem = await vcGet<VcGuestMemoryInfo>(
+                base, `/api/vcenter/vm/${vm.vm}/guest/memory`, token, ignoreSslErrors,
+              );
+              if (typeof guestMem.guest_memory_used === "number" && guestMem.guest_memory_used > 0) {
+                const raw = guestMem.guest_memory_used;
+                // Heuristic: if value is > 1 GiB it's in bytes; otherwise MiB
+                memoryUsedMiB = raw > 1_073_741_824
+                  ? Math.round(raw / (1024 * 1024))
+                  : raw;
+              }
+            } catch { /* endpoint not available in this vCenter version */ }
+          }
 
           const record: VmRecord = {
             vmId: vm.vm,
@@ -394,9 +452,9 @@ export async function fetchVMs(config: VmwareConfig): Promise<VmRecord[]> {
             toolsVersion: tools.version ?? "",
             toolsStatus: tools.run_state ?? "",
             memoryMiB: vm.memory_size_MiB ?? detail.memory?.size_MiB ?? 0,
-            memoryUsedMiB: null,  // requires performance counters
+            memoryUsedMiB,
             cpuCount: vm.cpu_count ?? detail.cpu?.count ?? 0,
-            cpuUsageMhz: null,    // requires performance counters
+            cpuUsageMhz: null, // requires vCenter performance counters API
             storageBytesProvisioned,
           };
 

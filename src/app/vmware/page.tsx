@@ -411,9 +411,9 @@ function VmRow({ vm, onFilterHost, onFilterOS }: {
                 ["Tools Version", vm.toolsVersion || "Not installed"],
                 ["Tools Status", vm.toolsStatus || "—"],
                 ["Memory Assigned", `${vm.memoryMiB} MiB (${fmtMiB(vm.memoryMiB)})`],
-                ["Memory In Use", vm.memoryUsedMiB !== null ? `${vm.memoryUsedMiB} MiB (${fmtMiB(vm.memoryUsedMiB)})` : "— (Tools required)"],
-                ["CPUs", `${vm.cpuCount} vCPU`],
-                ["CPU Usage", vm.cpuUsageMhz !== null ? `${vm.cpuUsageMhz} MHz` : "— (Tools required)"],
+                ["Memory In Use", vm.memoryUsedMiB !== null ? `${vm.memoryUsedMiB} MiB (${fmtMiB(vm.memoryUsedMiB)})` : vm.toolsStatus === "RUNNING" ? "—" : "— (Tools required)"],
+              ["CPUs", `${vm.cpuCount} vCPU`],
+                ["CPU Usage", vm.cpuUsageMhz !== null ? `${vm.cpuUsageMhz} MHz` : vm.toolsStatus === "RUNNING" ? "— (performance counters needed)" : "— (Tools required)"],
                 ["Storage Provisioned", fmtBytes(vm.storageBytesProvisioned)],
               ].map(([label, value]) => (
                 <div key={label}>
