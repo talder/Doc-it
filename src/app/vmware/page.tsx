@@ -243,7 +243,12 @@ function ExportTableModal({ vms, onClose }: { vms: VmRecord[]; onClose: () => vo
   const router = useRouter();
   const [spaces, setSpaces] = useState<{ slug: string; name: string }[]>([]);
   const [spaceSlug, setSpaceSlug] = useState("");
-  const [tableTitle, setTableTitle] = useState(`VMware Inventory ${new Date().toLocaleDateString()}`);
+  const [tableTitle, setTableTitle] = useState(() => {
+    const now = new Date();
+    const date = now.toLocaleDateString();
+    const time = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+    return `VMware Inventory ${date} ${time}`;
+  });
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
 

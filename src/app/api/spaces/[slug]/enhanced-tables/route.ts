@@ -30,6 +30,15 @@ export async function POST(request: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Title required" }, { status: 400 });
   }
 
+  // Reject duplicate titles within the same space (case-insensitive)
+  const existing = await listEnhancedTablesMeta(slug);
+  if (existing.some((db) => db.title.toLowerCase() === title.trim().toLowerCase())) {
+    return NextResponse.json(
+      { error: `A table named "${title.trim()}" already exists in this space. Please choose a different name.` },
+      { status: 409 },
+    );
+  }
+
   const dbId = generateId();
   const now = new Date().toISOString();
 
