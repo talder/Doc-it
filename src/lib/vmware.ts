@@ -421,6 +421,50 @@ export async function fetchVMs(config: VmwareConfig): Promise<VmRecord[]> {
     // 4. List all VMs (summary)
     const vmList = await vcGet<VcVmSummary[]>(base, "/api/vcenter/vm", token, ignoreSslErrors);
 
+    // Strategy E — reverse lookup: if filter.hosts on the VM endpoint fails,
+    // try filter.vms on the HOST endpoint (the inverse query).
+    // GET /api/vcenter/host?filter.vms={vm_id} returns which host(s) run that VM.
+    if (usePlacementFallback && vmList.length > 0) {
+      console.log("[vmware] Trying Strategy E: reverse host lookup (GET /api/vcenter/host?filter.vms=...)");
+      let eSucceeded = 0;
+      // Test with first VM to see if the endpoint is supported before doing all 310
+      let eSupported = false;
+      try {
+        const testHosts = await vcGet<VcHostSummary[]>(
+          base, `/api/vcenter/host?filter.vms=${encodeURIComponent(vmList[0].vm)}`, token, ignoreSslErrors,
+        );
+        eSupported = true;
+        if (testHosts.length > 0) {
+          vmHostMap[vmList[0].vm] = testHosts[0].name;
+          eSucceeded++;
+        }
+        console.log("[vmware] Strategy E is supported — running for all VMs");
+      } catch (err) {
+        console.warn("[vmware] Strategy E also not supported:", err instanceof Error ? err.message : String(err));
+      }
+
+      if (eSupported) {
+        const ECONCURRENCY = 20;
+        for (let i = 1; i < vmList.length; i += ECONCURRENCY) {
+          const batch = vmList.slice(i, i + ECONCURRENCY);
+          await Promise.all(
+            batch.map(async (vm) => {
+              try {
+                const hostsForVm = await vcGet<VcHostSummary[]>(
+                  base, `/api/vcenter/host?filter.vms=${encodeURIComponent(vm.vm)}`, token, ignoreSslErrors,
+                );
+                if (hostsForVm.length > 0) {
+                  vmHostMap[vm.vm] = hostsForVm[0].name;
+                  eSucceeded++;
+                }
+              } catch { /* skip this VM */ }
+            }),
+          );
+        }
+        console.log(`[vmware] Strategy E mapped ${eSucceeded}/${vmList.length} VMs to hosts`);
+      }
+    }
+
     // Diagnostics: log top-level fields from the first VM detail so we can
     // see exactly which fields vCenter returns (helps identify host field name)
     if (vmList.length > 0) {
