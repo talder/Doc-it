@@ -342,40 +342,73 @@ export async function fetchVMs(config: VmwareConfig): Promise<VmRecord[]> {
     //    Both approaches are tried; strategies C/D are per-VM fallbacks in the loop.
     const vmHostMap: Record<string, string> = {};
 
-    const queryHostVMs = async (apiPath: string, hostName: string, hostId: string) => {
+    // Some vCenter versions require the full MOR type prefix in the filter value:
+    //   plain:  host-252509
+    //   full:   HostSystem:host-252509
+    // We try both; the one that doesn't return 400 is the right format.
+    const tryFilterFormats = ["plain", "full"] as const;
+
+    const queryHostVMs = async (
+      apiPath: string,
+      hostName: string,
+      hostId: string,
+      format: "plain" | "full",
+    ) => {
+      const filterVal = format === "full" ? `HostSystem:${hostId}` : hostId;
       const vmsOnHost = await vcGet<VcVmSummary[]>(
-        base, `${apiPath}?filter.hosts=${encodeURIComponent(hostId)}`, token, ignoreSslErrors,
+        base, `${apiPath}?filter.hosts=${encodeURIComponent(filterVal)}`, token, ignoreSslErrors,
       );
       for (const vm of vmsOnHost) vmHostMap[vm.vm] = hostName;
       return vmsOnHost.length;
     };
 
-    // Strategy A — new REST API (/api/vcenter/vm)
+    // Strategy A — new REST API (/api/vcenter/vm), try plain then full MOR format
     let totalMapped = 0;
-    await Promise.all(
-      hosts.map(async (host) => {
-        try {
-          const n = await queryHostVMs("/api/vcenter/vm", host.name, host.host);
-          totalMapped += n;
-        } catch (err) {
-          console.warn(`[vmware] Strategy A failed for ${host.name} (${host.host}):`, err instanceof Error ? err.message : String(err));
-        }
-      }),
-    );
+    let workingFormat: "plain" | "full" | null = null;
 
-    // Strategy B — old REST API (/vcenter/vm, available in vCenter 6.5–8.0)
-    if (totalMapped === 0) {
-      console.warn("[vmware] Strategy A returned 0 mappings — trying old /vcenter/vm path");
+    for (const fmt of tryFilterFormats) {
+      if (totalMapped > 0) break;
       await Promise.all(
         hosts.map(async (host) => {
           try {
-            const n = await queryHostVMs("/vcenter/vm", host.name, host.host);
+            const n = await queryHostVMs("/api/vcenter/vm", host.name, host.host, fmt);
+            if (n > 0) workingFormat = fmt;
             totalMapped += n;
           } catch (err) {
-            console.warn(`[vmware] Strategy B failed for ${host.name} (${host.host}):`, err instanceof Error ? err.message : String(err));
+            if (fmt === "full") { // only log on the last attempt
+              console.warn(`[vmware] Strategy A failed for ${host.name} (both formats):`, err instanceof Error ? err.message : String(err));
+            }
           }
         }),
       );
+    }
+
+    if (totalMapped > 0) {
+      console.log(`[vmware] Strategy A succeeded with format="${workingFormat}": ${totalMapped} VMs mapped`);
+    }
+
+    // Strategy B — old REST API (/vcenter/vm, vCenter 6.5–8.0), same format probing
+    if (totalMapped === 0) {
+      console.warn("[vmware] Strategy A returned 0 — trying old /vcenter/vm path");
+      for (const fmt of tryFilterFormats) {
+        if (totalMapped > 0) break;
+        await Promise.all(
+          hosts.map(async (host) => {
+            try {
+              const n = await queryHostVMs("/vcenter/vm", host.name, host.host, fmt);
+              if (n > 0) workingFormat = fmt;
+              totalMapped += n;
+            } catch (err) {
+              if (fmt === "full") {
+                console.warn(`[vmware] Strategy B failed for ${host.name} (both formats):`, err instanceof Error ? err.message : String(err));
+              }
+            }
+          }),
+        );
+      }
+      if (totalMapped > 0) {
+        console.log(`[vmware] Strategy B succeeded with format="${workingFormat}": ${totalMapped} VMs mapped`);
+      }
     }
 
     const usePlacementFallback = totalMapped === 0;
