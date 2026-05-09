@@ -223,6 +223,8 @@ function SnapshotTree({ snapshots, onDelete, deleting }: {
 function VmChangesPanel({ onClose }: { onClose: () => void }) {
   const [changes, setChanges] = useState<VmChangeEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  // column widths: [Time, VM, Type, Change]
+  const [colWidths, setColWidths] = useState([148, 160, 82, 220]);
 
   const load = () => {
     setLoading(true);
@@ -232,6 +234,26 @@ function VmChangesPanel({ onClose }: { onClose: () => void }) {
       .catch(() => setLoading(false));
   };
   useEffect(load, []);
+
+  const startResize = (col: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = colWidths[col];
+    const onMove = (ev: MouseEvent) => {
+      const newW = Math.max(48, startW + ev.clientX - startX);
+      setColWidths(ws => ws.map((w, i) => i === col ? newW : w));
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
 
   const typeCfg: Record<string, { label: string; cls: string }> = {
     host:   { label: "Migration", cls: "bg-blue-100 text-blue-800 border-blue-200" },
@@ -247,8 +269,10 @@ function VmChangesPanel({ onClose }: { onClose: () => void }) {
     return val;
   };
 
+  const colLabels = ["Time", "VM", "Type", "Change"];
+
   return (
-    <div className="w-[520px] border-l border-border bg-surface flex flex-col overflow-hidden">
+    <div className="w-[640px] border-l border-border bg-surface flex flex-col overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-2">
           <History className="w-4 h-4 text-accent" />
@@ -262,7 +286,7 @@ function VmChangesPanel({ onClose }: { onClose: () => void }) {
           <button onClick={onClose} className="p-1 rounded hover:bg-muted text-text-muted"><X className="w-4 h-4" /></button>
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-auto">
         {loading ? (
           <div className="flex items-center justify-center h-32"><RefreshCw className="w-5 h-5 animate-spin text-text-muted" /></div>
         ) : changes.length === 0 ? (
@@ -272,13 +296,21 @@ function VmChangesPanel({ onClose }: { onClose: () => void }) {
             <p className="text-xs mt-1">Changes are detected automatically on each Refresh.</p>
           </div>
         ) : (
-          <table className="w-full text-xs">
+          <table className="text-xs" style={{ tableLayout: "fixed", width: colWidths.reduce((a, b) => a + b, 0) }}>
+            <colgroup>
+              {colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}
+            </colgroup>
             <thead>
-              <tr className="border-b border-border bg-surface-alt sticky top-0">
-                <th className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase tracking-wide">Time</th>
-                <th className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase tracking-wide">VM</th>
-                <th className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase tracking-wide">Type</th>
-                <th className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase tracking-wide">Change</th>
+              <tr className="border-b border-border bg-surface-alt sticky top-0 z-10">
+                {colLabels.map((label, i) => (
+                  <th key={i} className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase tracking-wide select-none" style={{ position: "relative", width: colWidths[i] }}>
+                    {label}
+                    <div
+                      onMouseDown={(e) => startResize(i, e)}
+                      className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-accent/40 active:bg-accent/60"
+                    />
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -286,15 +318,21 @@ function VmChangesPanel({ onClose }: { onClose: () => void }) {
                 const tc = typeCfg[c.changeType] ?? { label: c.changeType, cls: "bg-gray-100 text-gray-700 border-gray-200" };
                 return (
                   <tr key={c.id} className="border-b border-border hover:bg-muted/40">
-                    <td className="px-3 py-1.5 text-text-muted whitespace-nowrap text-[10px]">{fmtTime(c.timestamp)}</td>
-                    <td className="px-3 py-1.5 text-text-primary font-medium max-w-[130px] truncate" title={c.vmName}>{c.vmName}</td>
-                    <td className="px-3 py-1.5">
+                    <td className="px-3 py-1.5 text-text-muted text-[10px] overflow-hidden" style={{ width: colWidths[0] }}>
+                      <span className="block truncate" title={fmtTime(c.timestamp)}>{fmtTime(c.timestamp)}</span>
+                    </td>
+                    <td className="px-3 py-1.5 text-text-primary font-medium overflow-hidden" style={{ width: colWidths[1] }}>
+                      <span className="block truncate" title={c.vmName}>{c.vmName}</span>
+                    </td>
+                    <td className="px-3 py-1.5 overflow-hidden" style={{ width: colWidths[2] }}>
                       <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold ${tc.cls}`}>{tc.label}</span>
                     </td>
-                    <td className="px-3 py-1.5">
-                      <span className="text-red-500">{fmtVal(c.changeType, c.oldValue)}</span>
-                      <span className="mx-1.5 text-text-muted">→</span>
-                      <span className="text-green-600">{fmtVal(c.changeType, c.newValue)}</span>
+                    <td className="px-3 py-1.5 overflow-hidden" style={{ width: colWidths[3] }}>
+                      <span className="block truncate" title={`${fmtVal(c.changeType, c.oldValue)} → ${fmtVal(c.changeType, c.newValue)}`}>
+                        <span className="text-red-500">{fmtVal(c.changeType, c.oldValue)}</span>
+                        <span className="mx-1.5 text-text-muted">→</span>
+                        <span className="text-green-600">{fmtVal(c.changeType, c.newValue)}</span>
+                      </span>
                     </td>
                   </tr>
                 );
