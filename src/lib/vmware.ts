@@ -27,7 +27,6 @@ export interface VmwareConfig {
   weeklyReportDay: number;          // 0=Sun … 6=Sat, default 1 (Mon)
   weeklyReportTime: string;         // "HH:MM"
   lastWeeklyReportAt?: string;      // ISO timestamp, debounce
-  victoriaLogsUrl: string;          // optional, e.g. http://localhost:9428
 }
 
 export type VmPowerState = "POWERED_ON" | "POWERED_OFF" | "SUSPENDED";
@@ -259,7 +258,6 @@ const DEFAULT_CONFIG: VmwareConfig = {
   weeklyReportRecipients: [],
   weeklyReportDay: 1,
   weeklyReportTime: "08:00",
-  victoriaLogsUrl: "",
 };
 
 // ── Config CRUD ────────────────────────────────────────────────────────────────

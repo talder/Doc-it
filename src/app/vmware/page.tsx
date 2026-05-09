@@ -325,8 +325,10 @@ function VmChangesPanel({ onClose }: { onClose: () => void }) {
   const [panelWidth, setPanelWidth] = useState(640);
 
   useEffect(() => {
-    fetch("/api/vmware/config").then(r => r.json()).then(d => {
-      if (d.victoriaLogsUrl) setVlUrl(d.victoriaLogsUrl.replace(/\/$/, ""));
+    fetch("/api/settings/audit").then(r => r.json()).then(d => {
+      if (d.syslog?.enabled && d.syslog?.host) {
+        setVlUrl(`http://${d.syslog.host}:9428`);
+      }
     }).catch(() => {});
   }, []);
 
@@ -533,8 +535,8 @@ function VmChangesPanel({ onClose }: { onClose: () => void }) {
 
 // ── Config panel ──────────────────────────────────────────────────────────────
 
-interface CfgForm { enabled: boolean; vcenterUrl: string; username: string; password: string; passwordSet: boolean; ignoreSslErrors: boolean; allowedUsers: string[]; victoriaLogsUrl: string; }
-const EMPTY_CFG: CfgForm = { enabled: false, vcenterUrl: "", username: "", password: "", passwordSet: false, ignoreSslErrors: false, allowedUsers: [], victoriaLogsUrl: "" };
+interface CfgForm { enabled: boolean; vcenterUrl: string; username: string; password: string; passwordSet: boolean; ignoreSslErrors: boolean; allowedUsers: string[]; }
+const EMPTY_CFG: CfgForm = { enabled: false, vcenterUrl: "", username: "", password: "", passwordSet: false, ignoreSslErrors: false, allowedUsers: [] };
 
 function ConfigPanel({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState<CfgForm>(EMPTY_CFG);
@@ -548,14 +550,14 @@ function ConfigPanel({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
 
   useEffect(() => {
     fetch("/api/vmware/config").then((r) => r.json()).then((d) => {
-      if (!d.error) setForm({ enabled: !!d.enabled, vcenterUrl: d.vcenterUrl || "", username: d.username || "", password: "", passwordSet: !!d.passwordSet, ignoreSslErrors: !!d.ignoreSslErrors, allowedUsers: Array.isArray(d.allowedUsers) ? d.allowedUsers : [], victoriaLogsUrl: d.victoriaLogsUrl || "" });
+      if (!d.error) setForm({ enabled: !!d.enabled, vcenterUrl: d.vcenterUrl || "", username: d.username || "", password: "", passwordSet: !!d.passwordSet, ignoreSslErrors: !!d.ignoreSslErrors, allowedUsers: Array.isArray(d.allowedUsers) ? d.allowedUsers : [] });
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
 
   const handleSave = async () => {
     setSaving(true); setSaveError("");
-    const body: Record<string, unknown> = { enabled: form.enabled, vcenterUrl: form.vcenterUrl.trim(), username: form.username.trim(), ignoreSslErrors: form.ignoreSslErrors, allowedUsers: form.allowedUsers, victoriaLogsUrl: form.victoriaLogsUrl.trim() };
+    const body: Record<string, unknown> = { enabled: form.enabled, vcenterUrl: form.vcenterUrl.trim(), username: form.username.trim(), ignoreSslErrors: form.ignoreSslErrors, allowedUsers: form.allowedUsers };
     if (form.password) body.password = form.password;
     const res = await fetch("/api/vmware/config", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (res.ok) { onSaved(); onClose(); } else { const d = await res.json(); setSaveError(d.error || "Failed to save"); }
@@ -591,11 +593,6 @@ function ConfigPanel({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
           </div>
         </div>
         <label className="flex items-center gap-2 cursor-pointer text-sm text-text-primary"><input type="checkbox" checked={form.ignoreSslErrors} onChange={(e) => setForm((f) => ({ ...f, ignoreSslErrors: e.target.checked }))} className="rounded border-border" />Ignore SSL errors</label>
-        <div>
-          <label className="block text-xs font-medium text-text-secondary mb-1">VictoriaLogs URL <span className="text-text-muted">(optional)</span></label>
-          <input type="url" className="w-full px-3 py-1.5 text-sm bg-surface-alt border border-border rounded-lg text-text-primary focus:outline-none focus:border-accent" placeholder="http://localhost:9428" value={form.victoriaLogsUrl} onChange={(e) => setForm((f) => ({ ...f, victoriaLogsUrl: e.target.value }))} />
-          <p className="text-[10px] text-text-muted mt-1">Enables a direct link from the Changes panel to VictoriaLogs. VM changes are forwarded via syslog with msgId <code>vmware.change</code>.</p>
-        </div>
         <div>
           <label className="block text-xs font-medium text-text-secondary mb-1">Allowed Users</label>
           <div className="flex gap-2 mb-2">
