@@ -129,7 +129,7 @@ export async function getCachedInventory(ttlMinutes: number): Promise<VmwareInve
   if (ttlMinutes <= 0) return null;
   try {
     const cache = await readJsonConfig<VmwareInventoryCache | null>(CACHE_FILE, null);
-    if (!cache?.fetchedAt || !Array.isArray(cache.vms)) return null;
+  if (!cache?.fetchedAt || !Array.isArray(cache.vms) || !cache.hostStats || typeof cache.hostStats !== "object") return null;
     const ageMs = Date.now() - new Date(cache.fetchedAt).getTime();
     if (ageMs > ttlMinutes * 60_000) return null;
     return cache;
@@ -423,6 +423,8 @@ async function fetchVMDataViaSoap(
     const { rootFolder, propCollector } = await soapServiceContent(base, cookie, ignoreSsl);
     const soapUrl = `${base}/sdk`;
 
+    // Use named traversal specs so ComputeResource/ClusterComputeResource hosts are found
+    // regardless of folder depth (nested host folders, clusters, etc.)
     const rpeXml = `<?xml version="1.0"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
 <soapenv:Body>
@@ -450,20 +452,27 @@ async function fetchVMDataViaSoap(
     <objectSet>
       <obj type="Folder">${esc(rootFolder)}</obj>
       <skip>false</skip>
+      <!-- visitFolders: recurse into any Folder, and branch into DC/CR/CCR children -->
       <selectSet xsi:type="TraversalSpec">
-        <name>folderChildren</name><type>Folder</type><path>childEntity</path><skip>false</skip>
-        <selectSet xsi:type="SelectionSpec"><name>folderChildren</name></selectSet>
-        <selectSet xsi:type="TraversalSpec">
-          <type>Datacenter</type><path>vmFolder</path><skip>false</skip>
-          <selectSet xsi:type="SelectionSpec"><name>folderChildren</name></selectSet>
-        </selectSet>
-        <selectSet xsi:type="TraversalSpec">
-          <type>Datacenter</type><path>hostFolder</path><skip>false</skip>
-          <selectSet xsi:type="SelectionSpec"><name>folderChildren</name></selectSet>
-          <selectSet xsi:type="TraversalSpec">
-            <type>ComputeResource</type><path>host</path><skip>false</skip>
-          </selectSet>
-        </selectSet>
+        <name>visitFolders</name><type>Folder</type><path>childEntity</path><skip>false</skip>
+        <selectSet xsi:type="SelectionSpec"><name>visitFolders</name></selectSet>
+        <selectSet xsi:type="SelectionSpec"><name>dcToVms</name></selectSet>
+        <selectSet xsi:type="SelectionSpec"><name>dcToHosts</name></selectSet>
+        <selectSet xsi:type="SelectionSpec"><name>crToHosts</name></selectSet>
+      </selectSet>
+      <!-- dcToVms: Datacenter → vmFolder -->
+      <selectSet xsi:type="TraversalSpec">
+        <name>dcToVms</name><type>Datacenter</type><path>vmFolder</path><skip>false</skip>
+        <selectSet xsi:type="SelectionSpec"><name>visitFolders</name></selectSet>
+      </selectSet>
+      <!-- dcToHosts: Datacenter → hostFolder -->
+      <selectSet xsi:type="TraversalSpec">
+        <name>dcToHosts</name><type>Datacenter</type><path>hostFolder</path><skip>false</skip>
+        <selectSet xsi:type="SelectionSpec"><name>visitFolders</name></selectSet>
+      </selectSet>
+      <!-- crToHosts: ComputeResource (incl. ClusterComputeResource) → host -->
+      <selectSet xsi:type="TraversalSpec">
+        <name>crToHosts</name><type>ComputeResource</type><path>host</path><skip>false</skip>
       </selectSet>
     </objectSet>
   </specSet>
