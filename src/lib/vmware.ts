@@ -313,6 +313,135 @@ function guestOsDisplay(raw?: string): string {
   return map[raw] ?? raw.replace(/_64$/, " (64-bit)").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+// ── SOAP property collector (fallback when REST filter.hosts is unsupported) ──
+
+/**
+ * Use the vSphere SOAP API property collector to retrieve runtime.host for all VMs.
+ * This works on every vCenter version and configuration, unlike the REST API filters.
+ * Returns a map of vmMOR → hostMOR (e.g. "vm-104465" → "host-252509").
+ */
+async function fetchVMHostsViaSoap(
+  base: string,
+  username: string,
+  password: string,
+  ignoreSsl: boolean,
+): Promise<Record<string, string>> {
+  const soapUrl = `${base}/sdk`;
+
+  const esc = (s: string) => s
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+  const post = (body: string, cookie?: string): Promise<Response> =>
+    vcFetch(soapUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/xml; charset=utf-8",
+        "SOAPAction": "urn:vim25/7.0",
+        ...(cookie ? { Cookie: cookie } : {}),
+      },
+      body,
+    }, ignoreSsl);
+
+  // Step 1: Login
+  const loginRes = await post(
+    `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:vim25="urn:vim25">
+<soapenv:Body><vim25:Login>
+<_this type="SessionManager">SessionManager</_this>
+<userName>${esc(username)}</userName>
+<password>${esc(password)}</password>
+</vim25:Login></soapenv:Body></soapenv:Envelope>`,
+  );
+  if (!loginRes.ok) {
+    const errText = await loginRes.text().catch(() => "");
+    throw new Error(`SOAP login failed (${loginRes.status}): ${errText.slice(0, 300)}`);
+  }
+  const rawCookie = loginRes.headers.get("set-cookie") ?? "";
+  const sessionCookie = rawCookie.match(/vmware_soap_session=[^;,]+/)?.[0] ?? "";
+
+  try {
+    // Step 2: RetrieveServiceContent — get rootFolder and propertyCollector MORs
+    const scRes = await post(
+      `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:vim25="urn:vim25">
+<soapenv:Body><vim25:RetrieveServiceContent>
+<_this type="ServiceInstance">ServiceInstance</_this>
+</vim25:RetrieveServiceContent></soapenv:Body></soapenv:Envelope>`,
+      sessionCookie,
+    );
+    const scText = await scRes.text();
+
+    const rootFolder = scText.match(/<rootFolder[^>]*>([^<]+)<\/rootFolder>/)?.[1];
+    const propCollector = scText.match(/<propertyCollector[^>]*>([^<]+)<\/propertyCollector>/)?.[1];
+    if (!rootFolder || !propCollector) throw new Error("Could not parse ServiceContent");
+
+    // Step 3: RetrievePropertiesEx — get runtime.host for every VirtualMachine
+    // Traversal: rootFolder → childEntity → Datacenter → vmFolder → childEntity → VM
+    const rpeRes = await post(
+      `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+  xmlns:vim25="urn:vim25" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<soapenv:Body><vim25:RetrievePropertiesEx>
+  <_this type="PropertyCollector">${esc(propCollector)}</_this>
+  <specSet>
+    <propSet>
+      <type>VirtualMachine</type>
+      <all>false</all>
+      <pathSet>runtime.host</pathSet>
+    </propSet>
+    <objectSet>
+      <obj type="Folder">${esc(rootFolder)}</obj>
+      <skip>false</skip>
+      <selectSet xsi:type="vim25:TraversalSpec">
+        <name>visitFolders</name>
+        <type>Folder</type>
+        <path>childEntity</path>
+        <skip>false</skip>
+        <selectSet><name>visitFolders</name></selectSet>
+        <selectSet><name>dcVmFolder</name></selectSet>
+      </selectSet>
+      <selectSet xsi:type="vim25:TraversalSpec">
+        <name>dcVmFolder</name>
+        <type>Datacenter</type>
+        <path>vmFolder</path>
+        <skip>false</skip>
+        <selectSet><name>visitFolders</name></selectSet>
+      </selectSet>
+    </objectSet>
+  </specSet>
+  <options><maxObjects>0</maxObjects></options>
+</vim25:RetrievePropertiesEx></soapenv:Body></soapenv:Envelope>`,
+      sessionCookie,
+    );
+    const rpeText = await rpeRes.text();
+    if (!rpeRes.ok) throw new Error(`SOAP RetrievePropertiesEx failed (${rpeRes.status}): ${rpeText.slice(0, 300)}`);
+
+    // Parse result: extract vmMOR → hostMOR pairs
+    const result: Record<string, string> = {};
+    const objRx = /<objects>([ \t\r\n\S]*?)<\/objects>/gs;
+    let m: RegExpExecArray | null;
+    while ((m = objRx.exec(rpeText)) !== null) {
+      const block = m[1];
+      const vmMor = block.match(/<obj[^>]*type="VirtualMachine"[^>]*>([^<]+)<\/obj>/)?.[1];
+      // host MOR may appear as: <val ... type="HostSystem" ...>host-NNN</val>
+      const hostMor = block.match(/<val[^>]*type="HostSystem"[^>]*>([^<]+)<\/val>/)?.[1];
+      if (vmMor && hostMor) result[vmMor] = hostMor;
+    }
+    return result;
+  } finally {
+    // Logout best-effort
+    await post(
+      `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:vim25="urn:vim25">
+<soapenv:Body><vim25:Logout>
+<_this type="SessionManager">SessionManager</_this>
+</vim25:Logout></soapenv:Body></soapenv:Envelope>`,
+      sessionCookie,
+    ).catch(() => {});
+  }
+}
+
 // ── Main Fetch ─────────────────────────────────────────────────────────────────
 
 /**
@@ -421,9 +550,7 @@ export async function fetchVMs(config: VmwareConfig): Promise<VmRecord[]> {
     // 4. List all VMs (summary)
     const vmList = await vcGet<VcVmSummary[]>(base, "/api/vcenter/vm", token, ignoreSslErrors);
 
-    // Strategy E — reverse lookup: if filter.hosts on the VM endpoint fails,
-    // try filter.vms on the HOST endpoint (the inverse query).
-    // GET /api/vcenter/host?filter.vms={vm_id} returns which host(s) run that VM.
+    // Strategy E — reverse lookup (GET /api/vcenter/host?filter.vms=)
     if (usePlacementFallback && vmList.length > 0) {
       console.log("[vmware] Trying Strategy E: reverse host lookup (GET /api/vcenter/host?filter.vms=...)");
       let eSucceeded = 0;
@@ -462,6 +589,27 @@ export async function fetchVMs(config: VmwareConfig): Promise<VmRecord[]> {
           );
         }
         console.log(`[vmware] Strategy E mapped ${eSucceeded}/${vmList.length} VMs to hosts`);
+      }
+    }
+
+    // Strategy F — SOAP property collector (universal fallback).
+    // Works on every vCenter version regardless of REST API filter support.
+    // Retrieves runtime.host for all VMs in one SOAP call via the property collector.
+    if (Object.keys(vmHostMap).length === 0) {
+      console.log("[vmware] Trying SOAP property collector (Strategy F) for VM-to-host mapping");
+      try {
+        const soapMap = await fetchVMHostsViaSoap(base, config.username, password, ignoreSslErrors);
+        let soapMapped = 0;
+        for (const [vmMor, hostMor] of Object.entries(soapMap)) {
+          // hostMor is like "host-252509"; look up the display name in hostMap
+          const norm = hostMor.includes(":") ? hostMor.split(":").pop()! : hostMor;
+          const hostName = hostMap[hostMor] || hostMap[norm] || norm;
+          vmHostMap[vmMor] = hostName;
+          soapMapped++;
+        }
+        console.log(`[vmware] SOAP strategy mapped ${soapMapped} VMs to hosts`);
+      } catch (err) {
+        console.warn("[vmware] SOAP strategy failed:", err instanceof Error ? err.message : String(err));
       }
     }
 
