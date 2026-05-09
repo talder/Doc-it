@@ -265,7 +265,7 @@ function guestOsDisplay(raw?: string): string {
     FREEBSD_13_64:"FreeBSD 13 (64-bit)",FREEBSD13_64:"FreeBSD 13 (64-bit)",
     FREEBSD_12_64:"FreeBSD 12 (64-bit)",FREEBSD12_64:"FreeBSD 12 (64-bit)",
     FREEBSD_11_64:"FreeBSD 11 (64-bit)",FREEBSD11_64:"FreeBSD 11 (64-bit)",
-    FREEBSD_64:"FreeBSD (64-bit)",FREEBSD_64:"FreeBSD (64-bit)",
+    FREEBSD_64:"FreeBSD (64-bit)",
     // Other Linux / ESXi
     FEDORA_64:"Fedora (64-bit)",FEDORA:"Fedora",
     OTHER_26X_LINUX_64:"Linux (64-bit)",OTHER_3X_LINUX_64:"Linux (64-bit)",
