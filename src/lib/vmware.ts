@@ -376,13 +376,15 @@ async function fetchVMHostsViaSoap(
     const propCollector = scText.match(/<propertyCollector[^>]*>([^<]+)<\/propertyCollector>/)?.[1];
     if (!rootFolder || !propCollector) throw new Error("Could not parse ServiceContent");
 
-    // Step 3: RetrievePropertiesEx — get runtime.host for every VirtualMachine
-    // Traversal: rootFolder → childEntity → Datacenter → vmFolder → childEntity → VM
+    // Step 3: RetrievePropertiesEx — get runtime.host for every VirtualMachine.
+    // Traversal (inline, no cross-references): rootFolder → Folder.childEntity →
+    //   Datacenter.vmFolder → Folder.childEntity → VirtualMachine
+    // Using urn:vim25 as default namespace with plain type names (no vim25: prefix).
     const rpeRes = await post(
       `<?xml version="1.0" encoding="UTF-8"?>
-<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-  xmlns:vim25="urn:vim25" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-<soapenv:Body><vim25:RetrievePropertiesEx>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+<soapenv:Body>
+<RetrievePropertiesEx xmlns="urn:vim25" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <_this type="PropertyCollector">${esc(propCollector)}</_this>
   <specSet>
     <propSet>
@@ -393,29 +395,32 @@ async function fetchVMHostsViaSoap(
     <objectSet>
       <obj type="Folder">${esc(rootFolder)}</obj>
       <skip>false</skip>
-      <selectSet xsi:type="vim25:TraversalSpec">
-        <name>visitFolders</name>
+      <selectSet xsi:type="TraversalSpec">
+        <name>folderChildren</name>
         <type>Folder</type>
         <path>childEntity</path>
         <skip>false</skip>
-        <selectSet><name>visitFolders</name></selectSet>
-        <selectSet><name>dcVmFolder</name></selectSet>
-      </selectSet>
-      <selectSet xsi:type="vim25:TraversalSpec">
-        <name>dcVmFolder</name>
-        <type>Datacenter</type>
-        <path>vmFolder</path>
-        <skip>false</skip>
-        <selectSet><name>visitFolders</name></selectSet>
+        <selectSet xsi:type="SelectionSpec"><name>folderChildren</name></selectSet>
+        <selectSet xsi:type="TraversalSpec">
+          <type>Datacenter</type>
+          <path>vmFolder</path>
+          <skip>false</skip>
+          <selectSet xsi:type="SelectionSpec"><name>folderChildren</name></selectSet>
+        </selectSet>
       </selectSet>
     </objectSet>
   </specSet>
-  <options><maxObjects>0</maxObjects></options>
-</vim25:RetrievePropertiesEx></soapenv:Body></soapenv:Envelope>`,
+  <options/>
+</RetrievePropertiesEx>
+</soapenv:Body></soapenv:Envelope>`,
       sessionCookie,
     );
     const rpeText = await rpeRes.text();
-    if (!rpeRes.ok) throw new Error(`SOAP RetrievePropertiesEx failed (${rpeRes.status}): ${rpeText.slice(0, 300)}`);
+    if (!rpeRes.ok) {
+      // Log full SOAP fault so we can see the actual error message
+      console.warn("[vmware] SOAP RetrievePropertiesEx full response:", rpeText);
+      throw new Error(`SOAP RetrievePropertiesEx failed (${rpeRes.status})`);
+    }
 
     // Parse result: extract vmMOR → hostMOR pairs
     const result: Record<string, string> = {};
