@@ -34,6 +34,8 @@ export interface EnhancedTableMeta {
   createdAt?: string;
   createdBy?: string;
   updatedAt?: string;
+  /** True when the index entry exists but the .db.json file is missing on disk. */
+  stale?: boolean;
 }
 
 /** Extract metadata from a full EnhancedTable object. */
@@ -99,10 +101,20 @@ export async function listEnhancedTablesMeta(spaceSlug: string): Promise<Enhance
   const dir = getEnhancedTableDir(spaceSlug);
   await ensureDir(dir);
 
-  // Fast path: read from index
+  // Fast path: read from index — also verify each file actually exists on disk
   const index = await readIndex(spaceSlug);
   if (Object.keys(index).length > 0) {
-    return Object.values(index).sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+    const metas = await Promise.all(
+      Object.values(index).map(async (m) => {
+        try {
+          await fs.access(path.join(dir, `${m.id}.db.json`));
+          return m;
+        } catch {
+          return { ...m, stale: true as const };
+        }
+      }),
+    );
+    return metas.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
   }
 
   // Slow path: index missing or empty — rebuild from .db.json files

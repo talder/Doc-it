@@ -50,7 +50,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
       listEnhancedTablesMeta(slug),
       readDocStatusMap(slug),
     ]);
-  const databases = rawDbs.map((db) => ({ id: db.id, title: db.title, rowCount: db.rowCount, createdAt: db.createdAt || "" }));
+  const databases = rawDbs.map((db) => ({ id: db.id, title: db.title, rowCount: db.rowCount, createdAt: db.createdAt || "", stale: db.stale }));
 
   // Members: admins + users with writer/admin role in this space
   const members = allUsers

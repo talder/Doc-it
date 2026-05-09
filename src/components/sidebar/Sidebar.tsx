@@ -29,6 +29,7 @@ interface DbSummary {
   title: string;
   rowCount: number;
   createdAt: string;
+  stale?: boolean;
 }
 
 interface SidebarProps {

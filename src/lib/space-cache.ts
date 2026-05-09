@@ -18,7 +18,7 @@ export interface SpaceInitData {
   templates: TemplateInfo[];
   members: { username: string; fullName?: string | null }[];
   customization: SpaceCustomization;
-  databases: { id: string; title: string; rowCount: number; createdAt: string }[];
+  databases: { id: string; title: string; rowCount: number; createdAt: string; stale?: boolean }[];
   statuses: DocStatusMap;
 }
 

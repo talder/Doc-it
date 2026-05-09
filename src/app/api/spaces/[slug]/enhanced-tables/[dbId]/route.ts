@@ -130,7 +130,14 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
   catch (err) { return NextResponse.json({ error: String(err) }, { status: 403 }); }
 
   const db = await readEnhancedTable(slug, dbId);
-  if (!db) return NextResponse.json({ error: "Database not found" }, { status: 404 });
+
+  if (!db) {
+    // File is missing (stale index entry) — just clean up the index and return success.
+    // This lets users remove broken/orphaned entries from the sidebar.
+    await removeFromTableIndex(slug, dbId).catch(() => {});
+    invalidateSpaceCache(slug);
+    return NextResponse.json({ success: true });
+  }
 
   // Move to trash instead of permanent delete
   const trashDir = path.join(getTrashDir(), slug);

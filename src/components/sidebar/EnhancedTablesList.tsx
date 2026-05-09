@@ -1,6 +1,6 @@
 "use client";
 
-import { Database, ExternalLink, Pencil, Trash2, Star } from "lucide-react";
+import { AlertTriangle, Database, ExternalLink, Pencil, Trash2, Star } from "lucide-react";
 import ContextMenu from "@/components/ContextMenu";
 import type { FavoriteItem } from "@/lib/types";
 
@@ -9,6 +9,7 @@ interface DbSummary {
   title: string;
   rowCount: number;
   createdAt: string;
+  stale?: boolean;
 }
 
 interface DatabasesListProps {
@@ -32,6 +33,34 @@ export default function DatabasesList({ databases, onSelectDatabase, canWrite, o
       ) : (
         <div className="space-y-0.5">
           {databases.map((db) => {
+            if (db.stale) {
+              // Broken table — file is missing. Show warning and only allow removal.
+              return (
+                <div key={db.id} className="group flex items-center">
+                  <div
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm flex-1 min-w-0 bg-amber-50 border border-amber-200"
+                    title="This table's data file is missing. You can remove this broken entry from the sidebar."
+                  >
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0 text-amber-500" />
+                    <span className="truncate flex-1 font-medium text-amber-800 line-through">{db.title}</span>
+                    <span className="text-[10px] text-amber-600 flex-shrink-0 font-semibold">broken</span>
+                  </div>
+                  {canWrite && (
+                    <ContextMenu
+                      actions={[
+                        {
+                          label: "Remove broken entry",
+                          icon: <Trash2 className="w-4 h-4" />,
+                          onClick: () => onDeleteDatabase?.(db),
+                          variant: "destructive" as const,
+                        },
+                      ]}
+                    />
+                  )}
+                </div>
+              );
+            }
+
             const isDbFavorited = !!favorites?.some(
               (f) => f.type === "database" && f.spaceSlug === spaceSlug && f.id === db.id
             );
