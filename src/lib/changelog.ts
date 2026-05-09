@@ -338,11 +338,12 @@ export async function updateChangeLogEntry(
   const now = new Date().toISOString();
   const hist: ChangeHistoryEntry[] = entry.history || [];
 
+  const entryRec = entry as unknown as Record<string, unknown>;
   for (const [k, v] of Object.entries(updates)) {
-    const old = (entry as Record<string, unknown>)[k];
+    const old = entryRec[k];
     if (JSON.stringify(old) !== JSON.stringify(v)) {
       hist.push({ field: k, oldValue: old, newValue: v, by: actor, at: now });
-      (entry as Record<string, unknown>)[k] = v;
+      entryRec[k] = v;
     }
   }
 
