@@ -422,17 +422,48 @@ async function fetchVMHostsViaSoap(
       throw new Error(`SOAP RetrievePropertiesEx failed (${rpeRes.status})`);
     }
 
-    // Parse result: extract vmMOR → hostMOR pairs
+    // Parse a SOAP page and accumulate vmMOR → hostMOR pairs
     const result: Record<string, string> = {};
-    const objRx = /<objects>([ \t\r\n\S]*?)<\/objects>/gs;
-    let m: RegExpExecArray | null;
-    while ((m = objRx.exec(rpeText)) !== null) {
-      const block = m[1];
-      const vmMor = block.match(/<obj[^>]*type="VirtualMachine"[^>]*>([^<]+)<\/obj>/)?.[1];
-      // host MOR may appear as: <val ... type="HostSystem" ...>host-NNN</val>
-      const hostMor = block.match(/<val[^>]*type="HostSystem"[^>]*>([^<]+)<\/val>/)?.[1];
-      if (vmMor && hostMor) result[vmMor] = hostMor;
+
+    const parsePage = (xml: string) => {
+      const objRx = /<objects>([ \t\r\n\S]*?)<\/objects>/gs;
+      let m: RegExpExecArray | null;
+      while ((m = objRx.exec(xml)) !== null) {
+        const block = m[1];
+        const vmMor = block.match(/<obj[^>]*type="VirtualMachine"[^>]*>([^<]+)<\/obj>/)?.[1];
+        const hostMor = block.match(/<val[^>]*type="HostSystem"[^>]*>([^<]+)<\/val>/)?.[1];
+        if (vmMor && hostMor) result[vmMor] = hostMor;
+      }
+      // Return the continuation token if present (means more pages follow)
+      return xml.match(/<token>([^<]+)<\/token>/)?.[1] ?? null;
+    };
+
+    // First page
+    let continuationToken = parsePage(rpeText);
+    console.log(`[vmware] SOAP page 1: ${Object.keys(result).length} VMs, token=${continuationToken ?? "none"}`);
+
+    // Subsequent pages (ContinueRetrievePropertiesEx)
+    while (continuationToken) {
+      const contRes = await post(
+        `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+<soapenv:Body>
+<ContinueRetrievePropertiesEx xmlns="urn:vim25">
+  <_this type="PropertyCollector">${esc(propCollector)}</_this>
+  <token>${esc(continuationToken)}</token>
+</ContinueRetrievePropertiesEx>
+</soapenv:Body></soapenv:Envelope>`,
+        sessionCookie,
+      );
+      const contText = await contRes.text();
+      if (!contRes.ok) {
+        console.warn("[vmware] SOAP continuation failed:", contText);
+        break;
+      }
+      continuationToken = parsePage(contText);
+      console.log(`[vmware] SOAP continuation: ${Object.keys(result).length} VMs total, token=${continuationToken ?? "none"}`);
     }
+
     return result;
   } finally {
     // Logout best-effort
