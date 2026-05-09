@@ -506,7 +506,13 @@ function ExportTableModal({ vms, onClose }: { vms: VmRecord[]; onClose: () => vo
   const router = useRouter();
   const [spaces, setSpaces] = useState<{ slug: string; name: string }[]>([]);
   const [spaceSlug, setSpaceSlug] = useState("");
-  const [tableTitle, setTableTitle] = useState(() => { const n = new Date(); return `VMware Inventory ${n.toLocaleDateString()} ${n.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}`; });
+  const [tableTitle, setTableTitle] = useState(() => {
+    const n = new Date();
+    const date = n.toISOString().slice(0, 10); // YYYY-MM-DD — no slashes or colons
+    const hh = String(n.getHours()).padStart(2, "0");
+    const mm = String(n.getMinutes()).padStart(2, "0");
+    return `VMware Inventory ${date} ${hh}h${mm}`;
+  });
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => { fetch("/api/spaces").then((r) => r.json()).then((d: { slug: string; name: string }[]) => { setSpaces(Array.isArray(d) ? d : []); if (d.length) setSpaceSlug(d[0].slug); }).catch(() => {}); }, []);
