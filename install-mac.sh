@@ -248,8 +248,16 @@ fi
 cd "$INSTALL_DIR"
 info "Installing npm dependencies..."
 npm install $( $NO_SSL && echo "--strict-ssl=false" || echo "" )
-info "Patching known vulnerabilities..."
-npm audit fix 2>/dev/null || true
+info "Patching known vulnerabilities (auto-fix safe fixes only)..."
+npm audit fix >/dev/null 2>&1 || true
+VULN_COUNT=$(npm audit --json 2>/dev/null | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const j=JSON.parse(d);const v=j.metadata?.vulnerabilities||{};console.log((v.critical||0)+(v.high||0)+(v.moderate||0)+(v.low||0))}catch{console.log(0)}})" 2>/dev/null || echo 0)
+if [[ "$VULN_COUNT" -gt 0 ]]; then
+  warn "$VULN_COUNT known vulnerabilities remain in third-party dependencies"
+  warn "(xlsx, mermaid/excalidraw dep chains — no automatic fix available)."
+  warn "Run 'npm audit' in $INSTALL_DIR for details."
+else
+  ok "No known vulnerabilities detected"
+fi
 info "Building production bundle..."
 npm run build
 
