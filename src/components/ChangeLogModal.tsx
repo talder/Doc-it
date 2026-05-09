@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { X, AlertTriangle, Zap, ChevronRight, HelpCircle, Check } from "lucide-react";
-import type { ChangeCategory, ChangeRisk, ChangeLifecycleStatus, ChangeLogEntry, ChangeTemplate } from "@/lib/changelog";
-import { RISK_QUESTIONS, calculateRiskFromAnswers } from "@/lib/changelog";
+import type { ChangeCategory, ChangeRisk, ChangeLifecycleStatus, ChangeLogEntry, ChangeTemplate } from "@/lib/changelog-shared";
+import { RISK_QUESTIONS, calculateRiskFromAnswers } from "@/lib/changelog-shared";
 
 const DEFAULT_CATS: ChangeCategory[] = ["Disk","Network","Security","Software","Hardware","Configuration","Other"];
 const RISKS: ChangeRisk[] = ["Low","Medium","High","Critical"];

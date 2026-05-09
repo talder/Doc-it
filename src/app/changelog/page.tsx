@@ -6,7 +6,7 @@ import { ArrowLeft, Plus, ClipboardList, ChevronUp, ChevronDown, Download, BarCh
 import JournalCalendar from "@/components/JournalCalendar";
 import ChangeLogModal from "@/components/ChangeLogModal";
 import ChangeLogDetailModal from "@/components/ChangeLogDetailModal";
-import type { ChangeLogEntry, ChangeCategory, ChangeRisk, ChangeLifecycleStatus, FreezePeriod, ChangeTemplate } from "@/lib/changelog";
+import type { ChangeLogEntry, ChangeCategory, ChangeRisk, ChangeLifecycleStatus, FreezePeriod, ChangeTemplate } from "@/lib/changelog-shared";
 
 type SortKey = "date" | "id" | "system" | "category" | "risk" | "status" | "changeType";
 type SortDir = "asc" | "desc";

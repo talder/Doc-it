@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { X, RotateCcw, Check, XCircle, ChevronRight, Zap } from "lucide-react";
-import type { ChangeLogEntry, ChangeLifecycleStatus } from "@/lib/changelog";
-import { allowedTransitions, isTerminal } from "@/lib/changelog";
+import type { ChangeLogEntry, ChangeLifecycleStatus } from "@/lib/changelog-shared";
+import { allowedTransitions, isTerminal } from "@/lib/changelog-shared";
 
 const RISK_COLORS: Record<string, string> = { Low:"cl-risk--low", Medium:"cl-risk--medium", High:"cl-risk--high", Critical:"cl-risk--critical" };
 const STATUS_COLORS: Record<string, string> = {
