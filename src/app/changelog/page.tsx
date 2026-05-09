@@ -667,6 +667,7 @@ export default function ChangeLogPage() {
         categories={categories}
         templates={templates}
         prefill={rollbackPrefill}
+        existingEntries={allEntries.map(e => ({ id: e.id, system: e.system, description: e.description }))}
       />
       <ChangeLogDetailModal
         entry={detailEntry}

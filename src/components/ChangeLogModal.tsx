@@ -11,6 +11,8 @@ const TYPES = ["Standard","Normal","Emergency"] as const;
 const RISK_COLORS: Record<ChangeRisk,string> = { Low:"cl-risk--low", Medium:"cl-risk--medium", High:"cl-risk--high", Critical:"cl-risk--critical" };
 const TYPE_COLORS = { Standard:"bg-green-100 text-green-800 border-green-200", Normal:"bg-blue-100 text-blue-800 border-blue-200", Emergency:"bg-red-100 text-red-800 border-red-200" };
 
+interface ChgSummary { id: string; system: string; description: string; }
+
 interface Props {
   isOpen: boolean;
   onClose: () => void;
@@ -19,11 +21,12 @@ interface Props {
   categories?: string[];
   templates?: ChangeTemplate[];
   prefill?: Partial<ChangeLogEntry>;
+  existingEntries?: ChgSummary[];
 }
 
 function today(): string { return new Date().toISOString().slice(0, 10); }
 
-export default function ChangeLogModal({ isOpen, onClose, onSave, knownSystems, categories, templates = [], prefill }: Props) {
+export default function ChangeLogModal({ isOpen, onClose, onSave, knownSystems, categories, templates = [], prefill, existingEntries = [] }: Props) {
   const cats = categories && categories.length > 0 ? categories : DEFAULT_CATS;
 
   // State
@@ -44,6 +47,7 @@ export default function ChangeLogModal({ isOpen, onClose, onSave, knownSystems, 
   const [downtimeMinutes, setDowntimeMinutes] = useState("");
   const [ccEmails, setCcEmails] = useState("");
   const [rollbackOf, setRollbackOf] = useState("");
+  const [showRollbackSuggest, setShowRollbackSuggest] = useState(false);
   const [assignedTo, setAssignedTo] = useState("");
   const [saving, setSaving] = useState(false);
   const [conflicts, setConflicts] = useState<{ id: string; system: string }[]>([]);
@@ -64,7 +68,7 @@ export default function ChangeLogModal({ isOpen, onClose, onSave, knownSystems, 
     setRiskAnswers({}); setUseQuestionnaire(false);
     setPlannedStart(""); setPlannedEnd(""); setDowntimeMinutes(""); setCcEmails("");
     setAssignedTo(prefill?.assignedTo || "");
-    setRollbackOf(prefill?.id || ""); setSaving(false); setConflicts([]); setSelectedTemplate("");
+    setRollbackOf(prefill?.id || ""); setShowRollbackSuggest(false); setSaving(false); setConflicts([]); setSelectedTemplate("");
     fetch("/api/cmdb").then(r => r.ok ? r.json() : { assets: [] })
       .then(d => setAssetNames((d.assets || []).map((a: { name: string }) => a.name))).catch(() => {});
     fetch("/api/changelog/users").then(r => r.ok ? r.json() : { users: [] })
@@ -255,9 +259,38 @@ export default function ChangeLogModal({ isOpen, onClose, onSave, knownSystems, 
                   ))}
                 </select>
               </div>
-              <div className="cl-field">
+              <div className="cl-field relative">
                 <label className="cl-label">Rollback of (CHG-#)</label>
-                <input type="text" className="cl-input" placeholder="CHG-000012" value={rollbackOf} onChange={e => setRollbackOf(e.target.value)} />
+                <input
+                  type="text"
+                  className="cl-input"
+                  placeholder="Type CHG id or number (e.g. 12)"
+                  value={rollbackOf}
+                  onChange={e => { setRollbackOf(e.target.value); setShowRollbackSuggest(true); }}
+                  onFocus={() => setShowRollbackSuggest(true)}
+                  onBlur={() => setTimeout(() => setShowRollbackSuggest(false), 150)}
+                />
+                {showRollbackSuggest && rollbackOf.trim() && (() => {
+                  const raw = rollbackOf.trim();
+                  // Normalise: if user typed a pure number, pad and prefix
+                  const numeric = /^\d+$/.test(raw);
+                  const needle = numeric ? `CHG-${raw.padStart(6, "0")}` : raw.toUpperCase();
+                  const matches = existingEntries
+                    .filter(e => e.id.includes(needle) || e.system.toLowerCase().includes(raw.toLowerCase()) || e.description.toLowerCase().includes(raw.toLowerCase()))
+                    .slice(0, 8);
+                  if (matches.length === 0) return null;
+                  return (
+                    <div className="cl-suggest">
+                      {matches.map(e => (
+                        <button key={e.id} className="cl-suggest-item flex flex-col items-start text-left"
+                          onMouseDown={() => { setRollbackOf(e.id); setShowRollbackSuggest(false); }}>
+                          <span className="font-mono text-accent text-xs font-semibold">{e.id}</span>
+                          <span className="text-[10px] text-text-muted truncate w-full">{e.system} — {e.description.slice(0, 60)}{e.description.length > 60 ? "…" : ""}</span>
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
