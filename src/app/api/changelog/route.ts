@@ -10,7 +10,7 @@ import {
 import type { ChangeRisk, ChangeStatus } from "@/lib/changelog";
 
 const VALID_RISKS: ChangeRisk[] = ["Low", "Medium", "High", "Critical"];
-const VALID_STATUSES: ChangeStatus[] = ["Completed", "Failed", "Rolled Back"];
+const VALID_STATUSES: ChangeStatus[] = ["Planned", "In Progress", "Completed", "Failed", "Rolled Back"];
 
 /** GET /api/changelog?q=&from=&to=&category=&system=&systems=1 */
 export async function GET(request: NextRequest) {
@@ -26,18 +26,22 @@ export async function GET(request: NextRequest) {
   }
 
   const data = await readChangeLog();
+  // Return all entries (client handles further filtering for stats)
   const filtered = filterChangeLog(data.entries, {
     q: sp.get("q") || undefined,
     from: sp.get("from") || undefined,
     to: sp.get("to") || undefined,
     category: sp.get("category") || undefined,
     system: sp.get("system") || undefined,
+    risk: sp.get("risk") || undefined,
+    status: sp.get("status") || undefined,
   });
 
   // Sort: newest first
   filtered.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
 
-  return NextResponse.json({ entries: filtered });
+  const systems = await getKnownSystems();
+  return NextResponse.json({ entries: filtered, systems });
 }
 
 /** POST /api/changelog — create a new immutable change entry */
@@ -46,7 +50,8 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
-  const { date, system, category, description, impact, risk, status, linkedDoc } = body;
+  const { date, time, system, category, description, impact, risk, status,
+          approvedBy, plannedStart, plannedEnd, relatedCrId, rollbackOf, linkedDoc } = body;
 
   // Validation
   if (!date || !system?.trim() || !description?.trim() || !impact?.trim()) {
@@ -65,13 +70,19 @@ export async function POST(request: NextRequest) {
 
   const entry = await addChangeLogEntry({
     date,
+    ...(time ? { time } : {}),
     author: user.username,
+    ...(approvedBy?.trim() ? { approvedBy: approvedBy.trim() } : {}),
     system: system.trim(),
     category,
     description: description.trim(),
     impact: impact.trim(),
     risk,
     status,
+    ...(plannedStart ? { plannedStart } : {}),
+    ...(plannedEnd ? { plannedEnd } : {}),
+    ...(relatedCrId?.trim() ? { relatedCrId: relatedCrId.trim() } : {}),
+    ...(rollbackOf?.trim() ? { rollbackOf: rollbackOf.trim() } : {}),
     linkedDoc: linkedDoc || undefined,
   });
 

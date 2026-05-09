@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Search, LogOut, Settings, Sun, Moon, Archive, User, Bell, X, FileText, BookOpen, Check, HardDriveDownload, Home, Trophy, Share2, Trash2, Lock, Clock, BookMarked, ClipboardList, Monitor, Headset, ShieldCheck, Star, Info, Phone, Server } from "lucide-react";
+import { ChevronDown, Search, LogOut, Settings, Sun, Moon, Archive, User, Bell, X, FileText, BookOpen, Check, HardDriveDownload, Home, Trophy, Share2, Trash2, Lock, Clock, ClipboardList, Monitor, Headset, ShieldCheck, Star, Info, Phone, Server } from "lucide-react";
 import OfflineBundleModal from "@/components/OfflineBundleModal";
 import ChangelogModal from "@/components/modals/ChangelogModal";
 import { useTheme, isLightTheme, type Theme } from "@/components/ThemeProvider";
@@ -235,15 +235,6 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
 
       {/* Right: Theme + User */}
       <div className="flex items-center gap-2">
-        {/* Journal */}
-        <button
-          onClick={() => router.push("/journal")}
-          className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
-          data-tip="Journal"
-        >
-          <BookMarked className="w-4 h-4" />
-        </button>
-
         {/* Change Log */}
         <button
           onClick={() => router.push("/changelog")}
