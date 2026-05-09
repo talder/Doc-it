@@ -88,6 +88,18 @@ Each enhanced table is stored as a single JSON file (`docs/{space}/.databases/{i
 - **Access control** — admin-configurable list of allowed users
 - **Weekly email digest** — per-registrar weekly report with calls overview, time breakdown (Mon–Fri / Saturday / Sunday), and assistance tally
 
+### VMware Inventory
+- **Live VM inventory** — connects to a vCenter Server (v7+) and displays all virtual machines with power state, guest OS, IP, VMware Tools status, memory, CPU, storage, hardware version, and annotation
+- **Snapshot management** — click the snapshot badge on any VM row to view and delete individual snapshots (including child snapshot chains) without leaving the page
+- **Power actions** — Start, Shutdown (graceful), Force Off, Reboot (graceful), Reset, Suspend per VM directly from the UI; graceful actions require VMware Tools
+- **CPU oversubscription indicator** — By Host sidebar shows allocated vCPU vs physical cores with a green/amber/red ratio badge
+- **Zombie VM detection** — powered-off VMs are flagged with an alert icon for easy identification
+- **Inventory cache** — SQLite-backed cache with configurable TTL (default 15 min); bypass with the Refresh button
+- **Weekly HTML report** — scheduled email summary of the entire inventory including OS distribution, host distribution, snapshot list, and powered-off VMs
+- **Export** — CSV, XLS, PDF, or push to an Enhanced Table in any Space
+- **Saved filters** — save named filter presets (power state, host, OS, search) stored in browser `localStorage`
+- **Access control** — admin-configurable list of allowed users; admins always have access
+
 ### Journal
 - **Personal journals** — per-user private journals with entries encrypted at rest (AES-256-GCM)
 - **Space journals** — shared team journals within a space
@@ -510,6 +522,7 @@ src/
     helpdesk/        # Helpdesk agent UI + admin config
     journal/         # Personal & space journal
     oncall/          # On-call reports
+    vmware/          # VMware Inventory page
     portal/          # Self-service portal (login, register, tickets)
     portals/         # Public portal listing & pages
     login/           # Login page
@@ -543,6 +556,7 @@ src/
     enhanced-table.ts # Enhanced table CRUD (JSON files per space)
     oncall.ts        # On-call reports module (server-side CRUD, filtering, email)
     oncall-shared.ts # Client-safe on-call types and pure helpers
+    vmware.ts        # VMware Inventory (REST+SOAP fetch, cache, power, snapshots, weekly report)
     journal.ts       # Journal module (encrypted user journals)
     audit.ts         # NIS2 audit logging (encrypted, syslog, write queue)
     crash-log.ts     # Crash logging (server + client, JSONL, email alerts)
@@ -575,6 +589,8 @@ Key configuration entries (stored as JSON values):
 - `changelog-settings.json` — changelog retention period (default 5 years)
 - `oncall.json` — on-call report entries
 - `oncall-settings.json` — on-call allowed users, email settings
+- `vmware-config.json` — VMware vCenter connection settings (password encrypted)
+- `vmware-inventory-cache.json` — cached VM inventory (TTL-controlled)
 - `audit.json` — audit configuration
 - `backup.json` — backup configuration and targets
 - `ad.json` — Active Directory / LDAP authentication settings

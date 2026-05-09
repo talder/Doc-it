@@ -104,6 +104,43 @@ Configuration is stored in the SQLite KV store under the key `dashboard-access.j
 
 ---
 
+## On-Call Reports
+
+Configure access and weekly email digest for the On-Call Reports module (visible in the **Settings** tab).
+
+| Field | Description |
+|---|---|
+| **Allowed Users** | Users who can access and create on-call reports. Admins always have access. |
+| **Enable weekly email digest** | Send a Monday morning summary of last week's calls. Requires SMTP. |
+| **Send time** | Time of day to send the digest (HH:MM). |
+| **Recipients** | Email addresses to receive the weekly digest. |
+
+---
+
+## VMware Inventory
+
+The **VMware** tab (`/admin?tab=vmware`) configures the VMware Inventory module. See [VMware Inventory](../features/vmware-inventory.md) for full feature documentation.
+
+| Field | Description |
+|---|---|
+| **Enable** | Master switch for the VMware Inventory module. |
+| **vCenter URL** | Full URL including protocol, e.g. `https://vcenter.example.com`. |
+| **Username** | vCenter username, e.g. `administrator@vsphere.local`. |
+| **Password** | Stored AES-256-GCM encrypted at rest. Leave blank to keep the existing password. |
+| **Ignore SSL errors** | Skip certificate verification for self-signed vCenter certificates. |
+| **Allowed Users** | Non-admin users who can access the VMware Inventory page. |
+| **Cache TTL (minutes)** | How long to cache the inventory (default 15). Set to 0 to disable caching. |
+| **Weekly Report — Enable** | Send a weekly HTML email with the full inventory summary. |
+| **Weekly Report — Day** | Day of the week to send the report (Sun–Sat). |
+| **Weekly Report — Time** | Time of day to send the report (HH:MM). |
+| **Weekly Report — Recipients** | Email addresses that receive the report. |
+
+Use **Test Connection** to verify credentials before saving. SMTP must be configured for the weekly report to be delivered.
+
+Configuration is stored in the SQLite KV store under `vmware-config.json`. The inventory cache is stored under `vmware-inventory-cache.json`.
+
+---
+
 ## Audit Settings
 
 See [Admin — Audit](audit.md) for the audit logging configuration which lives in the Audit tab.

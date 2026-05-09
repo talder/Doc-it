@@ -22,6 +22,7 @@
   - [Audit Logging](features/audit-logging.md)
   - [Journal](features/journal.md)
   - [Change Log](features/changelog.md)
+  - [VMware Inventory](features/vmware-inventory.md)
   - [PKI / Certificate Manager](features/pki.md)
   - [Asset Management](features/asset-management.md)
   - [Helpdesk & Ticketing](features/helpdesk.md)
@@ -97,7 +98,8 @@ Select your space from the top bar, click **New Document** in the sidebar, choos
 | **Asset Registry** | IT asset management with hierarchical containers, custom fields, and status tracking. |
 | **Helpdesk** | Ticketing system with groups, SLA policies, automation rules, custom forms, and a self-service portal. |
 | **Backup** | Automated AES-256-GCM encrypted backups with local, CIFS/SMB, and SFTP targets. |
-| **Crash Log** | Automatic server + client crash capture with JSONL storage, admin UI, and email alerts. |
+|| **Crash Log** | Automatic server + client crash capture with JSONL storage, admin UI, and email alerts. |
+|| **VMware Inventory** | Live VM inventory from vCenter with power actions, snapshot management, OS/host breakdown, oversubscription indicators, cache, and weekly email report. |
 | **Active Directory** | Optional LDAP/LDAPS authentication with shadow user provisioning and AD group → space role mappings. |
 | **Dashboard** | Dashy-style home page with link card sections; per-card group visibility controls. |
 | **User Group** | Admin-managed groups of users for permission targeting (e.g. dashboard link visibility). |
