@@ -62,6 +62,10 @@ export interface VmHostStats {
   physicalCpuCores: number;
   allocatedVcpus: number;
   ratio: number;
+  totalCpuMhz: number;    // physicalCpuCores × cpuMhz (per core)
+  usedCpuMhz: number;     // summary.quickStats.overallCpuUsage
+  totalMemoryMiB: number; // summary.hardware.memorySize / 1 MiB
+  usedMemoryMiB: number;  // summary.quickStats.overallMemoryUsage
 }
 
 export interface VmwareInventoryCache {
@@ -363,7 +367,13 @@ interface VmSoapData {
   memUsedMiB: number;         // summary.quickStats.guestMemoryUsage
   cpuUsedMhz: number;         // summary.quickStats.overallCpuUsage
 }
-interface HostSoapData { physicalCpuCores: number; }
+interface HostSoapData {
+  physicalCpuCores: number;
+  cpuMhz: number;       // summary.hardware.cpuMhz (per core)
+  memoryBytes: number;  // summary.hardware.memorySize
+  usedCpuMhz: number;  // summary.quickStats.overallCpuUsage
+  usedMemMiB: number;  // summary.quickStats.overallMemoryUsage
+}
 
 function parseSoapPage(
   xml: string,
@@ -395,7 +405,11 @@ function parseSoapPage(
     }
     if (hostMorObj) {
       const cores = parseInt(b.match(/numCpuCores<\/name>\s*<val[^>]*>(\d+)<\/val>/)?.[1] ?? "0", 10);
-      hostData[hostMorObj] = { physicalCpuCores: cores };
+      const cpuMhz = parseInt(b.match(/summary\.hardware\.cpuMhz<\/name>\s*<val[^>]*>(\d+)<\/val>/)?.[1] ?? "0", 10);
+      const memoryBytes = parseInt(b.match(/summary\.hardware\.memorySize<\/name>\s*<val[^>]*>(\d+)<\/val>/)?.[1] ?? "0", 10);
+      const usedCpuMhz = parseInt(b.match(/summary\.quickStats\.overallCpuUsage<\/name>\s*<val[^>]*>(\d+)<\/val>/)?.[1] ?? "0", 10);
+      const usedMemMiB = parseInt(b.match(/summary\.quickStats\.overallMemoryUsage<\/name>\s*<val[^>]*>(\d+)<\/val>/)?.[1] ?? "0", 10);
+      hostData[hostMorObj] = { physicalCpuCores: cores, cpuMhz, memoryBytes, usedCpuMhz, usedMemMiB };
     }
   }
   return xml.match(/<token>([^<]+)<\/token>/)?.[1] ?? null;
@@ -428,6 +442,10 @@ async function fetchVMDataViaSoap(
     </propSet>
     <propSet><type>HostSystem</type><all>false</all>
       <pathSet>hardware.cpuInfo.numCpuCores</pathSet>
+      <pathSet>summary.hardware.cpuMhz</pathSet>
+      <pathSet>summary.hardware.memorySize</pathSet>
+      <pathSet>summary.quickStats.overallCpuUsage</pathSet>
+      <pathSet>summary.quickStats.overallMemoryUsage</pathSet>
     </propSet>
     <objectSet>
       <obj type="Folder">${esc(rootFolder)}</obj>
@@ -711,9 +729,20 @@ export async function fetchVMs(config: VmwareConfig): Promise<VmwareInventoryCac
     const hostStats: Record<string, VmHostStats> = {};
     for (const h of hosts) {
       const name = h.name;
-      const cores = hostData[h.host]?.physicalCpuCores ?? 0;
+      const hd = hostData[h.host];
+      const cores = hd?.physicalCpuCores ?? 0;
       const allocated = vcpuPerHost[name] ?? 0;
-      hostStats[name] = { physicalCpuCores: cores, allocatedVcpus: allocated, ratio: cores > 0 ? allocated / cores : 0 };
+      const totalCpuMhz = (hd?.cpuMhz ?? 0) * cores;
+      const totalMemoryMiB = hd?.memoryBytes ? Math.round(hd.memoryBytes / (1024 * 1024)) : 0;
+      hostStats[name] = {
+        physicalCpuCores: cores,
+        allocatedVcpus: allocated,
+        ratio: cores > 0 ? allocated / cores : 0,
+        totalCpuMhz,
+        usedCpuMhz: hd?.usedCpuMhz ?? 0,
+        totalMemoryMiB,
+        usedMemoryMiB: hd?.usedMemMiB ?? 0,
+      };
     }
 
     return { vms: results, fetchedAt: new Date().toISOString(), hostStats };

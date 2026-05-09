@@ -115,6 +115,13 @@ function applyRule(vm: { name: string; guestOSDisplay: string; host: string; pow
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// ── Cluster capacity helpers ─────────────────────────────────────────────────
+function fmtMhz(mhz: number): string {
+  if (mhz >= 1000) return `${(mhz / 1000).toFixed(1)} GHz`;
+  return `${Math.round(mhz)} MHz`;
+}
+function fmtMiB(m: number): string { return m >= 1024 ? `${(m / 1024).toFixed(1)} GB` : `${Math.round(m)} MB`; }
+
 function fmtBytes(b: number): string {
   if (b <= 0) return "0 B";
   if (b >= 1_099_511_627_776) return `${(b / 1_099_511_627_776).toFixed(1)} TB`;
@@ -122,7 +129,6 @@ function fmtBytes(b: number): string {
   if (b >= 1_048_576) return `${(b / 1_048_576).toFixed(1)} MB`;
   return `${(b / 1_024).toFixed(1)} KB`;
 }
-function fmtMiB(m: number): string { return m >= 1024 ? `${(m / 1024).toFixed(1)} GB` : `${m} MB`; }
 function fmtTime(iso: string): string { try { return new Date(iso).toLocaleString(); } catch { return iso; } }
 function uuid(): string {
   if (typeof crypto !== "undefined" && typeof (crypto as { randomUUID?: () => string }).randomUUID === "function")
@@ -573,6 +579,7 @@ export default function VmwarePage() {
   const printRef = useRef<HTMLDivElement>(null);
   const [filterRules, setFilterRules] = useState<FilterRule[]>([]);
   const [showFilterBuilder, setShowFilterBuilder] = useState(false);
+  const [haK, setHaK] = useState(1); // simulated failed host count
 
   useEffect(() => { fetch("/api/auth/me").then((r) => r.json()).then((d) => { if (d.user?.isAdmin) setIsAdmin(true); }).catch(() => {}); }, []);
   useEffect(() => { setSavedFilters(loadSavedFilters()); }, []);
@@ -640,6 +647,34 @@ export default function VmwarePage() {
     if (sortKey === key) setSortDir((d) => d === "asc" ? "desc" : "asc");
     else { setSortKey(key); setSortDir("asc"); }
   };
+
+  // Cluster capacity stats for HA simulation
+  const clusterStats = useMemo(() => {
+    const hosts = Object.values(hostStats).filter(h => h.totalCpuMhz > 0 || h.totalMemoryMiB > 0);
+    const N = hosts.length;
+    if (N === 0) return null;
+    const totalCpu = hosts.reduce((s, h) => s + h.totalCpuMhz, 0);
+    const usedCpu  = hosts.reduce((s, h) => s + h.usedCpuMhz, 0);
+    const totalMem = hosts.reduce((s, h) => s + h.totalMemoryMiB, 0);
+    const usedMem  = hosts.reduce((s, h) => s + h.usedMemoryMiB, 0);
+    const k = Math.min(haK, N - 1);
+    const fraction = (N - k) / N;
+    const remainCpu = totalCpu * fraction;
+    const remainMem = totalMem * fraction;
+    const running = vms.filter(v => v.powerState === "POWERED_ON").length;
+    const avgVmCpu = running > 0 && usedCpu > 0 ? usedCpu / running : 0;
+    const avgVmMem = running > 0 && usedMem > 0 ? usedMem / running : 0;
+    const freeCpu = Math.max(0, remainCpu - usedCpu);
+    const freeMem = Math.max(0, remainMem - usedMem);
+    const addByCpu = avgVmCpu > 0 ? Math.floor(freeCpu / avgVmCpu) : 0;
+    const addByMem = avgVmMem > 0 ? Math.floor(freeMem / avgVmMem) : 0;
+    return {
+      N, k, totalCpu, usedCpu, totalMem, usedMem,
+      remainCpu, remainMem,
+      canHandle: remainCpu >= usedCpu && remainMem >= usedMem,
+      additionalVms: Math.min(addByCpu, addByMem),
+    };
+  }, [hostStats, haK, vms]);
 
   const hasActiveFilters = filterPower !== "all" || filterHost !== "all" || filterOS !== "all" || !!searchQ.trim() || filterRules.some(r => r.value.trim());
   const clearFilters = () => { setFilterPower("all"); setFilterHost("all"); setFilterOS("all"); setSearchQ(""); setFilterRules([]); };
@@ -843,6 +878,86 @@ export default function VmwarePage() {
                     {stats.withSnapshots > 0 && <div className="flex justify-between text-xs"><span className="text-amber-700">With Snapshots</span><span className="font-medium text-amber-700">{stats.withSnapshots}</span></div>}
                   </div>
                 </div>
+                {/* Cluster Capacity */}
+                {clusterStats && (
+                  <div className="jp-section">
+                    <h3 className="jp-section-title">Cluster Capacity</h3>
+                    {/* CPU bar */}
+                    {clusterStats.totalCpu > 0 && (
+                      <div className="mb-2">
+                        <div className="flex justify-between text-[10px] text-text-muted mb-0.5">
+                          <span>CPU</span>
+                          <span>{fmtMhz(clusterStats.usedCpu)} / {fmtMhz(clusterStats.totalCpu)}</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                          {(() => { const pct = clusterStats.totalCpu > 0 ? Math.min(100, clusterStats.usedCpu / clusterStats.totalCpu * 100) : 0; return (
+                            <div className={`h-full rounded-full ${pct > 80 ? "bg-red-500" : pct > 60 ? "bg-amber-400" : "bg-blue-500"}`} style={{width:`${pct}%`}} />
+                          ); })()}
+                        </div>
+                      </div>
+                    )}
+                    {/* Memory bar */}
+                    {clusterStats.totalMem > 0 && (
+                      <div className="mb-2">
+                        <div className="flex justify-between text-[10px] text-text-muted mb-0.5">
+                          <span>Memory</span>
+                          <span>{fmtMiB(clusterStats.usedMem)} / {fmtMiB(clusterStats.totalMem)}</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                          {(() => { const pct = clusterStats.totalMem > 0 ? Math.min(100, clusterStats.usedMem / clusterStats.totalMem * 100) : 0; return (
+                            <div className={`h-full rounded-full ${pct > 80 ? "bg-red-500" : pct > 60 ? "bg-amber-400" : "bg-green-500"}`} style={{width:`${pct}%`}} />
+                          ); })()}
+                        </div>
+                      </div>
+                    )}
+                    {/* HA simulator */}
+                    <div className="mt-2.5 pt-2 border-t border-border">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] font-medium text-text-secondary">Fail scenario</span>
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => setHaK(v => Math.max(0, v - 1))} className="w-4 h-4 rounded text-[10px] border border-border hover:bg-muted flex items-center justify-center leading-none">−</button>
+                          <span className="text-[10px] font-mono w-3 text-center">{haK}</span>
+                          <button onClick={() => setHaK(v => Math.min(clusterStats.N - 1, v + 1))} className="w-4 h-4 rounded text-[10px] border border-border hover:bg-muted flex items-center justify-center leading-none">+</button>
+                          <span className="text-[10px] text-text-muted ml-0.5">host{haK !== 1 ? "s" : ""} down</span>
+                        </div>
+                      </div>
+                      {/* Remaining capacity */}
+                      {haK > 0 && clusterStats.totalCpu > 0 && (
+                        <div className="space-y-1.5 mb-2">
+                          <div>
+                            <div className="flex justify-between text-[10px] text-text-muted mb-0.5">
+                              <span>CPU avail.</span>
+                              <span>{fmtMhz(clusterStats.remainCpu)} / {fmtMhz(clusterStats.totalCpu)}</span>
+                            </div>
+                            <div className="relative h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                              <div className="absolute h-full rounded-full bg-blue-200" style={{width:`${Math.min(100, clusterStats.remainCpu / clusterStats.totalCpu * 100)}%`}} />
+                              <div className={`absolute h-full rounded-full ${clusterStats.canHandle ? "bg-blue-500" : "bg-red-500"}`} style={{width:`${Math.min(100, clusterStats.usedCpu / clusterStats.totalCpu * 100)}%`}} />
+                            </div>
+                          </div>
+                          <div>
+                            <div className="flex justify-between text-[10px] text-text-muted mb-0.5">
+                              <span>Mem avail.</span>
+                              <span>{fmtMiB(clusterStats.remainMem)} / {fmtMiB(clusterStats.totalMem)}</span>
+                            </div>
+                            <div className="relative h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                              <div className="absolute h-full rounded-full bg-green-200" style={{width:`${Math.min(100, clusterStats.remainMem / clusterStats.totalMem * 100)}%`}} />
+                              <div className={`absolute h-full rounded-full ${clusterStats.canHandle ? "bg-green-500" : "bg-red-500"}`} style={{width:`${Math.min(100, clusterStats.usedMem / clusterStats.totalMem * 100)}%`}} />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      <div className={`text-[10px] font-medium ${haK > 0 ? (clusterStats.canHandle ? "text-green-600" : "text-red-500") : "text-text-muted"}`}>
+                        {haK === 0
+                          ? `+${clusterStats.additionalVms} VMs headroom (avg size)`
+                          : clusterStats.canHandle
+                            ? `✓ ${clusterStats.N - haK}/${clusterStats.N} hosts — +${clusterStats.additionalVms} VMs headroom`
+                            : `✗ Insufficient capacity with ${haK} host${haK > 1 ? "s" : ""} down`
+                        }
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {stats.byHost.length > 0 && (
                   <div className="jp-section">
                     <h3 className="jp-section-title">By Host</h3>
