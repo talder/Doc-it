@@ -544,7 +544,7 @@ export default function VmwarePage() {
       suspended: vms.filter((v) => v.powerState === "SUSPENDED").length,
       withSnapshots: vms.filter((v) => v.snapshotCount > 0).length,
       byHost: Object.entries(hc).sort((a, b) => a[0].localeCompare(b[0])),
-      byOS: Object.entries(oc).sort((a, b) => a[0].localeCompare(b[0])).slice(0, 15),
+      byOS: Object.entries(oc).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])),
     };
   }, [vms]);
 

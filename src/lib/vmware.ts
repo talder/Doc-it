@@ -210,36 +210,100 @@ interface VcGuestNetIface { ip_addresses?: { ip_address?: string }[]; }
 function guestOsDisplay(raw?: string): string {
   if (!raw) return "Unknown";
   const map: Record<string, string> = {
-    WINDOWS_SERVER_2025_64:"Windows Server 2025",WINDOWS_SERVER_2022_64:"Windows Server 2022",
-    WINDOWS_SERVER_2021_64:"Windows Server 2022",
-    WINDOWS_SERVER_2019_64:"Windows Server 2019",WINDOWS_SERVER_2016_64:"Windows Server 2016",
-    WINDOWS_SERVER_2012_R2_64:"Windows Server 2012 R2",WINDOWS_SERVER_2012_64:"Windows Server 2012",
-    WINDOWS_SERVER_2008_R2_64:"Windows Server 2008 R2",WINDOWS_SERVER_2008_64:"Windows Server 2008 (64-bit)",
-    WINDOWS_SERVER_2003_64:"Windows Server 2003 (64-bit)",
+    // Windows Desktop
     WINDOWS_11_64:"Windows 11",WINDOWS_10_64:"Windows 10 (64-bit)",WINDOWS_10:"Windows 10",
     WINDOWS_9_64:"Windows 9 (64-bit)",WINDOWS_9:"Windows 9",
     WINDOWS_8_64:"Windows 8 (64-bit)",WINDOWS_7_64:"Windows 7 (64-bit)",
-    RHEL_10_64:"RHEL 10 (64-bit)",RHEL_9_64:"RHEL 9 (64-bit)",RHEL_8_64:"RHEL 8 (64-bit)",
-    RHEL7_64:"RHEL 7 (64-bit)",RHEL6_64:"RHEL 6 (64-bit)",
-    CENTOS9_64:"CentOS 9 (64-bit)",CENTOS8_64:"CentOS 8 (64-bit)",
-    CENTOS7_64:"CentOS 7 (64-bit)",CENTOS_64:"CentOS (64-bit)",
-    ROCKYLINUX_64:"Rocky Linux (64-bit)",ALMALINUX_64:"AlmaLinux (64-bit)",
+    WINDOWS_7:"Windows 7",WINDOWS_VISTA_64:"Windows Vista (64-bit)",
+    WINDOWS_XP_64:"Windows XP (64-bit)",WINDOWS_XP:"Windows XP",
+    WIN_2000_ADV_SERV:"Windows 2000 Advanced Server",WIN_2000_PRO:"Windows 2000 Professional",
+    WIN_2000_SERV:"Windows 2000 Server",WIN_31:"Windows 3.1",WIN_95:"Windows 95",
+    WIN_98:"Windows 98",WIN_ME:"Windows Me",WIN_NT:"Windows NT",
+    // Windows Server
+    WINDOWS_SERVER_2025_64:"Windows Server 2025",
+    WINDOWS_SERVER_2022_64:"Windows Server 2022",WINDOWS_SERVER_2021_64:"Windows Server 2022",
+    WINDOWS_SERVER_2019_64:"Windows Server 2019",WINDOWS_SERVER_2016_64:"Windows Server 2016",
+    WINDOWS_SERVER_2012_R2_64:"Windows Server 2012 R2",WINDOWS_SERVER_2012_64:"Windows Server 2012",
+    WINDOWS_SERVER_2008_R2_64:"Windows Server 2008 R2",WINDOWS_SERVER_2008_64:"Windows Server 2008 (64-bit)",
+    WINDOWS_SERVER_2003_64:"Windows Server 2003 (64-bit)",WINDOWS_SERVER_2003:"Windows Server 2003",
+    WIN_NET_ENTERPRISE_64:"Windows Server 2003 (64-bit)",WIN_NET_ENTERPRISE:"Windows Server 2003",
+    WIN_NET_STANDARD_64:"Windows Server 2003 Std (64-bit)",WIN_NET_STANDARD:"Windows Server 2003 Std",
+    WIN_LONG_HORN_64:"Windows Server 2008 (64-bit)",WIN_LONG_HORN:"Windows Server 2008",
+    WIN_VISTA_GUEST_64:"Windows Vista (64-bit)",WIN_VISTA_GUEST:"Windows Vista",
+    // RHEL / CentOS / Oracle (both underscore and no-underscore variants)
+    RHEL_10_64:"RHEL 10 (64-bit)",RHEL10_64:"RHEL 10 (64-bit)",
+    RHEL_9_64:"RHEL 9 (64-bit)",RHEL9_64:"RHEL 9 (64-bit)",
+    RHEL_8_64:"RHEL 8 (64-bit)",RHEL8_64:"RHEL 8 (64-bit)",
+    RHEL_7_64:"RHEL 7 (64-bit)",RHEL7_64:"RHEL 7 (64-bit)",
+    RHEL_6_64:"RHEL 6 (64-bit)",RHEL6_64:"RHEL 6 (64-bit)",
+    RHEL_5_64:"RHEL 5 (64-bit)",RHEL5_64:"RHEL 5 (64-bit)",
+    RHEL_4_64:"RHEL 4 (64-bit)",RHEL4_64:"RHEL 4 (64-bit)",
+    CENTOS_9_64:"CentOS 9 (64-bit)",CENTOS9_64:"CentOS 9 (64-bit)",
+    CENTOS_8_64:"CentOS 8 (64-bit)",CENTOS8_64:"CentOS 8 (64-bit)",
+    CENTOS_7_64:"CentOS 7 (64-bit)",CENTOS7_64:"CentOS 7 (64-bit)",
+    CENTOS_6_64:"CentOS 6 (64-bit)",CENTOS6_64:"CentOS 6 (64-bit)",
+    CENTOS_64:"CentOS (64-bit)",CENTOS_6:"CentOS 6",
+    ORACLE_LINUX_8_64:"Oracle Linux 8 (64-bit)",ORACLELINUX_8_64:"Oracle Linux 8 (64-bit)",
+    ORACLE_LINUX_7_64:"Oracle Linux 7 (64-bit)",ORACLELINUX_7_64:"Oracle Linux 7 (64-bit)",
+    ORACLE_LINUX_6_64:"Oracle Linux 6 (64-bit)",ORACLELINUX_6_64:"Oracle Linux 6 (64-bit)",
+    ORACLE_LINUX_64:"Oracle Linux (64-bit)",ORACLELINUX_64:"Oracle Linux (64-bit)",
+    // Rocky / Alma
+    ROCKYLINUX_64:"Rocky Linux (64-bit)",ROCKY_LINUX_64:"Rocky Linux (64-bit)",
+    ALMALINUX_64:"AlmaLinux (64-bit)",ALMA_LINUX_64:"AlmaLinux (64-bit)",
+    // Ubuntu / Debian
     UBUNTU_64:"Ubuntu (64-bit)",UBUNTU:"Ubuntu",
     DEBIAN_13_64:"Debian 13 (64-bit)",DEBIAN_12_64:"Debian 12 (64-bit)",
     DEBIAN_11_64:"Debian 11 (64-bit)",DEBIAN_10_64:"Debian 10 (64-bit)",
     DEBIAN_9_64:"Debian 9 (64-bit)",DEBIAN_8_64:"Debian 8 (64-bit)",
-    SLES15_64:"SUSE Linux 15 (64-bit)",SLES12_64:"SUSE Linux 12 (64-bit)",
-    SLES11_64:"SUSE Linux 11 (64-bit)",OPENSUSE_64:"openSUSE (64-bit)",
-    FREEBSD13_64:"FreeBSD 13 (64-bit)",FREEBSD12_64:"FreeBSD 12 (64-bit)",
-    FREEBSD11_64:"FreeBSD 11 (64-bit)",FREEBSD_64:"FreeBSD (64-bit)",
-    ORACLELINUX_64:"Oracle Linux (64-bit)",FEDORA_64:"Fedora (64-bit)",
-    OTHER_3X_LINUX_64:"Linux (64-bit)",OTHER_4X_LINUX_64:"Linux (64-bit)",
-    OTHER_5X_LINUX_64:"Linux (64-bit)",OTHER_6X_LINUX_64:"Linux (64-bit)",
-    OTHER_LINUX:"Linux",OTHER_LINUX_64:"Linux (64-bit)",
+    DEBIAN_7_64:"Debian 7 (64-bit)",DEBIAN_6_64:"Debian 6 (64-bit)",
+    // SUSE
+    SLES_15_64:"SUSE Linux 15 (64-bit)",SLES15_64:"SUSE Linux 15 (64-bit)",
+    SLES_12_64:"SUSE Linux 12 (64-bit)",SLES12_64:"SUSE Linux 12 (64-bit)",
+    SLES_11_64:"SUSE Linux 11 (64-bit)",SLES11_64:"SUSE Linux 11 (64-bit)",
+    OPENSUSE_64:"openSUSE (64-bit)",
+    // FreeBSD
+    FREEBSD_13_64:"FreeBSD 13 (64-bit)",FREEBSD13_64:"FreeBSD 13 (64-bit)",
+    FREEBSD_12_64:"FreeBSD 12 (64-bit)",FREEBSD12_64:"FreeBSD 12 (64-bit)",
+    FREEBSD_11_64:"FreeBSD 11 (64-bit)",FREEBSD11_64:"FreeBSD 11 (64-bit)",
+    FREEBSD_64:"FreeBSD (64-bit)",FREEBSD_64:"FreeBSD (64-bit)",
+    // Other Linux / ESXi
+    FEDORA_64:"Fedora (64-bit)",FEDORA:"Fedora",
+    OTHER_26X_LINUX_64:"Linux (64-bit)",OTHER_3X_LINUX_64:"Linux (64-bit)",
+    OTHER_4X_LINUX_64:"Linux (64-bit)",OTHER_5X_LINUX_64:"Linux (64-bit)",
+    OTHER_6X_LINUX_64:"Linux (64-bit)",OTHER_LINUX_64:"Linux (64-bit)",OTHER_LINUX:"Linux",
     VMKERNEL8:"VMware ESXi 8",VMKERNEL7:"VMware ESXi 7",VMKERNEL6:"VMware ESXi 6",
     OTHER:"Other",OTHER_64:"Other (64-bit)",
   };
-  return map[raw] ?? raw.replace(/_64$/, " (64-bit)").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+  // Direct map lookup
+  if (map[raw]) return map[raw];
+
+  // Normalize: remove underscores before digits (e.g. RHEL_6_64 → RHEL6_64) then retry
+  const normalized = raw.replace(/_(?=\d)/g, "");
+  if (normalized !== raw && map[normalized]) return map[normalized];
+
+  // Regex patterns for Windows variants not in the static map
+  const wsMatch = raw.match(/^WINDOWS_SERVER_(\d{4})(?:_R(\d))?(?: |_|$)/i);
+  if (wsMatch) return `Windows Server ${wsMatch[1]}${wsMatch[2] ? ` R${wsMatch[2]}` : ""}`;
+  const winMatch = raw.match(/^WINDOWS_(\d+)(_64)?/i);
+  if (winMatch) return `Windows ${winMatch[1]}${winMatch[2] ? " (64-bit)" : ""}`;
+
+  // Regex patterns for common Linux variants
+  const rhelMatch = raw.match(/^RHEL_(\d+)(?:_(64))?/i);
+  if (rhelMatch) return `RHEL ${rhelMatch[1]}${rhelMatch[2] ? " (64-bit)" : ""}`;
+  const centosMatch = raw.match(/^CENTOS_(\d+)(?:_(64))?/i);
+  if (centosMatch) return `CentOS ${centosMatch[1]}${centosMatch[2] ? " (64-bit)" : ""}`;
+  const oracleMatch = raw.match(/^ORACLE_?LINUX_(\d+)(?:_(64))?/i);
+  if (oracleMatch) return `Oracle Linux ${oracleMatch[1]}${oracleMatch[2] ? " (64-bit)" : ""}`;
+  const slesMatch = raw.match(/^SLES_(\d+)(?:_(64))?/i);
+  if (slesMatch) return `SUSE Linux ${slesMatch[1]}${slesMatch[2] ? " (64-bit)" : ""}`;
+  if (/^OTHER_\d+X_LINUX_64/i.test(raw)) return "Linux (64-bit)";
+
+  // Generic fallback
+  return raw
+    .replace(/_64$/, " (64-bit)")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 // ── SOAP utilities ─────────────────────────────────────────────────────────────
