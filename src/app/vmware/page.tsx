@@ -225,6 +225,27 @@ function VmChangesPanel({ onClose }: { onClose: () => void }) {
   const [loading, setLoading] = useState(true);
   // column widths: [Time, VM, Type, Change]
   const [colWidths, setColWidths] = useState([148, 160, 82, 220]);
+  const [panelWidth, setPanelWidth] = useState(640);
+
+  const startPanelResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = panelWidth;
+    const onMove = (ev: MouseEvent) => {
+      // panel is on the right — drag left to widen
+      setPanelWidth(Math.max(380, Math.min(1400, startW + (startX - ev.clientX))));
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.body.style.cursor = "ew-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
 
   const load = () => {
     setLoading(true);
@@ -272,7 +293,13 @@ function VmChangesPanel({ onClose }: { onClose: () => void }) {
   const colLabels = ["Time", "VM", "Type", "Change"];
 
   return (
-    <div className="w-[640px] border-l border-border bg-surface flex flex-col overflow-hidden">
+    <div style={{ width: panelWidth }} className="border-l border-border bg-surface flex flex-col overflow-hidden relative flex-shrink-0">
+      {/* Left-edge resize handle */}
+      <div
+        onMouseDown={startPanelResize}
+        className="absolute left-0 top-0 w-1.5 h-full cursor-ew-resize hover:bg-accent/40 z-20"
+        title="Drag to resize panel"
+      />
       <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-2">
           <History className="w-4 h-4 text-accent" />

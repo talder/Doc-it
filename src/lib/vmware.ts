@@ -9,6 +9,7 @@
 import { readJsonConfig, writeJsonConfig, getDb } from "./config";
 import { encryptField, decryptField } from "./crypto";
 import { addChangeRequest } from "./cmdb";
+import { addChangeLogEntry } from "./changelog";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -163,21 +164,20 @@ async function detectAndLogVmChanges(vms: VmRecord[]): Promise<void> {
     });
     run();
 
-    // Create a CMDB change request for each config change (memory / vCPU / disk)
+    // Create a CMDB RFC + Change Log CHG entry for each config change (memory / vCPU / disk)
+    const today = now.slice(0, 10);
     for (const { vm, type, oldVal, newVal } of configChanges) {
       try {
         const typeLabels: Record<string, string> = { memory: "Memory", vcpu: "vCPU Count", disk: "Disk Size" };
         const label = typeLabels[type] ?? type;
         const oldFmt = type === "memory" ? _fmtMib(parseInt(oldVal)) : type === "disk" ? _fmtBytes(parseInt(oldVal)) : `${oldVal} vCPU`;
         const newFmt = type === "memory" ? _fmtMib(parseInt(newVal)) : type === "disk" ? _fmtBytes(parseInt(newVal)) : `${newVal} vCPU`;
+        const changeDesc = `${label} changed from ${oldFmt} to ${newFmt} for VM "${vm.name}" on host ${vm.host}. Detected automatically by VMware inventory monitor.`;
+
+        // 1. CMDB Change Request (RFC-XXXX)
         await addChangeRequest({
           title: `VM ${label} Change: ${vm.name}`,
-          description: `VMware inventory detected a ${label.toLowerCase()} change for VM "${vm.name}".
-
-Host: ${vm.host}
-${label}: ${oldFmt} → ${newFmt}
-
-Detected automatically by the VMware inventory monitor on ${new Date(now).toLocaleString()}.`,
+          description: changeDesc,
           risk: type === "disk" ? "medium" : "low",
           status: "pending",
           affectedAssetIds: [],
@@ -185,9 +185,22 @@ Detected automatically by the VMware inventory monitor on ${new Date(now).toLoca
           rollbackPlan: `Revert ${label.toLowerCase()} of VM "${vm.name}" from ${newFmt} back to ${oldFmt} in vCenter.`,
           createdBy: "vmware-monitor",
         });
-        console.log(`[vmware] Created change request for ${type} change on ${vm.name}`);
+
+        // 2. Change Log entry (CHG-XXXXXX)
+        await addChangeLogEntry({
+          date: today,
+          author: "vmware-monitor",
+          system: vm.name,
+          category: type === "disk" ? "Disk" : "Configuration",
+          description: changeDesc,
+          impact: `VM ${label.toLowerCase()} modified — verify change was intentional and authorised.`,
+          risk: type === "disk" ? "Medium" : "Low",
+          status: "Completed",
+        });
+
+        console.log(`[vmware] Logged CHG + RFC for ${type} change on ${vm.name}`);
       } catch (crErr) {
-        console.error(`[vmware] Failed to create change request for ${vm.name}:`, crErr);
+        console.error(`[vmware] Failed to log change for ${vm.name}:`, crErr);
       }
     }
   } catch (e) {
