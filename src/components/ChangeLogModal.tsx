@@ -44,10 +44,12 @@ export default function ChangeLogModal({ isOpen, onClose, onSave, knownSystems, 
   const [downtimeMinutes, setDowntimeMinutes] = useState("");
   const [ccEmails, setCcEmails] = useState("");
   const [rollbackOf, setRollbackOf] = useState("");
+  const [assignedTo, setAssignedTo] = useState("");
   const [saving, setSaving] = useState(false);
   const [conflicts, setConflicts] = useState<{ id: string; system: string }[]>([]);
   const [showSystemSuggest, setShowSystemSuggest] = useState(false);
   const [assetNames, setAssetNames] = useState<string[]>([]);
+  const [userList, setUserList] = useState<{ username: string; fullName: string | null }[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState("");
   const systemRef = useRef<HTMLInputElement>(null);
 
@@ -61,9 +63,12 @@ export default function ChangeLogModal({ isOpen, onClose, onSave, knownSystems, 
     setBackoutPlan(prefill?.backoutPlan || ""); setRisk(prefill?.risk || "Medium");
     setRiskAnswers({}); setUseQuestionnaire(false);
     setPlannedStart(""); setPlannedEnd(""); setDowntimeMinutes(""); setCcEmails("");
+    setAssignedTo(prefill?.assignedTo || "");
     setRollbackOf(prefill?.id || ""); setSaving(false); setConflicts([]); setSelectedTemplate("");
     fetch("/api/cmdb").then(r => r.ok ? r.json() : { assets: [] })
       .then(d => setAssetNames((d.assets || []).map((a: { name: string }) => a.name))).catch(() => {});
+    fetch("/api/changelog/users").then(r => r.ok ? r.json() : { users: [] })
+      .then(d => setUserList(d.users || [])).catch(() => {});
   }, [isOpen, prefill]);
 
   if (!isOpen) return null;
@@ -103,6 +108,7 @@ export default function ChangeLogModal({ isOpen, onClose, onSave, knownSystems, 
         ...(plannedEnd ? { plannedEnd } : {}),
         ...(downtimeMinutes ? { downtimeMinutes: Number(downtimeMinutes) } : {}),
         ...(ccEmails.trim() ? { ccEmails: ccEmails.split(",").map(e => e.trim()).filter(Boolean) } : {}),
+        ...(assignedTo ? { assignedTo } : {}),
         ...(rollbackOf.trim() ? { rollbackOf: rollbackOf.trim() } : {}),
       });
       if (res?.conflicts?.length) setConflicts(res.conflicts);
@@ -239,6 +245,17 @@ export default function ChangeLogModal({ isOpen, onClose, onSave, knownSystems, 
                 <input type="text" className="cl-input" placeholder="email1@co, email2@co" value={ccEmails} onChange={e => setCcEmails(e.target.value)} />
               </div>
               <div className="cl-field">
+                <label className="cl-label">Assigned To</label>
+                <select className="cl-input" value={assignedTo} onChange={e => setAssignedTo(e.target.value)}>
+                  <option value="">— Unassigned —</option>
+                  {userList.map(u => (
+                    <option key={u.username} value={u.username}>
+                      {u.fullName ? `${u.fullName} (${u.username})` : u.username}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="cl-field">
                 <label className="cl-label">Rollback of (CHG-#)</label>
                 <input type="text" className="cl-input" placeholder="CHG-000012" value={rollbackOf} onChange={e => setRollbackOf(e.target.value)} />
               </div>
@@ -302,6 +319,7 @@ export default function ChangeLogModal({ isOpen, onClose, onSave, knownSystems, 
               <div className="cl-confirm-row"><span className="cl-confirm-label">System</span><span className="font-semibold">{system}</span></div>
               <div className="cl-confirm-row"><span className="cl-confirm-label">Category</span><span>{category}</span></div>
               <div className="cl-confirm-row"><span className="cl-confirm-label">Risk</span><span className={`cl-badge ${RISK_COLORS[risk]}`}>{risk}</span></div>
+              {assignedTo && <div className="cl-confirm-row"><span className="cl-confirm-label">Assigned To</span><span className="font-medium">{assignedTo}</span></div>}
               {rollbackOf && <div className="cl-confirm-row"><span className="cl-confirm-label">Rollback of</span><span className="font-mono text-amber-700">{rollbackOf}</span></div>}
               {plannedStart && <div className="cl-confirm-row"><span className="cl-confirm-label">Window</span><span>{new Date(plannedStart).toLocaleString()} → {plannedEnd ? new Date(plannedEnd).toLocaleString() : "—"}</span></div>}
               {downtimeMinutes && <div className="cl-confirm-row"><span className="cl-confirm-label">Downtime</span><span>{downtimeMinutes} min</span></div>}

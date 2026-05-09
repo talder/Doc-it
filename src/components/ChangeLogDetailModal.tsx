@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { X, RotateCcw, Check, XCircle, ChevronRight, Zap } from "lucide-react";
+import { useState, useEffect } from "react";
+import { X, RotateCcw, Check, XCircle, ChevronRight, Zap, UserRound } from "lucide-react";
 import type { ChangeLogEntry, ChangeLifecycleStatus } from "@/lib/changelog-shared";
 import { allowedTransitions, isTerminal } from "@/lib/changelog-shared";
 
@@ -35,6 +35,14 @@ export default function ChangeLogDetailModal({ entry, onClose, onLogRollback, on
   const [approvalComment, setApprovalComment] = useState("");
   const [saving, setSaving] = useState<string | null>(null);
   const [localEntry, setLocalEntry] = useState<ChangeLogEntry | null>(null);
+  const [showReassign, setShowReassign] = useState(false);
+  const [reassignUser, setReassignUser] = useState("");
+  const [userList, setUserList] = useState<{ username: string; fullName: string | null }[]>([]);
+
+  useEffect(() => {
+    fetch("/api/changelog/users").then(r => r.ok ? r.json() : { users: [] })
+      .then(d => setUserList(d.users || [])).catch(() => {});
+  }, []);
 
   const e = localEntry || entry;
   if (!e) return null;
@@ -70,6 +78,16 @@ export default function ChangeLogDetailModal({ entry, onClose, onLogRollback, on
         onUpdated?.(d.entry);
         setApprovalComment("");
       }
+    } finally { setSaving(null); }
+  };
+
+  const saveAssignee = async () => {
+    if (!reassignUser) return;
+    setSaving("assign");
+    try {
+      const res = await fetch(`/api/changelog/${e!.id}`, { method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignedTo: reassignUser || null }) });
+      if (res.ok) { const d = await res.json(); setLocalEntry(d.entry); onUpdated?.(d.entry); setShowReassign(false); }
     } finally { setSaving(null); }
   };
 
@@ -128,6 +146,37 @@ export default function ChangeLogDetailModal({ entry, onClose, onLogRollback, on
               </div>
             )}
             {e.downtimeMinutes !== undefined && <div className="cl-confirm-row"><span className="cl-confirm-label">Est. Downtime</span><span>{e.downtimeMinutes} min</span></div>}
+            {/* Assignee */}
+            <div className="cl-confirm-row">
+              <span className="cl-confirm-label">Assigned To</span>
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1">
+                  <UserRound className="w-3.5 h-3.5 text-text-muted" />
+                  {e.assignedTo || <span className="text-text-muted italic">Unassigned</span>}
+                </span>
+                {!closed && (
+                  <button onClick={() => { setShowReassign(r => !r); setReassignUser(e.assignedTo || ""); }}
+                    className="text-[10px] text-accent hover:underline">
+                    {showReassign ? "cancel" : "reassign"}
+                  </button>
+                )}
+              </div>
+            </div>
+            {showReassign && (
+              <div className="cl-confirm-row cl-confirm-row--block">
+                <span className="cl-confirm-label" />
+                <div className="flex items-center gap-2">
+                  <select className="cl-input text-xs flex-1" value={reassignUser} onChange={ev => setReassignUser(ev.target.value)}>
+                    <option value="">— Unassigned —</option>
+                    {userList.map(u => <option key={u.username} value={u.username}>{u.fullName ? `${u.fullName} (${u.username})` : u.username}</option>)}
+                  </select>
+                  <button onClick={saveAssignee} disabled={saving === "assign"}
+                    className="px-3 py-1 text-xs bg-accent text-white rounded-lg hover:bg-accent/90 disabled:opacity-50">
+                    {saving === "assign" ? "…" : "Save"}
+                  </button>
+                </div>
+              </div>
+            )}
             {e.rollbackOf && <div className="cl-confirm-row"><span className="cl-confirm-label">Rollback of</span><span className="font-mono text-amber-700">{e.rollbackOf}</span></div>}
             {e.relatedCrId && <div className="cl-confirm-row"><span className="cl-confirm-label">CMDB RFC</span><a href="/cmdb" className="cl-link font-mono">{e.relatedCrId}</a></div>}
             <div className="cl-confirm-row cl-confirm-row--block"><span className="cl-confirm-label">Description</span><p className="whitespace-pre-wrap">{e.description}</p></div>

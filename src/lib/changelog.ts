@@ -80,6 +80,7 @@ export interface ChangeLogEntry {
   plannedStart?: string;
   plannedEnd?: string;
   downtimeMinutes?: number;
+  assignedTo?: string;
   pirNotes?: string;
   ccEmails?: string[];
   relatedCrId?: string;
@@ -246,6 +247,7 @@ export interface CreateChangeFields {
   plannedEnd?: string;
   downtimeMinutes?: number;
   ccEmails?: string[];
+  assignedTo?: string;
   relatedCrId?: string;
   rollbackOf?: string;
   linkedDoc?: ChangeLinkedDoc;
@@ -279,6 +281,7 @@ export async function addChangeLogEntry(fields: CreateChangeFields): Promise<Cha
     ...(fields.plannedEnd ? { plannedEnd: fields.plannedEnd } : {}),
     ...(fields.downtimeMinutes ? { downtimeMinutes: fields.downtimeMinutes } : {}),
     ...(fields.ccEmails?.length ? { ccEmails: fields.ccEmails } : {}),
+    ...(fields.assignedTo ? { assignedTo: fields.assignedTo } : {}),
     ...(fields.relatedCrId ? { relatedCrId: fields.relatedCrId } : {}),
     ...(fields.rollbackOf ? { rollbackOf: fields.rollbackOf } : {}),
     ...(fields.linkedDoc ? { linkedDoc: fields.linkedDoc } : {}),
@@ -319,6 +322,7 @@ export interface UpdateChangeFields {
   downtimeMinutes?: number;
   backoutPlan?: string;
   ccEmails?: string[];
+  assignedTo?: string;
   affectedAssetIds?: string[];
   relatedCrId?: string;
 }

@@ -58,6 +58,7 @@ export interface ChangeLogEntry {
   plannedStart?: string;
   plannedEnd?: string;
   downtimeMinutes?: number;
+  assignedTo?: string;     // username of the person responsible for this change
   pirNotes?: string;
   ccEmails?: string[];
   relatedCrId?: string;

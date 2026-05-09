@@ -360,6 +360,7 @@ export default function ChangeLogPage() {
   const [detailEntry, setDetailEntry] = useState<ChangeLogEntry|null>(null);
   const [rollbackPrefill, setRollbackPrefill] = useState<Partial<ChangeLogEntry>|undefined>(undefined);
   const [showSettings, setShowSettings] = useState(false);
+  const [myChangesOnly, setMyChangesOnly] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/me").then(r=>r.json()).then(d => { setCurrentUser(d.user?.username||""); setIsAdmin(!!d.user?.isAdmin); }).catch(()=>{});
@@ -394,12 +395,13 @@ export default function ChangeLogPage() {
     if (statusFilter) list = list.filter(e => e.status === statusFilter);
     if (typeFilter) list = list.filter(e => (e.changeType || "Normal") === typeFilter);
     if (systemFilter) list = list.filter(e => e.system.toLowerCase() === systemFilter.toLowerCase());
+    if (myChangesOnly) list = list.filter(e => e.assignedTo === currentUser || e.author === currentUser);
     if (searchQ.trim().length >= 2) {
       const q = searchQ.trim().toLowerCase();
-      list = list.filter(e => e.id.toLowerCase().includes(q)||e.system.toLowerCase().includes(q)||e.description.toLowerCase().includes(q)||e.category.toLowerCase().includes(q)||e.author.toLowerCase().includes(q));
+      list = list.filter(e => e.id.toLowerCase().includes(q)||e.system.toLowerCase().includes(q)||e.description.toLowerCase().includes(q)||e.category.toLowerCase().includes(q)||e.author.toLowerCase().includes(q)||(e.assignedTo||'').toLowerCase().includes(q));
     }
     return list;
-  }, [allEntries, selectedDate, dateFrom, dateTo, categoryFilter, riskFilter, statusFilter, typeFilter, systemFilter, searchQ]);
+  }, [allEntries, selectedDate, dateFrom, dateTo, categoryFilter, riskFilter, statusFilter, typeFilter, systemFilter, myChangesOnly, searchQ, currentUser]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -429,8 +431,8 @@ export default function ChangeLogPage() {
   const pendingApprovalCount = allEntries.filter(e => !["Closed","Completed","Rejected"].includes(e.status) && ["CAB Approval","Under Review","Submitted"].includes(e.status)).length;
 
   const toggleSort = (k: SortKey) => { if (sortKey===k) setSortDir(d=>d==="asc"?"desc":"asc"); else { setSortKey(k); setSortDir(k==="date"?"desc":"asc"); } };
-  const clearFilters = () => { setSelectedDate(null); setDateFrom(""); setDateTo(""); setCategoryFilter(""); setRiskFilter(""); setStatusFilter(""); setTypeFilter(""); setSystemFilter(""); setSearchQ(""); };
-  const hasFilter = !!(selectedDate||dateFrom||dateTo||categoryFilter||riskFilter||statusFilter||typeFilter||systemFilter||searchQ);
+  const clearFilters = () => { setSelectedDate(null); setDateFrom(""); setDateTo(""); setCategoryFilter(""); setRiskFilter(""); setStatusFilter(""); setTypeFilter(""); setSystemFilter(""); setSearchQ(""); setMyChangesOnly(false); };
+  const hasFilter = !!(selectedDate||dateFrom||dateTo||categoryFilter||riskFilter||statusFilter||typeFilter||systemFilter||myChangesOnly||searchQ);
 
   const handleSave = async (data: Record<string,unknown>) => {
     const res = await fetch("/api/changelog", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(data) });
@@ -568,6 +570,13 @@ export default function ChangeLogPage() {
             </div>
           )}
           <div className="jp-section">
+            <h3 className="jp-section-title">Quick Filters</h3>
+            <label className="flex items-center gap-2 cursor-pointer text-xs text-text-secondary hover:text-text-primary py-1">
+              <input type="checkbox" checked={myChangesOnly} onChange={e=>setMyChangesOnly(e.target.checked)} className="rounded" />
+              My changes (assigned to me / authored)
+            </label>
+          </div>
+          <div className="jp-section">
             <h3 className="jp-section-title">Search</h3>
             <input type="text" className="cl-input" placeholder="Search changes…" value={searchQ} onChange={e=>setSearchQ(e.target.value)} />
           </div>
@@ -617,6 +626,7 @@ export default function ChangeLogPage() {
                         <th className="cl-th">Description</th>
                         <th onClick={()=>toggleSort("risk")} className="cl-th cl-th--sort">Risk <SortIcon col="risk" /></th>
                         <th onClick={()=>toggleSort("status")} className="cl-th cl-th--sort">Status <SortIcon col="status" /></th>
+                        <th className="cl-th">Assigned To</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -635,6 +645,7 @@ export default function ChangeLogPage() {
                           <td className="cl-td cl-td--desc">{e.description.length>70?e.description.slice(0,70)+"…":e.description}</td>
                           <td className="cl-td"><span className={`cl-badge ${RISK_BADGE[e.risk]||""}`}>{e.risk}</span></td>
                           <td className="cl-td"><span className={`cl-badge text-[10px] ${STATUS_BADGE[e.status]||""}`}>{e.status}</span></td>
+                          <td className="cl-td text-xs text-text-secondary">{e.assignedTo || <span className="text-text-muted">—</span>}</td>
                         </tr>
                       ))}
                     </tbody>
