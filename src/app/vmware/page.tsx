@@ -433,7 +433,7 @@ function VmRow({ vm, onFilterHost, onFilterOS, isAdmin }: {
           <button className="text-text-secondary hover:text-accent text-xs text-left" onClick={(e) => { e.stopPropagation(); onFilterOS(vm.guestOSDisplay); }}>{vm.guestOSDisplay || "—"}</button>
         </td>
         <td className="cl-td text-text-secondary text-xs">{vm.ipAddress || "—"}</td>
-        <td className="cl-td text-text-secondary text-xs">{vm.toolsVersion || "—"}</td>
+        <td className="cl-td text-text-secondary text-xs">{vm.toolsVersion && vm.toolsVersion !== "0" ? vm.toolsVersion : "—"}</td>
         <td className="cl-td">
           <span className="text-text-primary font-medium">{fmtMiB(vm.memoryMiB)}</span>
           {vm.memoryUsedMiB !== null && <span className="text-xs text-text-muted ml-1">/ {fmtMiB(vm.memoryUsedMiB)} used</span>}
@@ -481,7 +481,7 @@ function VmRow({ vm, onFilterHost, onFilterOS, isAdmin }: {
                 ["VM ID", vm.vmId], ["Power State", vm.powerState], ["Host", vm.host || "—"],
                 ["IP Address", vm.ipAddress || "—"], ["OS (category)", vm.guestOSDisplay || "—"],
                 ["OS (full name)", vm.guestOSFullName || "—"], ["OS (enum)", vm.guestOS || "—"],
-                ["HW Version", vm.hardwareVersion || "—"], ["Tools Version", vm.toolsVersion || "Not installed"],
+                ["HW Version", vm.hardwareVersion || "—"], ["Tools Version", (vm.toolsVersion && vm.toolsVersion !== "0") ? vm.toolsVersion : "Not installed"],
                 ["Tools Status", vm.toolsStatus || "—"],
                 ["Memory Assigned", `${vm.memoryMiB} MiB (${fmtMiB(vm.memoryMiB)})`],
                 ["Memory In Use", vm.memoryUsedMiB !== null ? `${vm.memoryUsedMiB} MiB (${fmtMiB(vm.memoryUsedMiB)})` : vm.toolsStatus === "RUNNING" ? "—" : "— (Tools required)"],
