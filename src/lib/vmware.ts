@@ -188,6 +188,7 @@ async function detectAndLogVmChanges(vms: VmRecord[]): Promise<void> {
 
         // 2. Change Log entry (CHG-XXXXXX)
         await addChangeLogEntry({
+          changeType: "Normal",
           date: today,
           author: "vmware-monitor",
           system: vm.name,
