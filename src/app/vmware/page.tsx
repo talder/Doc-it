@@ -6,7 +6,7 @@ import {
   ArrowLeft, Server, RefreshCw, Search, Download, Settings,
   ChevronUp, ChevronDown, X, Check, Plus, Trash2, Eye, EyeOff,
   Bookmark, BookmarkCheck, Database, Power, Camera, AlertTriangle,
-  Play, Square, RotateCcw, PauseCircle, ChevronRight,
+  Play, Square, RotateCcw, PauseCircle, ChevronRight, SlidersHorizontal,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import type { VmHostStats, SnapshotInfo } from "@/lib/vmware";
@@ -27,6 +27,90 @@ interface VmRecord {
 
 interface SavedFilter {
   id: string; name: string; powerState: string; host: string; os: string; q: string;
+}
+
+interface FilterRule {
+  id: string;
+  field: string;
+  op: string;
+  value: string;
+}
+
+const FILTER_FIELDS = [
+  { key: "osFamily",    label: "OS Family",       type: "select", options: ["Windows", "Linux", "BSD", "VMware ESXi", "Other"] },
+  { key: "os",          label: "OS",              type: "text" },
+  { key: "name",        label: "VM Name",         type: "text" },
+  { key: "host",        label: "Host",            type: "text" },
+  { key: "powerState",  label: "Power State",     type: "select", options: ["POWERED_ON", "POWERED_OFF", "SUSPENDED"] },
+  { key: "vcpu",        label: "vCPU Count",      type: "number" },
+  { key: "memoryGB",    label: "Memory (GB)",     type: "number" },
+  { key: "snapshots",   label: "Snapshot Count",  type: "number" },
+  { key: "storageGB",   label: "Storage (GB)",    type: "number" },
+  { key: "ip",          label: "IP Address",      type: "text" },
+  { key: "toolsStatus", label: "Tools Status",    type: "select", options: ["RUNNING", "NOT_RUNNING"] },
+  { key: "annotation",  label: "Annotation",      type: "text" },
+] as const;
+
+const TEXT_OPS  = [ { key: "contains", label: "contains" }, { key: "notcontains", label: "does not contain" }, { key: "eq", label: "is" }, { key: "neq", label: "is not" }, { key: "startswith", label: "starts with" } ];
+const SEL_OPS   = [ { key: "eq", label: "is" }, { key: "neq", label: "is not" } ];
+const NUM_OPS   = [ { key: "eq", label: "=" }, { key: "neq", label: "≠" }, { key: "gt", label: ">" }, { key: "gte", label: "≥" }, { key: "lt", label: "<" }, { key: "lte", label: "≤" } ];
+
+function fieldType(field: string) { return FILTER_FIELDS.find(f => f.key === field)?.type ?? "text"; }
+function fieldOps(field: string)  { const t = fieldType(field); return t === "select" ? SEL_OPS : t === "number" ? NUM_OPS : TEXT_OPS; }
+function fieldOptions(field: string) { return (FILTER_FIELDS.find(f => f.key === field) as { options?: string[] })?.options ?? []; }
+
+function getOsFamily(display: string): string {
+  if (/^windows/i.test(display)) return "Windows";
+  if (/esxi/i.test(display)) return "VMware ESXi";
+  if (/freebsd/i.test(display)) return "BSD";
+  if (/linux|ubuntu|debian|centos|rhel|fedora|suse|opensuse|alma|rocky|oracle linux/i.test(display)) return "Linux";
+  return "Other";
+}
+
+function applyRule(vm: { name: string; guestOSDisplay: string; host: string; powerState: string; cpuCount: number; memoryMiB: number; snapshotCount: number; storageBytesProvisioned: number; ipAddress: string; toolsStatus: string; annotation: string }, rule: FilterRule): boolean {
+  const val = rule.value.trim();
+  let lhsStr = "";
+  let lhsNum: number | null = null;
+
+  switch (rule.field) {
+    case "osFamily":    lhsStr = getOsFamily(vm.guestOSDisplay); break;
+    case "os":          lhsStr = vm.guestOSDisplay; break;
+    case "name":        lhsStr = vm.name; break;
+    case "host":        lhsStr = vm.host; break;
+    case "powerState":  lhsStr = vm.powerState; break;
+    case "toolsStatus": lhsStr = vm.toolsStatus; break;
+    case "ip":          lhsStr = vm.ipAddress; break;
+    case "annotation":  lhsStr = vm.annotation; break;
+    case "vcpu":        lhsNum = vm.cpuCount; break;
+    case "memoryGB":    lhsNum = Math.round(vm.memoryMiB / 1024 * 10) / 10; break;
+    case "snapshots":   lhsNum = vm.snapshotCount; break;
+    case "storageGB":   lhsNum = Math.round(vm.storageBytesProvisioned / 1_073_741_824 * 10) / 10; break;
+    default: return true;
+  }
+
+  if (lhsNum !== null) {
+    const n = parseFloat(val);
+    if (isNaN(n)) return true;
+    switch (rule.op) {
+      case "eq":  return lhsNum === n;
+      case "neq": return lhsNum !== n;
+      case "gt":  return lhsNum > n;
+      case "gte": return lhsNum >= n;
+      case "lt":  return lhsNum < n;
+      case "lte": return lhsNum <= n;
+    }
+  } else {
+    if (!val) return true;
+    const a = lhsStr.toLowerCase(), b = val.toLowerCase();
+    switch (rule.op) {
+      case "eq":          return a === b;
+      case "neq":         return a !== b;
+      case "contains":    return a.includes(b);
+      case "notcontains": return !a.includes(b);
+      case "startswith":  return a.startsWith(b);
+    }
+  }
+  return true;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -487,6 +571,8 @@ export default function VmwarePage() {
   const [showExportModal, setShowExportModal] = useState(false);
   const [exporting, setExporting] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
+  const [filterRules, setFilterRules] = useState<FilterRule[]>([]);
+  const [showFilterBuilder, setShowFilterBuilder] = useState(false);
 
   useEffect(() => { fetch("/api/auth/me").then((r) => r.json()).then((d) => { if (d.user?.isAdmin) setIsAdmin(true); }).catch(() => {}); }, []);
   useEffect(() => { setSavedFilters(loadSavedFilters()); }, []);
@@ -528,6 +614,12 @@ export default function VmwarePage() {
       const q = searchQ.trim().toLowerCase();
       list = list.filter((v) => v.name.toLowerCase().includes(q) || v.host.toLowerCase().includes(q) || v.guestOSDisplay.toLowerCase().includes(q) || v.ipAddress.toLowerCase().includes(q) || v.annotation.toLowerCase().includes(q) || v.vmId.toLowerCase().includes(q));
     }
+    // Apply custom filter rules (AND)
+    for (const rule of filterRules) {
+      if (!rule.value.trim() && fieldType(rule.field) !== "select") continue;
+      list = list.filter((v) => applyRule(v, rule));
+    }
+
     return [...list].sort((a, b) => {
       let cmp = 0;
       if (sortKey === "name") cmp = a.name.localeCompare(b.name);
@@ -542,15 +634,15 @@ export default function VmwarePage() {
       else if (sortKey === "snapshotCount") cmp = a.snapshotCount - b.snapshotCount;
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [vms, filterPower, filterHost, filterOS, searchQ, sortKey, sortDir]);
+  }, [vms, filterPower, filterHost, filterOS, searchQ, sortKey, sortDir, filterRules]);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir((d) => d === "asc" ? "desc" : "asc");
     else { setSortKey(key); setSortDir("asc"); }
   };
 
-  const hasActiveFilters = filterPower !== "all" || filterHost !== "all" || filterOS !== "all" || !!searchQ.trim();
-  const clearFilters = () => { setFilterPower("all"); setFilterHost("all"); setFilterOS("all"); setSearchQ(""); };
+  const hasActiveFilters = filterPower !== "all" || filterHost !== "all" || filterOS !== "all" || !!searchQ.trim() || filterRules.some(r => r.value.trim());
+  const clearFilters = () => { setFilterPower("all"); setFilterHost("all"); setFilterOS("all"); setSearchQ(""); setFilterRules([]); };
 
   const stats = useMemo(() => {
     const hc: Record<string, number> = {}, oc: Record<string, number> = {};
@@ -626,6 +718,14 @@ export default function VmwarePage() {
             {allHosts.length > 0 && <select className="px-2 py-1.5 text-xs border border-border rounded-lg bg-surface text-text-secondary max-w-[160px]" value={filterHost} onChange={(e) => setFilterHost(e.target.value)}><option value="all">All Hosts</option>{allHosts.map((h) => <option key={h} value={h}>{h}</option>)}</select>}
             {allOS.length > 0 && <select className="px-2 py-1.5 text-xs border border-border rounded-lg bg-surface text-text-secondary max-w-[180px]" value={filterOS} onChange={(e) => setFilterOS(e.target.value)}><option value="all">All OS</option>{allOS.map((o) => <option key={o} value={o}>{o}</option>)}</select>}
             {hasActiveFilters && <button onClick={clearFilters} className="jp-action-btn"><X className="w-3.5 h-3.5" /> Clear</button>}
+            <button
+              title="Custom filters"
+              onClick={() => setShowFilterBuilder(v => !v)}
+              className={`jp-action-btn ${showFilterBuilder || filterRules.some(r => r.value.trim()) ? "jp-action-btn--primary" : ""}`}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              {filterRules.some(r => r.value.trim()) && <span className="text-xs">{filterRules.filter(r => r.value.trim()).length}</span>}
+            </button>
             <div className="relative" ref={savedMenuRef}>
               <button className={`jp-action-btn ${showSavedMenu ? "jp-action-btn--primary" : ""}`} onClick={() => setShowSavedMenu((v) => !v)}><Bookmark className="w-3.5 h-3.5" />{savedFilters.length > 0 && <span className="text-xs">{savedFilters.length}</span>}</button>
               {showSavedMenu && (
@@ -662,6 +762,72 @@ export default function VmwarePage() {
             {isAdmin && <button className={`jp-action-btn ${showConfig ? "jp-action-btn--primary" : ""}`} onClick={() => setShowConfig((v) => !v)}><Settings className="w-4 h-4" /></button>}
           </div>
         </header>
+
+        {/* ── Custom filter builder ──────────────────────── */}
+        {showFilterBuilder && (
+          <div className="flex-shrink-0 border-b border-border bg-surface px-4 py-3">
+            <div className="space-y-2">
+              {filterRules.length === 0 && (
+                <p className="text-xs text-text-muted italic">No conditions yet — add one below. All conditions must match (AND).</p>
+              )}
+              {filterRules.map((rule) => {
+                const ops  = fieldOps(rule.field);
+                const type = fieldType(rule.field);
+                const opts = fieldOptions(rule.field);
+                return (
+                  <div key={rule.id} className="flex items-center gap-2 flex-wrap">
+                    {/* Field */}
+                    <select
+                      value={rule.field}
+                      onChange={(e) => setFilterRules(rs => rs.map(r => r.id === rule.id
+                        ? { ...r, field: e.target.value, op: fieldOps(e.target.value)[0].key, value: "" }
+                        : r))}
+                      className="px-2 py-1 text-xs border border-border rounded-lg bg-surface text-text-primary"
+                    >
+                      {FILTER_FIELDS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+                    </select>
+                    {/* Operator */}
+                    <select
+                      value={rule.op}
+                      onChange={(e) => setFilterRules(rs => rs.map(r => r.id === rule.id ? { ...r, op: e.target.value } : r))}
+                      className="px-2 py-1 text-xs border border-border rounded-lg bg-surface text-text-primary"
+                    >
+                      {ops.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+                    </select>
+                    {/* Value */}
+                    {type === "select" ? (
+                      <select
+                        value={rule.value}
+                        onChange={(e) => setFilterRules(rs => rs.map(r => r.id === rule.id ? { ...r, value: e.target.value } : r))}
+                        className="px-2 py-1 text-xs border border-border rounded-lg bg-surface text-text-primary"
+                      >
+                        <option value="">Select…</option>
+                        {opts.map(o => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    ) : (
+                      <input
+                        type={type === "number" ? "number" : "text"}
+                        value={rule.value}
+                        placeholder={type === "number" ? "value" : "value…"}
+                        onChange={(e) => setFilterRules(rs => rs.map(r => r.id === rule.id ? { ...r, value: e.target.value } : r))}
+                        className="w-32 px-2 py-1 text-xs border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+                      />
+                    )}
+                    <button onClick={() => setFilterRules(rs => rs.filter(r => r.id !== rule.id))} className="p-1 rounded hover:bg-red-50 text-text-muted hover:text-red-500">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
+              <button
+                onClick={() => setFilterRules(rs => [...rs, { id: Date.now().toString(), field: "osFamily", op: "eq", value: "" }])}
+                className="flex items-center gap-1 text-xs text-accent hover:underline mt-1"
+              >
+                <Plus className="w-3 h-3" /> Add condition
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="jp-main flex-1 overflow-hidden">
           <aside className="jp-sidebar overflow-y-auto">
