@@ -903,6 +903,20 @@ export default function VmwarePage() {
                         </div>
                       </div>
                     )}
+                    {/* VMs until 50% memory */}
+                    {clusterStats.totalMem > 0 && (() => {
+                      const headroom = Math.max(0, clusterStats.totalMem * 0.5 - clusterStats.usedMem);
+                      const vmsUntil50 = Math.floor(headroom / 8192);
+                      const over50 = clusterStats.usedMem > clusterStats.totalMem * 0.5;
+                      return (
+                        <div className="mb-2 text-[10px]">
+                          <span className="text-text-muted">VMs until 50% mem: </span>
+                          <span className={`font-semibold ${over50 ? "text-red-500" : vmsUntil50 < 5 ? "text-amber-500" : "text-green-600"}`}>
+                            {over50 ? "over 50%" : `+${vmsUntil50} × 8 GB`}
+                          </span>
+                        </div>
+                      );
+                    })()}
                     {/* Prompt to refresh if no capacity data yet */}
                     {!clusterStats.hasCapacityData && (
                       <p className="text-[10px] text-text-muted italic mb-2">
