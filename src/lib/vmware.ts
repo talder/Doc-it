@@ -476,7 +476,10 @@ async function soapPost(url: string, body: string, cookie: string, ignoreSsl: bo
     body,
   }, ignoreSsl);
   const text = await res.text();
-  if (!res.ok) throw new Error(`SOAP ${res.status}: ${text.slice(0, 600)}`);
+  const faultString = text.match(/<faultstring[^>]*>([^<]+)<\/faultstring>/)?.[1]?.trim();
+  if (!res.ok) throw new Error(faultString ?? `SOAP ${res.status}`);
+  // Detect faults in 200 OK responses (some vCenter versions)
+  if (faultString) throw new Error(faultString);
   return text;
 }
 
@@ -688,6 +691,55 @@ export async function listSnapshots(config: VmwareConfig, vmId: string): Promise
     return valMatch ? parseSnapshotTree(valMatch[1]) : [];
   } finally {
     await soapLogout(base, cookie, config.ignoreSslErrors);
+  }
+}
+
+export async function createSnapshot(
+  config: VmwareConfig,
+  vmId: string,
+  name: string,
+  description: string,
+  includeMemory: boolean,
+): Promise<void> {
+  const base = config.vcenterUrl.replace(/\/$/, "");
+  const password = await decryptField(config.passwordEncrypted);
+  const { ignoreSslErrors } = config;
+
+  // Try vSphere REST API first (7.0+)
+  const token = await getSessionToken(base, config.username, password, ignoreSslErrors);
+  try {
+    const res = await vcFetch(`${base}/api/vcenter/vm/${encodeURIComponent(vmId)}/snapshots`, {
+      method: "POST",
+      headers: {
+        "vmware-api-session-id": token,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      },
+      body: JSON.stringify({ name, description, memory: includeMemory, quiesce: false }),
+    }, ignoreSslErrors);
+    if (res.ok || res.status === 204) return; // success
+    if (res.status !== 404 && res.status !== 405 && res.status !== 501) {
+      // Definitive REST failure — extract message
+      const d = await res.json().catch(() => ({}) as Record<string, unknown>);
+      const msg = (d as { messages?: { default_message?: string }[] }).messages?.[0]?.default_message
+        ?? (d as { error_message?: string }).error_message
+        ?? `Snapshot creation failed (HTTP ${res.status})`;
+      throw new Error(msg);
+    }
+    // 404/405/501 means endpoint not available — fall through to SOAP
+  } finally {
+    await deleteSession(base, token, ignoreSslErrors);
+  }
+
+  // SOAP fallback (vSphere 6.x or REST unavailable)
+  const cookie = await soapLogin(base, config.username, password, ignoreSslErrors);
+  try {
+    await soapPost(`${base}/sdk`,
+      `<?xml version="1.0"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><CreateSnapshot_Task xmlns="urn:vim25"><_this type="VirtualMachine">${esc(vmId)}</_this><name>${esc(name)}</name><description>${esc(description)}</description><memory>${includeMemory}</memory><quiesce>false</quiesce></CreateSnapshot_Task></soapenv:Body></soapenv:Envelope>`,
+      cookie, ignoreSslErrors,
+    );
+  } finally {
+    await soapLogout(base, cookie, ignoreSslErrors);
   }
 }
 
