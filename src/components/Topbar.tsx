@@ -108,8 +108,6 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [onCallAllowed, setOnCallAllowed] = useState(false);
   const [vmwareAllowed, setVmwareAllowed] = useState(false);
-  const [vlAllowed, setVlAllowed] = useState(false);
-
   useEffect(() => {
     if (!user) return;
     fetch("/api/oncall/check")
@@ -119,10 +117,6 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
     fetch("/api/vmware/check")
       .then((r) => r.ok ? r.json() : null)
       .then((d) => { if (d?.allowed) setVmwareAllowed(true); })
-      .catch(() => {});
-    fetch("/api/victorialogs/check")
-      .then((r) => r.ok ? r.json() : null)
-      .then((d) => { if (d?.allowed) setVlAllowed(true); })
       .catch(() => {});
   }, [user]);
   const spaceRef = useRef<HTMLDivElement>(null);
@@ -279,15 +273,13 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
         )}
 
         {/* VictoriaLogs */}
-        {vlAllowed && (
-          <button
-            onClick={() => router.push("/victorialogs")}
-            className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
-            data-tip="VictoriaLogs"
-          >
-            <Activity className="w-4 h-4" />
-          </button>
-        )}
+        <button
+          onClick={() => router.push("/victorialogs")}
+          className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
+          data-tip="VictoriaLogs"
+        >
+          <Activity className="w-4 h-4" />
+        </button>
 
         {/* On-Call Reports */}
         {onCallAllowed && (
