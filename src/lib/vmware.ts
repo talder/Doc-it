@@ -352,7 +352,17 @@ async function soapServiceContent(base: string, cookie: string, ignoreSsl: boole
 
 // ── SOAP bulk fetch ────────────────────────────────────────────────────────────
 
-interface VmSoapData { hostMor: string; annotation: string; hardwareVersion: string; snapshotCount: number; }
+interface VmSoapData {
+  hostMor: string;
+  annotation: string;
+  hardwareVersion: string;
+  snapshotCount: number;
+  guestFullName: string;      // summary.config.guestFullName
+  summaryIpAddress: string;   // summary.guest.ipAddress (cached by vCenter)
+  soapIpAddress: string;      // guest.ipAddress (live from Tools)
+  memUsedMiB: number;         // summary.quickStats.guestMemoryUsage
+  cpuUsedMhz: number;         // summary.quickStats.overallCpuUsage
+}
 interface HostSoapData { physicalCpuCores: number; }
 
 function parseSoapPage(
@@ -376,7 +386,12 @@ function parseSoapPage(
       const snapshotCount =
         (snapXml.match(/<rootSnapshotList>/g) ?? []).length +
         (snapXml.match(/<childSnapshotList>/g) ?? []).length;
-      vmData[vmMor] = { hostMor, annotation, hardwareVersion, snapshotCount };
+      const guestFullName = b.match(/summary\.config\.guestFullName<\/name>\s*<val[^>]*>([^<]*)<\/val>/)?.[1]?.trim() ?? "";
+      const summaryIpAddress = b.match(/summary\.guest\.ipAddress<\/name>\s*<val[^>]*>([^<]*)<\/val>/)?.[1]?.trim() ?? "";
+      const soapIpAddress = b.match(/\bguest\.ipAddress<\/name>\s*<val[^>]*>([^<]*)<\/val>/)?.[1]?.trim() ?? "";
+      const memUsedMiB = parseInt(b.match(/guestMemoryUsage<\/name>\s*<val[^>]*>(\d+)<\/val>/)?.[1] ?? "0", 10);
+      const cpuUsedMhz = parseInt(b.match(/overallCpuUsage<\/name>\s*<val[^>]*>(\d+)<\/val>/)?.[1] ?? "0", 10);
+      vmData[vmMor] = { hostMor, annotation, hardwareVersion, snapshotCount, guestFullName, summaryIpAddress, soapIpAddress, memUsedMiB, cpuUsedMhz };
     }
     if (hostMorObj) {
       const cores = parseInt(b.match(/numCpuCores<\/name>\s*<val[^>]*>(\d+)<\/val>/)?.[1] ?? "0", 10);
@@ -403,8 +418,13 @@ async function fetchVMDataViaSoap(
     <propSet><type>VirtualMachine</type><all>false</all>
       <pathSet>runtime.host</pathSet>
       <pathSet>summary.config.annotation</pathSet>
+      <pathSet>summary.config.guestFullName</pathSet>
+      <pathSet>summary.guest.ipAddress</pathSet>
+      <pathSet>summary.quickStats.guestMemoryUsage</pathSet>
+      <pathSet>summary.quickStats.overallCpuUsage</pathSet>
       <pathSet>config.version</pathSet>
       <pathSet>snapshot</pathSet>
+      <pathSet>guest.ipAddress</pathSet>
     </propSet>
     <propSet><type>HostSystem</type><all>false</all>
       <pathSet>hardware.cpuInfo.numCpuCores</pathSet>
@@ -619,7 +639,7 @@ export async function fetchVMs(config: VmwareConfig): Promise<VmwareInventoryCac
         const hwRest = (detail.hardware?.version ?? "").toLowerCase().replace("vmx_", "vmx-");
         const hardwareVersion = hwRest || soapVm?.hardwareVersion || "";
 
-        // Memory in use
+        // Memory in use — try REST first, fall back to SOAP quickStats (already in MiB)
         let memoryUsedMiB: number | null = null;
         if (tools.run_state === "RUNNING") {
           try {
@@ -631,8 +651,15 @@ export async function fetchVMs(config: VmwareConfig): Promise<VmwareInventoryCac
             }
           } catch { /* non-fatal */ }
         }
+        // SOAP fallback: summary.quickStats.guestMemoryUsage
+        if (memoryUsedMiB === null && soapVm && soapVm.memUsedMiB > 0) {
+          memoryUsedMiB = soapVm.memUsedMiB;
+        }
 
-        // IP address
+        // CPU usage from SOAP quickStats (host-measured — no REST call needed)
+        const cpuUsageMhz: number | null = soapVm && soapVm.cpuUsedMhz > 0 ? soapVm.cpuUsedMhz : null;
+
+        // IP address — try REST networking, then fall back to SOAP cached values
         let ipAddress = "";
         if (tools.run_state === "RUNNING") {
           try {
@@ -647,6 +674,8 @@ export async function fetchVMs(config: VmwareConfig): Promise<VmwareInventoryCac
             }
           } catch { /* non-fatal */ }
         }
+        // SOAP fallbacks for IP (summary cached, then live guest property)
+        if (!ipAddress) ipAddress = soapVm?.summaryIpAddress || soapVm?.soapIpAddress || "";
 
         return {
           vmId: vm.vm,
@@ -655,13 +684,13 @@ export async function fetchVMs(config: VmwareConfig): Promise<VmwareInventoryCac
           host: hostName,
           guestOS: detail.guest_OS ?? "",
           guestOSDisplay: guestOsDisplay(detail.guest_OS ?? ""),
-          guestOSFullName: guestId.full_name?.default_message || "",
+          guestOSFullName: guestId.full_name?.default_message || soapVm?.guestFullName || "",
           toolsVersion: tools.version ?? "",
           toolsStatus: tools.run_state ?? "",
           memoryMiB: vm.memory_size_MiB ?? detail.memory?.size_MiB ?? 0,
           memoryUsedMiB,
           cpuCount: vm.cpu_count ?? detail.cpu?.count ?? 0,
-          cpuUsageMhz: null,
+          cpuUsageMhz,
           storageBytesProvisioned,
           ipAddress,
           annotation: soapVm?.annotation ?? "",
