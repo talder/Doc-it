@@ -307,6 +307,51 @@ function VmChangesPanel({ onClose }: { onClose: () => void }) {
           {!loading && <span className="text-xs text-text-muted">({changes.length} entries)</span>}
         </div>
         <div className="flex items-center gap-2">
+          {changes.length > 0 && (
+            <>
+              <button
+                title="Export CSV"
+                onClick={() => {
+                  const header = ["Timestamp", "VM Name", "Type", "Old Value", "New Value"];
+                  const rows = changes.map(c => [
+                    c.timestamp,
+                    c.vmName,
+                    c.changeType,
+                    fmtVal(c.changeType, c.oldValue),
+                    fmtVal(c.changeType, c.newValue),
+                  ]);
+                  const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+                  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url; a.download = `vm-changes-${new Date().toISOString().slice(0,10)}.csv`; a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                className="jp-action-btn text-[10px] px-2 py-1"
+              >
+                <Download className="w-3 h-3" /> CSV
+              </button>
+              <button
+                title="Export XLS"
+                onClick={() => {
+                  const data = changes.map(c => ({
+                    "Timestamp": c.timestamp,
+                    "VM Name": c.vmName,
+                    "Type": c.changeType,
+                    "Old Value": fmtVal(c.changeType, c.oldValue),
+                    "New Value": fmtVal(c.changeType, c.newValue),
+                  }));
+                  const ws = XLSX.utils.json_to_sheet(data);
+                  const wb = XLSX.utils.book_new();
+                  XLSX.utils.book_append_sheet(wb, ws, "VM Changes");
+                  XLSX.writeFile(wb, `vm-changes-${new Date().toISOString().slice(0,10)}.xlsx`);
+                }}
+                className="jp-action-btn text-[10px] px-2 py-1"
+              >
+                <Download className="w-3 h-3" /> XLS
+              </button>
+            </>
+          )}
           <button onClick={load} disabled={loading} className="p-1 rounded hover:bg-muted text-text-muted disabled:opacity-40" title="Refresh">
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
           </button>
