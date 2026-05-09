@@ -552,8 +552,8 @@ export default function VmwarePage() {
       on: vms.filter((v) => v.powerState === "POWERED_ON").length,
       off: vms.filter((v) => v.powerState === "POWERED_OFF").length,
       suspended: vms.filter((v) => v.powerState === "SUSPENDED").length,
-      byHost: Object.entries(hostCounts).sort((a, b) => b[1] - a[1]),
-      byOS: Object.entries(osCounts).sort((a, b) => b[1] - a[1]).slice(0, 12),
+      byHost: Object.entries(hostCounts).sort((a, b) => a[0].localeCompare(b[0])),
+      byOS: Object.entries(osCounts).sort((a, b) => a[0].localeCompare(b[0])).slice(0, 15),
     };
   }, [vms]);
 
