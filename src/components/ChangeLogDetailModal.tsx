@@ -44,8 +44,17 @@ export default function ChangeLogDetailModal({ entry, onClose, onLogRollback, on
       .then(d => setUserList(d.users || [])).catch(() => {});
   }, []);
 
+  // Reset local state whenever the entry prop changes (including to null)
+  useEffect(() => {
+    setLocalEntry(null);
+    setPirNotes("");
+    setApprovalComment("");
+    setShowReassign(false);
+  }, [entry]);
+
+  // Gate visibility on the prop — localEntry is only for optimistic UI updates
+  if (!entry) return null;
   const e = localEntry || entry;
-  if (!e) return null;
 
   const transitions = allowedTransitions(e);
   const closed = isTerminal(e.status);
