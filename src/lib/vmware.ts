@@ -8,6 +8,7 @@
 
 import { readJsonConfig, writeJsonConfig, getDb } from "./config";
 import { encryptField, decryptField } from "./crypto";
+import { addChangeRequest } from "./cmdb";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -114,7 +115,15 @@ function initVmwareChangeTables(): void {
   `);
 }
 
-function detectAndLogVmChanges(vms: VmRecord[]): void {
+// Simple formatters for change request descriptions (server-side)
+function _fmtMib(m: number): string { return m >= 1024 ? `${(m/1024).toFixed(1)} GB` : `${m} MB`; }
+function _fmtBytes(b: number): string {
+  if (b >= 1_099_511_627_776) return `${(b/1_099_511_627_776).toFixed(1)} TB`;
+  if (b >= 1_073_741_824) return `${(b/1_073_741_824).toFixed(1)} GB`;
+  return `${Math.round(b/1_048_576)} MB`;
+}
+
+async function detectAndLogVmChanges(vms: VmRecord[]): Promise<void> {
   try {
     initVmwareChangeTables();
     const db = getDb();
@@ -126,23 +135,61 @@ function detectAndLogVmChanges(vms: VmRecord[]): void {
     const upsertState = db.prepare(
       "INSERT OR REPLACE INTO vmware_vm_state (vm_id, vm_name, host, memory_mib, cpu_count, storage_bytes, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
     );
+
+    // Collect config changes that need a CMDB change request
+    const configChanges: { vm: VmRecord; type: string; oldVal: string; newVal: string }[] = [];
+
     const run = db.transaction(() => {
       for (const vm of vms) {
         const prev = getState.get(vm.vmId) as { host: string; memory_mib: number; cpu_count: number; storage_bytes: number } | undefined;
         if (prev) {
           if (prev.host !== vm.host && vm.host && vm.host !== "Unknown")
             insertChange.run(now, vm.vmId, vm.name, "host", prev.host, vm.host);
-          if (prev.memory_mib !== vm.memoryMiB && vm.memoryMiB > 0)
+          if (prev.memory_mib !== vm.memoryMiB && vm.memoryMiB > 0) {
             insertChange.run(now, vm.vmId, vm.name, "memory", String(prev.memory_mib), String(vm.memoryMiB));
-          if (prev.cpu_count !== vm.cpuCount && vm.cpuCount > 0)
+            configChanges.push({ vm, type: "memory", oldVal: String(prev.memory_mib), newVal: String(vm.memoryMiB) });
+          }
+          if (prev.cpu_count !== vm.cpuCount && vm.cpuCount > 0) {
             insertChange.run(now, vm.vmId, vm.name, "vcpu", String(prev.cpu_count), String(vm.cpuCount));
-          if (vm.storageBytesProvisioned > 0 && prev.storage_bytes !== vm.storageBytesProvisioned)
+            configChanges.push({ vm, type: "vcpu", oldVal: String(prev.cpu_count), newVal: String(vm.cpuCount) });
+          }
+          if (vm.storageBytesProvisioned > 0 && prev.storage_bytes !== vm.storageBytesProvisioned) {
             insertChange.run(now, vm.vmId, vm.name, "disk", String(prev.storage_bytes), String(vm.storageBytesProvisioned));
+            configChanges.push({ vm, type: "disk", oldVal: String(prev.storage_bytes), newVal: String(vm.storageBytesProvisioned) });
+          }
         }
         upsertState.run(vm.vmId, vm.name, vm.host || "", vm.memoryMiB, vm.cpuCount, vm.storageBytesProvisioned, now);
       }
     });
     run();
+
+    // Create a CMDB change request for each config change (memory / vCPU / disk)
+    for (const { vm, type, oldVal, newVal } of configChanges) {
+      try {
+        const typeLabels: Record<string, string> = { memory: "Memory", vcpu: "vCPU Count", disk: "Disk Size" };
+        const label = typeLabels[type] ?? type;
+        const oldFmt = type === "memory" ? _fmtMib(parseInt(oldVal)) : type === "disk" ? _fmtBytes(parseInt(oldVal)) : `${oldVal} vCPU`;
+        const newFmt = type === "memory" ? _fmtMib(parseInt(newVal)) : type === "disk" ? _fmtBytes(parseInt(newVal)) : `${newVal} vCPU`;
+        await addChangeRequest({
+          title: `VM ${label} Change: ${vm.name}`,
+          description: `VMware inventory detected a ${label.toLowerCase()} change for VM "${vm.name}".
+
+Host: ${vm.host}
+${label}: ${oldFmt} → ${newFmt}
+
+Detected automatically by the VMware inventory monitor on ${new Date(now).toLocaleString()}.`,
+          risk: type === "disk" ? "medium" : "low",
+          status: "pending",
+          affectedAssetIds: [],
+          affectedServiceIds: [],
+          rollbackPlan: `Revert ${label.toLowerCase()} of VM "${vm.name}" from ${newFmt} back to ${oldFmt} in vCenter.`,
+          createdBy: "vmware-monitor",
+        });
+        console.log(`[vmware] Created change request for ${type} change on ${vm.name}`);
+      } catch (crErr) {
+        console.error(`[vmware] Failed to create change request for ${vm.name}:`, crErr);
+      }
+    }
   } catch (e) {
     console.error("[vmware] detectAndLogVmChanges error:", e);
   }
@@ -842,7 +889,7 @@ export async function fetchVMs(config: VmwareConfig): Promise<VmwareInventoryCac
       };
     }
 
-    detectAndLogVmChanges(results);
+    await detectAndLogVmChanges(results);
     return { vms: results, fetchedAt: new Date().toISOString(), hostStats };
   } finally {
     await deleteSession(base, token, ignoreSslErrors);
