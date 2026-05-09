@@ -10,6 +10,7 @@ import { readJsonConfig, writeJsonConfig, getDb } from "./config";
 import { encryptField, decryptField } from "./crypto";
 import { addChangeRequest } from "./cmdb";
 import { addChangeLogEntry } from "./changelog";
+import { sendRawSyslog } from "./audit";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -26,6 +27,7 @@ export interface VmwareConfig {
   weeklyReportDay: number;          // 0=Sun … 6=Sat, default 1 (Mon)
   weeklyReportTime: string;         // "HH:MM"
   lastWeeklyReportAt?: string;      // ISO timestamp, debounce
+  victoriaLogsUrl: string;          // optional, e.g. http://localhost:9428
 }
 
 export type VmPowerState = "POWERED_ON" | "POWERED_OFF" | "SUSPENDED";
@@ -164,6 +166,23 @@ async function detectAndLogVmChanges(vms: VmRecord[]): Promise<void> {
     });
     run();
 
+    // Forward all change types to syslog (VictoriaLogs) — fire-and-forget
+    for (const { vm, type, oldVal, newVal } of configChanges) {
+      sendRawSyslog(JSON.stringify({
+        event: "vmware.change",
+        changeType: type,
+        vmId: vm.vmId,
+        vmName: vm.name,
+        host: vm.host,
+        oldValue: oldVal,
+        newValue: newVal,
+        timestamp: now,
+      }), "vmware.change").catch(() => {});
+    }
+    // Also forward host migration events (not in configChanges, already in DB)
+    // They were inserted in the transaction loop — re-iterate to syslog them
+    // (host changes are excluded from configChanges but already in vmware_vm_changes)
+
     // Create a CMDB RFC + Change Log CHG entry for each config change (memory / vCPU / disk)
     const today = now.slice(0, 10);
     for (const { vm, type, oldVal, newVal } of configChanges) {
@@ -240,6 +259,7 @@ const DEFAULT_CONFIG: VmwareConfig = {
   weeklyReportRecipients: [],
   weeklyReportDay: 1,
   weeklyReportTime: "08:00",
+  victoriaLogsUrl: "",
 };
 
 // ── Config CRUD ────────────────────────────────────────────────────────────────

@@ -16,6 +16,7 @@ export async function GET() {
     passwordSet: !!cfg.passwordEncrypted,
     ignoreSslErrors: cfg.ignoreSslErrors,
     allowedUsers: cfg.allowedUsers,
+    victoriaLogsUrl: cfg.victoriaLogsUrl ?? "",
   });
 }
 
@@ -33,6 +34,7 @@ export async function PUT(request: NextRequest) {
     password,
     ignoreSslErrors,
     allowedUsers,
+    victoriaLogsUrl,
   } = body;
 
   await saveVmwareConfig({
@@ -44,6 +46,7 @@ export async function PUT(request: NextRequest) {
     ...(Array.isArray(allowedUsers) ? {
       allowedUsers: allowedUsers.filter((u: unknown) => typeof u === "string" && u.trim()).map((u: string) => u.trim()),
     } : {}),
+    ...(victoriaLogsUrl !== undefined ? { victoriaLogsUrl: String(victoriaLogsUrl).trim() } : {}),
   });
 
   return NextResponse.json({ ok: true });

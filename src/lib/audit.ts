@@ -454,6 +454,36 @@ function sendSyslogTcp(buf: Buffer, host: string, port: number): Promise<{ ok: b
 }
 
 /**
+ * Generic fire-and-forget syslog sender for non-audit events.
+ * Uses the same syslog transport/config as the audit subsystem.
+ * Never throws — silently returns if syslog is not configured.
+ */
+export async function sendRawSyslog(
+  message: string,
+  msgId = "app.event",
+  severity = 6,
+): Promise<void> {
+  try {
+    const config = await getAuditConfig();
+    if (!config.syslog.enabled || !config.syslog.host) return;
+    const facilityNum = FACILITY_MAP[config.syslog.facility] ?? 16;
+    const pri = facilityNum * 8 + severity;
+    const hostname = config.syslog.hostname || os.hostname() || "-";
+    const appName = config.syslog.appName || "doc-it";
+    const host = cleanSyslogHost(config.syslog.host);
+    const syslogMsg = `<${pri}>1 ${new Date().toISOString()} ${hostname} ${appName} - ${msgId} - ${message}`;
+    const buf = Buffer.from(syslogMsg, "utf-8");
+    if (config.syslog.protocol === "udp") {
+      await sendSyslogUdp(buf, host, config.syslog.port);
+    } else {
+      await sendSyslogTcp(buf, host, config.syslog.port);
+    }
+  } catch {
+    // best-effort — never throws
+  }
+}
+
+/**
  * Send a test syslog message and return the result.
  * Used by the admin UI to verify syslog connectivity.
  */

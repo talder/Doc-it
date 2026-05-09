@@ -7,7 +7,7 @@ import {
   ChevronUp, ChevronDown, X, Check, Plus, Trash2, Eye, EyeOff,
   Bookmark, BookmarkCheck, Database, Power, Camera, AlertTriangle,
   Play, Square, RotateCcw, PauseCircle, ChevronRight, SlidersHorizontal,
-  History,
+  History, ExternalLink,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import type { VmHostStats, SnapshotInfo, VmChangeEntry } from "@/lib/vmware";
@@ -319,9 +319,16 @@ function SnapshotTree({ snapshots, onDelete, deleting }: {
 function VmChangesPanel({ onClose }: { onClose: () => void }) {
   const [changes, setChanges] = useState<VmChangeEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [vlUrl, setVlUrl] = useState("");
   // column widths: [Time, VM, Type, Change]
   const [colWidths, setColWidths] = useState([148, 160, 82, 220]);
   const [panelWidth, setPanelWidth] = useState(640);
+
+  useEffect(() => {
+    fetch("/api/vmware/config").then(r => r.json()).then(d => {
+      if (d.victoriaLogsUrl) setVlUrl(d.victoriaLogsUrl.replace(/\/$/, ""));
+    }).catch(() => {});
+  }, []);
 
   const startPanelResize = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -448,6 +455,17 @@ function VmChangesPanel({ onClose }: { onClose: () => void }) {
               </button>
             </>
           )}
+          {vlUrl && (
+            <a
+              href={`${vlUrl}/select/vmui/?query=${encodeURIComponent("vmware.change")}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="jp-action-btn text-[10px] px-2 py-1"
+              title="Open VMware changes in VictoriaLogs"
+            >
+              <ExternalLink className="w-3 h-3" /> VictoriaLogs
+            </a>
+          )}
           <button onClick={load} disabled={loading} className="p-1 rounded hover:bg-muted text-text-muted disabled:opacity-40" title="Refresh">
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
           </button>
@@ -515,8 +533,8 @@ function VmChangesPanel({ onClose }: { onClose: () => void }) {
 
 // ── Config panel ──────────────────────────────────────────────────────────────
 
-interface CfgForm { enabled: boolean; vcenterUrl: string; username: string; password: string; passwordSet: boolean; ignoreSslErrors: boolean; allowedUsers: string[]; }
-const EMPTY_CFG: CfgForm = { enabled: false, vcenterUrl: "", username: "", password: "", passwordSet: false, ignoreSslErrors: false, allowedUsers: [] };
+interface CfgForm { enabled: boolean; vcenterUrl: string; username: string; password: string; passwordSet: boolean; ignoreSslErrors: boolean; allowedUsers: string[]; victoriaLogsUrl: string; }
+const EMPTY_CFG: CfgForm = { enabled: false, vcenterUrl: "", username: "", password: "", passwordSet: false, ignoreSslErrors: false, allowedUsers: [], victoriaLogsUrl: "" };
 
 function ConfigPanel({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState<CfgForm>(EMPTY_CFG);
@@ -530,14 +548,14 @@ function ConfigPanel({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
 
   useEffect(() => {
     fetch("/api/vmware/config").then((r) => r.json()).then((d) => {
-      if (!d.error) setForm({ enabled: !!d.enabled, vcenterUrl: d.vcenterUrl || "", username: d.username || "", password: "", passwordSet: !!d.passwordSet, ignoreSslErrors: !!d.ignoreSslErrors, allowedUsers: Array.isArray(d.allowedUsers) ? d.allowedUsers : [] });
+      if (!d.error) setForm({ enabled: !!d.enabled, vcenterUrl: d.vcenterUrl || "", username: d.username || "", password: "", passwordSet: !!d.passwordSet, ignoreSslErrors: !!d.ignoreSslErrors, allowedUsers: Array.isArray(d.allowedUsers) ? d.allowedUsers : [], victoriaLogsUrl: d.victoriaLogsUrl || "" });
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
 
   const handleSave = async () => {
     setSaving(true); setSaveError("");
-    const body: Record<string, unknown> = { enabled: form.enabled, vcenterUrl: form.vcenterUrl.trim(), username: form.username.trim(), ignoreSslErrors: form.ignoreSslErrors, allowedUsers: form.allowedUsers };
+    const body: Record<string, unknown> = { enabled: form.enabled, vcenterUrl: form.vcenterUrl.trim(), username: form.username.trim(), ignoreSslErrors: form.ignoreSslErrors, allowedUsers: form.allowedUsers, victoriaLogsUrl: form.victoriaLogsUrl.trim() };
     if (form.password) body.password = form.password;
     const res = await fetch("/api/vmware/config", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (res.ok) { onSaved(); onClose(); } else { const d = await res.json(); setSaveError(d.error || "Failed to save"); }
@@ -573,6 +591,11 @@ function ConfigPanel({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
           </div>
         </div>
         <label className="flex items-center gap-2 cursor-pointer text-sm text-text-primary"><input type="checkbox" checked={form.ignoreSslErrors} onChange={(e) => setForm((f) => ({ ...f, ignoreSslErrors: e.target.checked }))} className="rounded border-border" />Ignore SSL errors</label>
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">VictoriaLogs URL <span className="text-text-muted">(optional)</span></label>
+          <input type="url" className="w-full px-3 py-1.5 text-sm bg-surface-alt border border-border rounded-lg text-text-primary focus:outline-none focus:border-accent" placeholder="http://localhost:9428" value={form.victoriaLogsUrl} onChange={(e) => setForm((f) => ({ ...f, victoriaLogsUrl: e.target.value }))} />
+          <p className="text-[10px] text-text-muted mt-1">Enables a direct link from the Changes panel to VictoriaLogs. VM changes are forwarded via syslog with msgId <code>vmware.change</code>.</p>
+        </div>
         <div>
           <label className="block text-xs font-medium text-text-secondary mb-1">Allowed Users</label>
           <div className="flex gap-2 mb-2">
