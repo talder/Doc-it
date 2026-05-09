@@ -499,6 +499,9 @@ export default function ChangeLogPage() {
       <div className="jp-main">
         {/* Sidebar */}
         <aside className="jp-sidebar overflow-y-auto">
+          <div className="jp-section">
+            <input type="text" className="cl-input" placeholder="Search changes…" value={searchQ} onChange={e=>setSearchQ(e.target.value)} />
+          </div>
           <JournalCalendar entryDates={entryDates} selectedDate={selectedDate}
             onSelectDate={d => { setSelectedDate(d===selectedDate?null:d); setDateFrom(""); setDateTo(""); }} />
           <div className="jp-section">
@@ -575,10 +578,6 @@ export default function ChangeLogPage() {
               <input type="checkbox" checked={myChangesOnly} onChange={e=>setMyChangesOnly(e.target.checked)} className="rounded" />
               My changes (assigned to me / authored)
             </label>
-          </div>
-          <div className="jp-section">
-            <h3 className="jp-section-title">Search</h3>
-            <input type="text" className="cl-input" placeholder="Search changes…" value={searchQ} onChange={e=>setSearchQ(e.target.value)} />
           </div>
         </aside>
 
