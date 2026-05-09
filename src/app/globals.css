@@ -10013,7 +10013,7 @@ textarea.modal-input {
 
 /* ── Normalize <select> height to match <input> across all browsers ───────── */
 /* Removes browser-native sizing (which ignores padding on macOS/Safari)   */
-/* and adds a consistent chevron. Tailwind py-*/px-* classes still control */
+/* and adds a consistent chevron. Tailwind padding utilities still control  */
 /* padding since class selectors have higher specificity than element rules. */
 select {
   -webkit-appearance: none;
