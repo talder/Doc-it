@@ -30,6 +30,10 @@ export async function POST(request: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Title required" }, { status: 400 });
   }
 
+  // Reject characters that are problematic as filesystem components on any OS
+  const titleErr = validateTableTitle(title.trim());
+  if (titleErr) return NextResponse.json({ error: titleErr }, { status: 400 });
+
   // Reject duplicate titles within the same space (case-insensitive)
   const existing = await listEnhancedTablesMeta(slug);
   if (existing.some((db) => db.title.toLowerCase() === title.trim().toLowerCase())) {
@@ -93,6 +97,18 @@ export async function POST(request: NextRequest, { params }: Params) {
   await writeEnhancedTable(slug, dbId, db);
   invalidateSpaceCache(slug);
   return NextResponse.json(db, { status: 201 });
+}
+
+function validateTableTitle(title: string): string | null {
+  // Characters that are invalid or problematic in filenames on Windows, macOS (APFS maps `:` to `/`),
+  // and Linux. While table files use hex IDs, blocking these prevents confusion and data loss
+  // if tables are ever exported / imported / manually managed.
+  const bad = /[\/\\:*?"<>|]/;
+  if (bad.test(title)) {
+    return 'Table name may not contain the characters: / \\ : * ? " < > |';
+  }
+  if (title.length > 120) return "Table name must be 120 characters or fewer.";
+  return null;
 }
 
 function getTemplate(templateId: string): { columns: DbColumn[]; sampleRows: Record<string, unknown>[] } {

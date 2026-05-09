@@ -1,6 +1,6 @@
 {
   "name": "doc-it",
-  "version": "0.3.06",
+  "version": "0.3.07",
   "private": true,
   "engines": {
     "node": ">=24.0.0",

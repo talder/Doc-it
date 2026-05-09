@@ -106,19 +106,55 @@ export async function listEnhancedTablesMeta(spaceSlug: string): Promise<Enhance
   }
 
   // Slow path: index missing or empty — rebuild from .db.json files
+  // Also scan one level of subdirectories to recover files stranded by OS filename
+  // remapping (e.g. macOS APFS silently converts `:` in filenames to `/`, which
+  // places the file in a subdirectory instead).
   let files: string[];
   try {
     files = await fs.readdir(dir);
   } catch {
     return [];
   }
-  const rebuilt: Record<string, EnhancedTableMeta> = {};
+
+  // Collect all candidate .db.json paths, including those in immediate subdirs
+  const candidates: string[] = [];
   for (const f of files) {
+    const fullPath = path.join(dir, f);
+    if (f.endsWith(".db.json")) {
+      candidates.push(fullPath);
+    } else if (!f.startsWith("_")) {
+      // Could be a subdirectory created by OS colon-remapping
+      try {
+        const stat = await fs.stat(fullPath);
+        if (stat.isDirectory()) {
+          const subFiles = await fs.readdir(fullPath);
+          for (const sf of subFiles) {
+            if (sf.endsWith(".db.json")) candidates.push(path.join(fullPath, sf));
+          }
+        }
+      } catch { /* skip */ }
+    }
+  }
+
+  const rebuilt: Record<string, EnhancedTableMeta> = {};
+  for (const filePath of candidates) {
+    const f = path.basename(filePath);
     if (!f.endsWith(".db.json")) continue;
     try {
-      const raw = await fs.readFile(path.join(dir, f), "utf-8");
+      const raw = await fs.readFile(filePath, "utf-8");
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === "object" && parsed.id) {
+        // If the file is in a subdirectory (OS colon-remapping), move it back to
+        // the root of the .databases dir with the correct hex-ID-based filename.
+        const expectedPath = path.join(dir, `${parsed.id}.db.json`);
+        if (filePath !== expectedPath) {
+          try {
+            await fs.rename(filePath, expectedPath);
+            // Clean up the now-empty subdirectory if possible
+            const subDir = path.dirname(filePath);
+            if (subDir !== dir) fs.rmdir(subDir).catch(() => {});
+          } catch { /* leave in place if move fails */ }
+        }
         rebuilt[parsed.id] = {
           id: parsed.id,
           title: parsed.title || f.replace(".db.json", ""),

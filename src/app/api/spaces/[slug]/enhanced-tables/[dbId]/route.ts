@@ -95,6 +95,20 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
   }
 
+  // Validate new title if provided
+  if (updates.title !== undefined) {
+    const bad = /[\/\\:*?"<>|]/;
+    if (bad.test(String(updates.title))) {
+      return NextResponse.json(
+        { error: 'Table name may not contain the characters: / \\ : * ? " < > |' },
+        { status: 400 },
+      );
+    }
+    if (String(updates.title).length > 120) {
+      return NextResponse.json({ error: "Table name must be 120 characters or fewer." }, { status: 400 });
+    }
+  }
+
   // Allow updating: title, columns, views, tags
   if (updates.title !== undefined) db.title = updates.title;
   if (updates.columns !== undefined) db.columns = updates.columns;
