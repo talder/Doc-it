@@ -650,14 +650,15 @@ export default function VmwarePage() {
 
   // Cluster capacity stats for HA simulation
   const clusterStats = useMemo(() => {
-    const hosts = Object.values(hostStats);
-    const N = hosts.length;
+    // Derive N from distinct known hosts in VMs — always non-zero when VMs exist
+    const N = new Set(vms.map(v => v.host).filter(h => h && h !== "Unknown")).size;
     if (N === 0) return null;
-    const hasCapacityData = hosts.some(h => (h.totalCpuMhz ?? 0) > 0 || (h.totalMemoryMiB ?? 0) > 0);
-    const totalCpu = hosts.reduce((s, h) => s + h.totalCpuMhz, 0);
-    const usedCpu  = hosts.reduce((s, h) => s + h.usedCpuMhz, 0);
-    const totalMem = hosts.reduce((s, h) => s + h.totalMemoryMiB, 0);
-    const usedMem  = hosts.reduce((s, h) => s + h.usedMemoryMiB, 0);
+    const hsValues = Object.values(hostStats);
+    const hasCapacityData = hsValues.some(h => (h.totalCpuMhz ?? 0) > 0 || (h.totalMemoryMiB ?? 0) > 0);
+    const totalCpu = hsValues.reduce((s, h) => s + (h.totalCpuMhz ?? 0), 0);
+    const usedCpu  = hsValues.reduce((s, h) => s + (h.usedCpuMhz ?? 0), 0);
+    const totalMem = hsValues.reduce((s, h) => s + (h.totalMemoryMiB ?? 0), 0);
+    const usedMem  = hsValues.reduce((s, h) => s + (h.usedMemoryMiB ?? 0), 0);
     const k = Math.min(haK, N - 1);
     const fraction = (N - k) / N;
     const remainCpu = totalCpu * fraction;
@@ -870,17 +871,7 @@ export default function VmwarePage() {
           <aside className="jp-sidebar overflow-y-auto">
             {!loading && vms.length > 0 && (
               <>
-                <div className="jp-section">
-                  <h3 className="jp-section-title">Summary</h3>
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between text-xs text-text-muted"><span>Total VMs</span><span className="font-medium text-text-primary">{stats.total}</span></div>
-                    <div className="flex justify-between text-xs"><span className="text-green-600">Powered On</span><span className="font-medium text-green-700">{stats.on}</span></div>
-                    <div className="flex justify-between text-xs"><span className="text-red-600">Powered Off</span><span className="font-medium text-red-700">{stats.off}</span></div>
-                    {stats.suspended > 0 && <div className="flex justify-between text-xs"><span className="text-amber-600">Suspended</span><span className="font-medium text-amber-700">{stats.suspended}</span></div>}
-                    {stats.withSnapshots > 0 && <div className="flex justify-between text-xs"><span className="text-amber-700">With Snapshots</span><span className="font-medium text-amber-700">{stats.withSnapshots}</span></div>}
-                  </div>
-                </div>
-                {/* Cluster Capacity */}
+                {/* Cluster Capacity — always first */}
                 {clusterStats && (
                   <div className="jp-section">
                     <h3 className="jp-section-title">Cluster Capacity</h3>
@@ -965,6 +956,17 @@ export default function VmwarePage() {
                     </div>
                   </div>
                 )}
+
+                <div className="jp-section">
+                  <h3 className="jp-section-title">Summary</h3>
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-xs text-text-muted"><span>Total VMs</span><span className="font-medium text-text-primary">{stats.total}</span></div>
+                    <div className="flex justify-between text-xs"><span className="text-green-600">Powered On</span><span className="font-medium text-green-700">{stats.on}</span></div>
+                    <div className="flex justify-between text-xs"><span className="text-red-600">Powered Off</span><span className="font-medium text-red-700">{stats.off}</span></div>
+                    {stats.suspended > 0 && <div className="flex justify-between text-xs"><span className="text-amber-600">Suspended</span><span className="font-medium text-amber-700">{stats.suspended}</span></div>}
+                    {stats.withSnapshots > 0 && <div className="flex justify-between text-xs"><span className="text-amber-700">With Snapshots</span><span className="font-medium text-amber-700">{stats.withSnapshots}</span></div>}
+                  </div>
+                </div>
 
                 {stats.byHost.length > 0 && (
                   <div className="jp-section">
