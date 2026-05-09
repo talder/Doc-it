@@ -650,9 +650,10 @@ export default function VmwarePage() {
 
   // Cluster capacity stats for HA simulation
   const clusterStats = useMemo(() => {
-    const hosts = Object.values(hostStats).filter(h => h.totalCpuMhz > 0 || h.totalMemoryMiB > 0);
+    const hosts = Object.values(hostStats);
     const N = hosts.length;
     if (N === 0) return null;
+    const hasCapacityData = hosts.some(h => (h.totalCpuMhz ?? 0) > 0 || (h.totalMemoryMiB ?? 0) > 0);
     const totalCpu = hosts.reduce((s, h) => s + h.totalCpuMhz, 0);
     const usedCpu  = hosts.reduce((s, h) => s + h.usedCpuMhz, 0);
     const totalMem = hosts.reduce((s, h) => s + h.totalMemoryMiB, 0);
@@ -673,6 +674,7 @@ export default function VmwarePage() {
       remainCpu, remainMem,
       canHandle: remainCpu >= usedCpu && remainMem >= usedMem,
       additionalVms: Math.min(addByCpu, addByMem),
+      hasCapacityData,
     };
   }, [hostStats, haK, vms]);
 
@@ -909,6 +911,12 @@ export default function VmwarePage() {
                           ); })()}
                         </div>
                       </div>
+                    )}
+                    {/* Prompt to refresh if no capacity data yet */}
+                    {!clusterStats.hasCapacityData && (
+                      <p className="text-[10px] text-text-muted italic mb-2">
+                        Click <strong>Refresh</strong> to load CPU/memory data.
+                      </p>
                     )}
                     {/* HA simulator */}
                     <div className="mt-2.5 pt-2 border-t border-border">
