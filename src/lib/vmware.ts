@@ -93,14 +93,7 @@ const DEFAULT_CONFIG: VmwareConfig = {
 
 export async function readVmwareConfig(): Promise<VmwareConfig> {
   const cfg = await readJsonConfig<VmwareConfig>(CONFIG_FILE, { ...DEFAULT_CONFIG });
-  return {
-    cacheTtlMinutes: 15,
-    weeklyReportEnabled: false,
-    weeklyReportRecipients: [],
-    weeklyReportDay: 1,
-    weeklyReportTime: "08:00",
-    ...cfg,
-  };
+  return { ...DEFAULT_CONFIG, ...cfg };
 }
 
 export async function saveVmwareConfig(
