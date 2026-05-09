@@ -7,9 +7,10 @@ import {
   ChevronUp, ChevronDown, X, Check, Plus, Trash2, Eye, EyeOff,
   Bookmark, BookmarkCheck, Database, Power, Camera, AlertTriangle,
   Play, Square, RotateCcw, PauseCircle, ChevronRight, SlidersHorizontal,
+  History,
 } from "lucide-react";
 import * as XLSX from "xlsx";
-import type { VmHostStats, SnapshotInfo } from "@/lib/vmware";
+import type { VmHostStats, SnapshotInfo, VmChangeEntry } from "@/lib/vmware";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -214,6 +215,95 @@ function SnapshotTree({ snapshots, onDelete, deleting }: {
         </li>
       ))}
     </ul>
+  );
+}
+
+// ── VM Changes panel ─────────────────────────────────────────────────────────
+
+function VmChangesPanel({ onClose }: { onClose: () => void }) {
+  const [changes, setChanges] = useState<VmChangeEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = () => {
+    setLoading(true);
+    fetch("/api/vmware/changes?limit=500")
+      .then(r => r.json())
+      .then(d => { setChanges(d.changes ?? []); setLoading(false); })
+      .catch(() => setLoading(false));
+  };
+  useEffect(load, []);
+
+  const typeCfg: Record<string, { label: string; cls: string }> = {
+    host:   { label: "Migration", cls: "bg-blue-100 text-blue-800 border-blue-200" },
+    memory: { label: "Memory",    cls: "bg-purple-100 text-purple-800 border-purple-200" },
+    vcpu:   { label: "vCPU",      cls: "bg-orange-100 text-orange-800 border-orange-200" },
+    disk:   { label: "Disk",      cls: "bg-teal-100 text-teal-800 border-teal-200" },
+  };
+
+  const fmtVal = (type: string, val: string) => {
+    if (type === "memory") return fmtMiB(parseInt(val));
+    if (type === "disk")   return fmtBytes(parseInt(val));
+    if (type === "vcpu")   return `${val} vCPU`;
+    return val;
+  };
+
+  return (
+    <div className="w-[520px] border-l border-border bg-surface flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <History className="w-4 h-4 text-accent" />
+          <span className="text-sm font-bold text-text-primary">VM Change Log</span>
+          {!loading && <span className="text-xs text-text-muted">({changes.length} entries)</span>}
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={load} disabled={loading} className="p-1 rounded hover:bg-muted text-text-muted disabled:opacity-40" title="Refresh">
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+          </button>
+          <button onClick={onClose} className="p-1 rounded hover:bg-muted text-text-muted"><X className="w-4 h-4" /></button>
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {loading ? (
+          <div className="flex items-center justify-center h-32"><RefreshCw className="w-5 h-5 animate-spin text-text-muted" /></div>
+        ) : changes.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-40 text-text-muted px-4 text-center">
+            <History className="w-8 h-8 mb-2 opacity-30" />
+            <p className="text-sm">No changes recorded yet.</p>
+            <p className="text-xs mt-1">Changes are detected automatically on each Refresh.</p>
+          </div>
+        ) : (
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border bg-surface-alt sticky top-0">
+                <th className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase tracking-wide">Time</th>
+                <th className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase tracking-wide">VM</th>
+                <th className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase tracking-wide">Type</th>
+                <th className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase tracking-wide">Change</th>
+              </tr>
+            </thead>
+            <tbody>
+              {changes.map(c => {
+                const tc = typeCfg[c.changeType] ?? { label: c.changeType, cls: "bg-gray-100 text-gray-700 border-gray-200" };
+                return (
+                  <tr key={c.id} className="border-b border-border hover:bg-muted/40">
+                    <td className="px-3 py-1.5 text-text-muted whitespace-nowrap text-[10px]">{fmtTime(c.timestamp)}</td>
+                    <td className="px-3 py-1.5 text-text-primary font-medium max-w-[130px] truncate" title={c.vmName}>{c.vmName}</td>
+                    <td className="px-3 py-1.5">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold ${tc.cls}`}>{tc.label}</span>
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <span className="text-red-500">{fmtVal(c.changeType, c.oldValue)}</span>
+                      <span className="mx-1.5 text-text-muted">→</span>
+                      <span className="text-green-600">{fmtVal(c.changeType, c.newValue)}</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -580,6 +670,7 @@ export default function VmwarePage() {
   const [filterRules, setFilterRules] = useState<FilterRule[]>([]);
   const [showFilterBuilder, setShowFilterBuilder] = useState(false);
   const [haK, setHaK] = useState(1); // simulated failed host count
+  const [showChanges, setShowChanges] = useState(false);
 
   useEffect(() => { fetch("/api/auth/me").then((r) => r.json()).then((d) => { if (d.user?.isAdmin) setIsAdmin(true); }).catch(() => {}); }, []);
   useEffect(() => { setSavedFilters(loadSavedFilters()); }, []);
@@ -791,6 +882,9 @@ export default function VmwarePage() {
               )}
             </div>
             <button className="jp-action-btn" onClick={() => fetchVMs(true)} disabled={loading} title="Refresh from vCenter (bypass cache)"><RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />{!loading && "Refresh"}</button>
+            <button className={`jp-action-btn ${showChanges ? "jp-action-btn--primary" : ""}`} onClick={() => setShowChanges(v => !v)} title="VM Change Log">
+              <History className="w-4 h-4" /> Changes
+            </button>
             <div className="flex items-center gap-1">
               <button className="jp-action-btn" onClick={exportCSV} disabled={!!exporting || filtered.length === 0}><Download className="w-3.5 h-3.5" /> CSV</button>
               <button className="jp-action-btn" onClick={exportXLSX} disabled={!!exporting || filtered.length === 0}><Download className="w-3.5 h-3.5" /> XLS</button>
@@ -903,17 +997,25 @@ export default function VmwarePage() {
                         </div>
                       </div>
                     )}
-                    {/* VMs until 50% memory */}
+                    {/* Memory headroom + VMs until 50% */}
                     {clusterStats.totalMem > 0 && (() => {
                       const headroom = Math.max(0, clusterStats.totalMem * 0.5 - clusterStats.usedMem);
                       const vmsUntil50 = Math.floor(headroom / 8192);
                       const over50 = clusterStats.usedMem > clusterStats.totalMem * 0.5;
                       return (
-                        <div className="mb-2 text-[10px]">
-                          <span className="text-text-muted">VMs until 50% mem: </span>
-                          <span className={`font-semibold ${over50 ? "text-red-500" : vmsUntil50 < 5 ? "text-amber-500" : "text-green-600"}`}>
-                            {over50 ? "over 50%" : `+${vmsUntil50} × 8 GB`}
-                          </span>
+                        <div className="mb-2 space-y-0.5">
+                          <div className="text-[10px]">
+                            <span className="text-text-muted">Free until 50%: </span>
+                            <span className={`font-semibold ${over50 ? "text-red-500" : "text-text-primary"}`}>
+                              {over50 ? "over 50%" : fmtMiB(headroom)}
+                            </span>
+                          </div>
+                          <div className="text-[10px]">
+                            <span className="text-text-muted">VMs until 50% mem: </span>
+                            <span className={`font-semibold ${over50 ? "text-red-500" : vmsUntil50 < 5 ? "text-amber-500" : "text-green-600"}`}>
+                              {over50 ? "over 50%" : `+${vmsUntil50} × 8 GB`}
+                            </span>
+                          </div>
                         </div>
                       );
                     })()}
@@ -1079,6 +1181,7 @@ export default function VmwarePage() {
           </main>
 
           {showConfig && isAdmin && <ConfigPanel onClose={() => setShowConfig(false)} onSaved={() => fetchVMs(true)} />}
+          {showChanges && <VmChangesPanel onClose={() => setShowChanges(false)} />}
         </div>
       </div>
     </>

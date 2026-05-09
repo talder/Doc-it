@@ -6,7 +6,7 @@
  * The password is AES-256-GCM encrypted via crypto.ts.
  */
 
-import { readJsonConfig, writeJsonConfig } from "./config";
+import { readJsonConfig, writeJsonConfig, getDb } from "./config";
 import { encryptField, decryptField } from "./crypto";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -72,6 +72,94 @@ export interface VmwareInventoryCache {
   vms: VmRecord[];
   fetchedAt: string;
   hostStats: Record<string, VmHostStats>;
+}
+
+export type VmChangeType = "host" | "memory" | "vcpu" | "disk";
+
+export interface VmChangeEntry {
+  id: number;
+  timestamp: string;
+  vmId: string;
+  vmName: string;
+  changeType: VmChangeType;
+  oldValue: string;
+  newValue: string;
+}
+
+// ── VM change tracking ────────────────────────────────────────────────────────
+
+function initVmwareChangeTables(): void {
+  const db = getDb();
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS vmware_vm_state (
+      vm_id        TEXT PRIMARY KEY,
+      vm_name      TEXT NOT NULL,
+      host         TEXT NOT NULL,
+      memory_mib   INTEGER NOT NULL,
+      cpu_count    INTEGER NOT NULL,
+      storage_bytes INTEGER NOT NULL,
+      updated_at   TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS vmware_vm_changes (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp    TEXT NOT NULL,
+      vm_id        TEXT NOT NULL,
+      vm_name      TEXT NOT NULL,
+      change_type  TEXT NOT NULL,
+      old_value    TEXT NOT NULL,
+      new_value    TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_vmware_changes_ts
+      ON vmware_vm_changes(timestamp DESC);
+  `);
+}
+
+function detectAndLogVmChanges(vms: VmRecord[]): void {
+  try {
+    initVmwareChangeTables();
+    const db = getDb();
+    const now = new Date().toISOString();
+    const getState = db.prepare("SELECT host, memory_mib, cpu_count, storage_bytes FROM vmware_vm_state WHERE vm_id = ?");
+    const insertChange = db.prepare(
+      "INSERT INTO vmware_vm_changes (timestamp, vm_id, vm_name, change_type, old_value, new_value) VALUES (?, ?, ?, ?, ?, ?)"
+    );
+    const upsertState = db.prepare(
+      "INSERT OR REPLACE INTO vmware_vm_state (vm_id, vm_name, host, memory_mib, cpu_count, storage_bytes, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    );
+    const run = db.transaction(() => {
+      for (const vm of vms) {
+        const prev = getState.get(vm.vmId) as { host: string; memory_mib: number; cpu_count: number; storage_bytes: number } | undefined;
+        if (prev) {
+          if (prev.host !== vm.host && vm.host && vm.host !== "Unknown")
+            insertChange.run(now, vm.vmId, vm.name, "host", prev.host, vm.host);
+          if (prev.memory_mib !== vm.memoryMiB && vm.memoryMiB > 0)
+            insertChange.run(now, vm.vmId, vm.name, "memory", String(prev.memory_mib), String(vm.memoryMiB));
+          if (prev.cpu_count !== vm.cpuCount && vm.cpuCount > 0)
+            insertChange.run(now, vm.vmId, vm.name, "vcpu", String(prev.cpu_count), String(vm.cpuCount));
+          if (vm.storageBytesProvisioned > 0 && prev.storage_bytes !== vm.storageBytesProvisioned)
+            insertChange.run(now, vm.vmId, vm.name, "disk", String(prev.storage_bytes), String(vm.storageBytesProvisioned));
+        }
+        upsertState.run(vm.vmId, vm.name, vm.host || "", vm.memoryMiB, vm.cpuCount, vm.storageBytesProvisioned, now);
+      }
+    });
+    run();
+  } catch (e) {
+    console.error("[vmware] detectAndLogVmChanges error:", e);
+  }
+}
+
+export function getVmwareChanges(limit = 100): VmChangeEntry[] {
+  try {
+    initVmwareChangeTables();
+    const db = getDb();
+    const rows = db.prepare(
+      "SELECT id, timestamp, vm_id, vm_name, change_type, old_value, new_value FROM vmware_vm_changes ORDER BY id DESC LIMIT ?"
+    ).all(limit) as { id: number; timestamp: string; vm_id: string; vm_name: string; change_type: string; old_value: string; new_value: string }[];
+    return rows.map(r => ({
+      id: r.id, timestamp: r.timestamp, vmId: r.vm_id, vmName: r.vm_name,
+      changeType: r.change_type as VmChangeType, oldValue: r.old_value, newValue: r.new_value,
+    }));
+  } catch { return []; }
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -754,6 +842,7 @@ export async function fetchVMs(config: VmwareConfig): Promise<VmwareInventoryCac
       };
     }
 
+    detectAndLogVmChanges(results);
     return { vms: results, fetchedAt: new Date().toISOString(), hostStats };
   } finally {
     await deleteSession(base, token, ignoreSslErrors);
