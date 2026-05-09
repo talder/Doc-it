@@ -167,6 +167,102 @@ function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; s
   return sortDir === "asc" ? <ChevronUp className="w-3 h-3 inline ml-0.5" /> : <ChevronDown className="w-3 h-3 inline ml-0.5" />;
 }
 
+// ── Take Snapshot modal ───────────────────────────────────────────────────────
+
+function TakeSnapshotModal({ vm, onClose, onDone }: {
+  vm: { vmId: string; name: string };
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [snapName, setSnapName] = useState(() => {
+    const n = new Date();
+    const d = n.toISOString().slice(0, 10);
+    const hh = String(n.getHours()).padStart(2, "0");
+    const mm = String(n.getMinutes()).padStart(2, "0");
+    return `Snapshot ${d} ${hh}h${mm}`;
+  });
+  const [description, setDescription] = useState("");
+  const [includeMemory, setIncludeMemory] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleCreate = async () => {
+    if (!snapName.trim()) return;
+    setSaving(true); setError("");
+    try {
+      const res = await fetch(`/api/vmware/vms/${vm.vmId}/snapshots`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: snapName.trim(), description: description.trim(), includeMemory }),
+      });
+      if (res.ok) { onDone(); onClose(); }
+      else { const d = await res.json(); setError(d.error || `HTTP ${res.status}`); }
+    } catch (e) { setError(e instanceof Error ? e.message : "Unknown error"); }
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-surface rounded-xl shadow-2xl border border-border w-full max-w-sm" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <div className="flex items-center gap-2">
+            <Camera className="w-4 h-4 text-accent" />
+            <span className="text-sm font-bold text-text-primary">Take Snapshot</span>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-muted text-text-muted"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="px-5 py-4 space-y-4">
+          <p className="text-xs text-text-muted">Live snapshot of <span className="font-semibold text-text-primary">{vm.name}</span>. The VM will remain powered on.</p>
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1">Snapshot name <span className="text-red-500">*</span></label>
+            <input
+              autoFocus
+              type="text"
+              className="w-full px-3 py-1.5 text-sm bg-surface-alt border border-border rounded-lg text-text-primary focus:outline-none focus:border-accent"
+              value={snapName}
+              onChange={e => setSnapName(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && !saving) handleCreate(); if (e.key === "Escape") onClose(); }}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1">Description (optional)</label>
+            <textarea
+              className="w-full px-3 py-1.5 text-sm bg-surface-alt border border-border rounded-lg text-text-primary focus:outline-none focus:border-accent resize-none"
+              rows={2}
+              placeholder="What does this snapshot capture?"
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+            />
+          </div>
+          <label className="flex items-start gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              className="mt-0.5 rounded border-border"
+              checked={includeMemory}
+              onChange={e => setIncludeMemory(e.target.checked)}
+            />
+            <div>
+              <span className="text-sm font-medium text-text-primary">Include memory state</span>
+              <p className="text-xs text-text-muted mt-0.5">Captures RAM contents so the VM can resume from this exact state. Takes longer and uses more disk space.</p>
+            </div>
+          </label>
+          {error && <div className="text-xs px-3 py-2 rounded-lg border bg-red-50 border-red-300 text-red-800">{error}</div>}
+        </div>
+        <div className="px-5 py-4 border-t border-border flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-1.5 text-sm border border-border rounded-lg hover:bg-muted text-text-secondary">Cancel</button>
+          <button
+            onClick={handleCreate}
+            disabled={saving || !snapName.trim()}
+            className="px-4 py-1.5 text-sm bg-accent text-white rounded-lg hover:bg-accent/90 disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {saving ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Creating…</> : <><Camera className="w-3.5 h-3.5" /> Take Snapshot</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Snapshot tree ──────────────────────────────────────────────────────────────
 
 function SnapshotTree({ snapshots, onDelete, deleting }: {
@@ -577,6 +673,7 @@ function VmRow({ vm, onFilterHost, onFilterOS, isAdmin }: {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState("");
+  const [showTakeSnapshot, setShowTakeSnapshot] = useState(false);
   const isZombie = vm.powerState === "POWERED_OFF";
 
   const loadSnapshots = async () => {
@@ -614,6 +711,13 @@ function VmRow({ vm, onFilterHost, onFilterOS, isAdmin }: {
 
   return (
     <>
+      {showTakeSnapshot && (
+        <TakeSnapshotModal
+          vm={{ vmId: vm.vmId, name: vm.name }}
+          onClose={() => setShowTakeSnapshot(false)}
+          onDone={() => { if (snapshotPanelOpen) loadSnapshots(); }}
+        />
+      )}
       <tr className={`cl-tr cursor-pointer ${isZombie ? "opacity-70" : ""}`} onClick={() => setExpanded((v) => !v)}>
         <td className="cl-td font-medium text-text-primary">
           <div className="flex items-center gap-1.5">
@@ -736,6 +840,15 @@ function VmRow({ vm, onFilterHost, onFilterOS, isAdmin }: {
               </>)}
               {actionMsg && <span className={`text-xs font-medium ${actionMsg.startsWith("✓") ? "text-green-600" : "text-red-600"}`}>{actionMsg}</span>}
 
+              {vm.powerState === "POWERED_ON" && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowTakeSnapshot(true); }}
+                  className="flex items-center gap-1 px-2 py-1 text-xs border border-border rounded hover:bg-amber-50 hover:border-amber-300 hover:text-amber-800 text-text-secondary transition-colors"
+                  title="Take a live snapshot of this VM"
+                >
+                  <Camera className="w-3 h-3" /> Take Snapshot
+                </button>
+              )}
               {(vm.snapshotCount > 0 || isAdmin) && (
                 <button onClick={(e) => { e.stopPropagation(); handleSnapshot(); }} className={`flex items-center gap-1 px-2 py-1 text-xs border rounded ml-auto transition-colors ${
                   snapshotPanelOpen ? "bg-amber-100 border-amber-300 text-amber-800" : "border-border hover:bg-muted text-text-secondary"
