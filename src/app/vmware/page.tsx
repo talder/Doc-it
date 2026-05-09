@@ -323,7 +323,19 @@ function VmRow({ vm, onFilterHost, onFilterOS, isAdmin }: {
           <div className="flex items-center gap-1.5">
             <Server className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />
             {isZombie && <span title="Powered off — possible zombie VM" className="text-red-400"><AlertTriangle className="w-3 h-3" /></span>}
-            {vm.snapshotCount > 0 && <span className="text-[10px] bg-amber-100 text-amber-700 px-1 rounded font-bold" title={`${vm.snapshotCount} snapshot${vm.snapshotCount !== 1 ? "s" : ""}`}>{vm.snapshotCount}📷</span>}
+            {vm.snapshotCount > 0 && (
+              <button
+                title={`${vm.snapshotCount} snapshot${vm.snapshotCount !== 1 ? "s" : ""} — click to manage`}
+                onClick={(e) => { e.stopPropagation(); handleSnapshot(); }}
+                className={`text-[10px] px-1 rounded font-bold flex items-center gap-0.5 transition-colors ${
+                  snapshotPanelOpen
+                    ? "bg-amber-300 text-amber-900"
+                    : "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                }`}
+              >
+                <Camera className="w-2.5 h-2.5" />{vm.snapshotCount}
+              </button>
+            )}
             <span className="truncate">{vm.name}</span>
           </div>
         </td>
@@ -348,6 +360,35 @@ function VmRow({ vm, onFilterHost, onFilterOS, isAdmin }: {
         </td>
         <td className="cl-td text-text-secondary">{fmtBytes(vm.storageBytesProvisioned)}</td>
       </tr>
+
+      {/* Snapshot panel — always directly below the main row when open */}
+      {snapshotPanelOpen && (
+        <tr className="border-b border-amber-200">
+          <td colSpan={9} className="px-4 py-3 bg-amber-50/40">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-semibold text-amber-800 flex items-center gap-1.5">
+                <Camera className="w-4 h-4" />
+                Snapshots — {vm.name}
+              </span>
+              <div className="flex items-center gap-2">
+                <button onClick={loadSnapshots} disabled={snapsLoading} className="text-xs text-accent hover:underline flex items-center gap-1 disabled:opacity-50">
+                  <RefreshCw className={`w-3 h-3 ${snapsLoading ? "animate-spin" : ""}`} /> Refresh
+                </button>
+                <button onClick={() => setSnapshotPanelOpen(false)} className="p-1 rounded hover:bg-amber-100 text-amber-700"><X className="w-3.5 h-3.5" /></button>
+              </div>
+            </div>
+            {snapsLoading ? (
+              <div className="text-xs text-text-muted flex items-center gap-1.5"><RefreshCw className="w-3 h-3 animate-spin" /> Loading snapshots…</div>
+            ) : snapshots && snapshots.length > 0 ? (
+              <SnapshotTree snapshots={snapshots} onDelete={handleDelete} deleting={deleting} />
+            ) : (
+              <p className="text-xs text-text-muted italic">No snapshots found for this VM.</p>
+            )}
+            <p className="text-[10px] text-amber-600 mt-2">⚠️ Snapshot deletion is irreversible. Old snapshots can consume significant disk space.</p>
+          </td>
+        </tr>
+      )}
+
       {expanded && (
         <tr className="bg-surface-alt border-b border-border">
           <td colSpan={9} className="px-4 py-3">
@@ -375,7 +416,6 @@ function VmRow({ vm, onFilterHost, onFilterOS, isAdmin }: {
 
             {/* Action bar */}
             <div className="flex items-center gap-2 flex-wrap border-t border-border pt-3">
-              {/* Power actions */}
               {vm.powerState !== "POWERED_ON" && (
                 <button onClick={() => handlePower("start")} disabled={!!actionLoading} className="flex items-center gap-1 px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50">
                   <Play className="w-3 h-3" />{actionLoading === "start" ? "Starting…" : "Start"}
@@ -400,35 +440,16 @@ function VmRow({ vm, onFilterHost, onFilterOS, isAdmin }: {
               </>)}
               {actionMsg && <span className={`text-xs font-medium ${actionMsg.startsWith("✓") ? "text-green-600" : "text-red-600"}`}>{actionMsg}</span>}
 
-              {/* Snapshot button */}
               {(vm.snapshotCount > 0 || isAdmin) && (
-                <button onClick={(e) => { e.stopPropagation(); handleSnapshot(); }} className={`flex items-center gap-1 px-2 py-1 text-xs border border-border rounded hover:bg-muted ml-auto ${snapshotPanelOpen ? "bg-amber-50 border-amber-300 text-amber-700" : "text-text-secondary"}`}>
+                <button onClick={(e) => { e.stopPropagation(); handleSnapshot(); }} className={`flex items-center gap-1 px-2 py-1 text-xs border rounded ml-auto transition-colors ${
+                  snapshotPanelOpen ? "bg-amber-100 border-amber-300 text-amber-800" : "border-border hover:bg-muted text-text-secondary"
+                }`}>
                   <Camera className="w-3 h-3" />
                   {vm.snapshotCount > 0 ? `${vm.snapshotCount} Snapshot${vm.snapshotCount !== 1 ? "s" : ""}` : "Snapshots"}
                   <ChevronRight className={`w-3 h-3 transition-transform ${snapshotPanelOpen ? "rotate-90" : ""}`} />
                 </button>
               )}
             </div>
-
-            {/* Snapshot panel */}
-            {snapshotPanelOpen && (
-              <div className="mt-3 border border-amber-200 rounded-lg bg-amber-50/30 p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold text-amber-700 flex items-center gap-1"><Camera className="w-3.5 h-3.5" /> Snapshots</span>
-                  <button onClick={() => { loadSnapshots(); }} disabled={snapsLoading} className="text-xs text-accent hover:underline flex items-center gap-1">
-                    <RefreshCw className={`w-3 h-3 ${snapsLoading ? "animate-spin" : ""}`} /> Refresh
-                  </button>
-                </div>
-                {snapsLoading ? (
-                  <div className="text-xs text-text-muted">Loading…</div>
-                ) : snapshots && snapshots.length > 0 ? (
-                  <SnapshotTree snapshots={snapshots} onDelete={handleDelete} deleting={deleting} />
-                ) : (
-                  <p className="text-xs text-text-muted">No snapshots found.</p>
-                )}
-                <p className="text-[10px] text-text-muted mt-2">⚠️ Deleting snapshots is irreversible. Old snapshots can consume significant disk space.</p>
-              </div>
-            )}
           </td>
         </tr>
       )}
