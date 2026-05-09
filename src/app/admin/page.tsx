@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Plus, Trash2, Shield, ShieldCheck, Users, Layout, Settings, Key, Copy, Check, ClipboardList, ChevronLeft, ChevronRight, Download, Lock, LockOpen, ChevronDown, ChevronUp, ShieldOff, HardDrive, RefreshCw, PlayCircle, XCircle, RotateCcw, Eye, EyeOff, UsersRound, X, Network, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Shield, ShieldCheck, Users, Layout, Settings, Key, Copy, Check, ClipboardList, ChevronLeft, ChevronRight, Download, Lock, LockOpen, ChevronDown, ChevronUp, ShieldOff, HardDrive, RefreshCw, PlayCircle, RotateCcw, Eye, EyeOff, UsersRound, X, Network, AlertTriangle } from "lucide-react";
 import PasswordStrengthMeter from "@/components/PasswordStrengthMeter";
 import { isPasswordValid } from "@/lib/password-policy";
 import type { SanitizedUser, Space, SpaceRole, AuditConfig, AuditEntry, UserGroup, AdConfig, AdGroupMapping, DashboardAccessConfig, CrashEntry, SnapshotEntry } from "@/lib/types";
@@ -193,13 +193,20 @@ function AdminContent() {
   const [newOnCallRecipient, setNewOnCallRecipient] = useState("");
 
   // VMware settings state
-  const [vmwareCfg, setVmwareCfg] = useState({ enabled: false, vcenterUrl: "", username: "", password: "", passwordSet: false, ignoreSslErrors: false, allowedUsers: [] as string[] });
+  const [vmwareCfg, setVmwareCfg] = useState({
+    enabled: false, vcenterUrl: "", username: "", password: "", passwordSet: false,
+    ignoreSslErrors: false, allowedUsers: [] as string[],
+    cacheTtlMinutes: 15,
+    weeklyReportEnabled: false, weeklyReportRecipients: [] as string[],
+    weeklyReportDay: 1, weeklyReportTime: "08:00",
+  });
   const [vmwareCfgLoaded, setVmwareCfgLoaded] = useState(false);
   const [vmwareSaving, setVmwareSaving] = useState(false);
   const [vmwareTesting, setVmwareTesting] = useState(false);
   const [vmwareTestResult, setVmwareTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [newVmwareUser, setNewVmwareUser] = useState("");
   const [showVmwarePassword, setShowVmwarePassword] = useState(false);
+  const [newVmwareRecipient, setNewVmwareRecipient] = useState("");
 
   // Crash logs state
   const [crashEntries, setCrashEntries] = useState<CrashEntry[]>([]);
@@ -352,6 +359,11 @@ function AdminContent() {
         passwordSet: !!data.passwordSet,
         ignoreSslErrors: !!data.ignoreSslErrors,
         allowedUsers: Array.isArray(data.allowedUsers) ? data.allowedUsers : [],
+        cacheTtlMinutes: data.cacheTtlMinutes ?? 15,
+        weeklyReportEnabled: !!data.weeklyReportEnabled,
+        weeklyReportRecipients: Array.isArray(data.weeklyReportRecipients) ? data.weeklyReportRecipients : [],
+        weeklyReportDay: data.weeklyReportDay ?? 1,
+        weeklyReportTime: data.weeklyReportTime || "08:00",
       });
       setVmwareCfgLoaded(true);
     }
@@ -1516,7 +1528,7 @@ function AdminContent() {
                             const data = await res.json();
                             if (data.ok) flash(data.message || "Test message sent successfully", "success");
                             else flash(`Syslog test failed: ${data.error}`, "error");
-                          } catch (err) {
+                          } catch {
                             flash("Failed to send test message", "error");
                           }
                         }}
@@ -3178,6 +3190,83 @@ function AdminContent() {
                 </div>
               </div>
 
+              {/* Cache TTL */}
+              <div className="max-w-xs">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Inventory Cache TTL (minutes)</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={1440}
+                  value={vmwareCfg.cacheTtlMinutes}
+                  onChange={(e) => setVmwareCfg({ ...vmwareCfg, cacheTtlMinutes: parseInt(e.target.value) || 15 })}
+                  className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-text-muted mt-1">How long to cache the VM inventory. Use the Refresh button on the VMware page to force a reload.</p>
+              </div>
+
+              {/* Weekly Report */}
+              <div>
+                <h3 className="text-sm font-semibold text-text-primary mb-1">Weekly Inventory Report</h3>
+                <p className="text-xs text-text-muted mb-3">Send a weekly HTML email with VM inventory summary. Requires SMTP to be configured.</p>
+                <label className="flex items-center gap-2 text-sm text-text-secondary mb-3">
+                  <input
+                    type="checkbox"
+                    checked={vmwareCfg.weeklyReportEnabled}
+                    onChange={(e) => setVmwareCfg({ ...vmwareCfg, weeklyReportEnabled: e.target.checked })}
+                    className="rounded"
+                  />
+                  Enable weekly inventory report
+                </label>
+                <div className="grid grid-cols-2 gap-4 max-w-sm mb-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Day of week</label>
+                    <select
+                      value={vmwareCfg.weeklyReportDay}
+                      onChange={(e) => setVmwareCfg({ ...vmwareCfg, weeklyReportDay: parseInt(e.target.value) })}
+                      className="w-full text-sm border border-border rounded-lg px-3 py-1.5"
+                    >
+                      {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d, i) => <option key={i} value={i}>{d}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Send time</label>
+                    <input
+                      type="time"
+                      value={vmwareCfg.weeklyReportTime}
+                      onChange={(e) => setVmwareCfg({ ...vmwareCfg, weeklyReportTime: e.target.value })}
+                      className="w-full text-sm border border-border rounded-lg px-3 py-1.5"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Recipients</label>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {vmwareCfg.weeklyReportRecipients.map((r, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-gray-100 text-gray-700 rounded-full border border-border">
+                        {r}
+                        <button onClick={() => setVmwareCfg({ ...vmwareCfg, weeklyReportRecipients: vmwareCfg.weeklyReportRecipients.filter((_, j) => j !== i) })} className="hover:text-red-600"><X className="w-3 h-3" /></button>
+                      </span>
+                    ))}
+                    {vmwareCfg.weeklyReportRecipients.length === 0 && <span className="text-xs text-text-muted">No recipients added</span>}
+                  </div>
+                  <div className="flex gap-2 max-w-xs">
+                    <input
+                      type="email"
+                      value={newVmwareRecipient}
+                      onChange={(e) => setNewVmwareRecipient(e.target.value)}
+                      placeholder="email@example.com"
+                      className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      onKeyDown={(e) => { if (e.key === "Enter" && newVmwareRecipient.trim()) { setVmwareCfg({ ...vmwareCfg, weeklyReportRecipients: [...vmwareCfg.weeklyReportRecipients, newVmwareRecipient.trim()] }); setNewVmwareRecipient(""); } }}
+                    />
+                    <button
+                      disabled={!newVmwareRecipient.trim()}
+                      onClick={() => { setVmwareCfg({ ...vmwareCfg, weeklyReportRecipients: [...vmwareCfg.weeklyReportRecipients, newVmwareRecipient.trim()] }); setNewVmwareRecipient(""); }}
+                      className="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50"
+                    >Add</button>
+                  </div>
+                </div>
+              </div>
+
               {/* Test result */}
               {vmwareTestResult && (
                 <div className={`text-sm px-4 py-3 rounded-lg border ${
@@ -3201,6 +3290,11 @@ function AdminContent() {
                       username: vmwareCfg.username.trim(),
                       ignoreSslErrors: vmwareCfg.ignoreSslErrors,
                       allowedUsers: vmwareCfg.allowedUsers,
+                      cacheTtlMinutes: vmwareCfg.cacheTtlMinutes,
+                      weeklyReportEnabled: vmwareCfg.weeklyReportEnabled,
+                      weeklyReportRecipients: vmwareCfg.weeklyReportRecipients,
+                      weeklyReportDay: vmwareCfg.weeklyReportDay,
+                      weeklyReportTime: vmwareCfg.weeklyReportTime,
                     };
                     if (vmwareCfg.password) body.password = vmwareCfg.password;
                     const res = await fetch("/api/vmware/config", {

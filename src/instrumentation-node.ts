@@ -11,6 +11,7 @@
  */
 
 import { getBackupConfig, runBackup, getBackupState } from "./lib/backup";
+import { readVmwareConfig, saveVmwareConfig, getCachedInventory, buildVmwareReportHtml } from "./lib/vmware";
 import {
   readOnCallData,
   readOnCallSettings,
@@ -265,7 +266,48 @@ setInterval(async () => {
   }
 }, INTERVAL_MS);
 
-// ── Crash log retention cleanup (once per day) ───────────────────────────────
+// ── VMware weekly inventory report ───────────────────────────────────────────────────
+
+setInterval(async () => {
+  try {
+    const cfg = await readVmwareConfig();
+    if (!cfg.weeklyReportEnabled || cfg.weeklyReportRecipients.length === 0) return;
+
+    const now = new Date();
+    if (now.getDay() !== (cfg.weeklyReportDay ?? 1)) return;
+    const [hh, mm] = (cfg.weeklyReportTime ?? "08:00").split(":").map(Number);
+    if (now.getHours() !== hh || now.getMinutes() !== mm) return;
+
+    // Debounce: skip if sent within last 6 days
+    if (cfg.lastWeeklyReportAt) {
+      const diff = (now.getTime() - new Date(cfg.lastWeeklyReportAt).getTime()) / 60_000;
+      if (diff < 60 * 24 * 6) return;
+    }
+
+    // Use cached inventory so we don't hit vCenter just for the report
+    const cache = await getCachedInventory(cfg.cacheTtlMinutes ?? 15);
+    if (!cache || cache.vms.length === 0) {
+      console.log("[vmware] Weekly report skipped — no cached inventory available");
+      return;
+    }
+
+    const html = buildVmwareReportHtml(cache.vms, cache.fetchedAt);
+    const subject = `VMware Inventory Report — ${new Date().toLocaleDateString()}`;
+    let sent = 0;
+    for (const recipient of cfg.weeklyReportRecipients) {
+      const ok = await sendMail(recipient, subject, html).catch(() => false);
+      if (ok) sent++;
+    }
+
+    cfg.lastWeeklyReportAt = now.toISOString();
+    await saveVmwareConfig(cfg);
+    console.log(`[vmware] Weekly report sent to ${sent}/${cfg.weeklyReportRecipients.length} recipients`);
+  } catch (err) {
+    console.error("[vmware] Weekly report scheduler error:", err);
+  }
+}, INTERVAL_MS);
+
+// ── Crash log retention cleanup (once per day) ──────────────────────────────────────
 
 let lastCrashCleanupDate = "";
 
