@@ -2,12 +2,12 @@
 
 import { Suspense, useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Plus, Trash2, Shield, ShieldCheck, Users, Layout, Settings, Key, Copy, Check, ClipboardList, ChevronLeft, ChevronRight, Download, Lock, LockOpen, ChevronDown, ChevronUp, ShieldOff, HardDrive, RefreshCw, PlayCircle, RotateCcw, Eye, EyeOff, UsersRound, X, Network, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Shield, ShieldCheck, Users, Layout, Settings, Key, Copy, Check, ClipboardList, ChevronLeft, ChevronRight, Download, Lock, LockOpen, ChevronDown, ChevronUp, ShieldOff, HardDrive, RefreshCw, PlayCircle, RotateCcw, Eye, EyeOff, UsersRound, X, Network, AlertTriangle, GitBranch, Wifi } from "lucide-react";
 import PasswordStrengthMeter from "@/components/PasswordStrengthMeter";
 import { isPasswordValid } from "@/lib/password-policy";
 import type { SanitizedUser, Space, SpaceRole, AuditConfig, AuditEntry, UserGroup, AdConfig, AdGroupMapping, DashboardAccessConfig, CrashEntry, SnapshotEntry } from "@/lib/types";
 import { copyToClipboard } from "@/lib/clipboard";
-type Tab = "users" | "spaces" | "service-keys" | "groups" | "settings" | "audit" | "backup" | "crash-logs" | "vmware";
+type Tab = "users" | "spaces" | "service-keys" | "groups" | "settings" | "audit" | "backup" | "crash-logs" | "vmware" | "mirth";
 
 interface BackupEntry { filename: string; sizeBytes: number; createdAt: string; }
 interface BackupTargetForm { id: string; type: "local" | "cifs" | "sftp"; label: string; path: string; host: string; port: number; share: string; remotePath: string; username: string; password: string; privateKey: string; }
@@ -191,6 +191,39 @@ function AdminContent() {
   const [onCallSettingsLoaded, setOnCallSettingsLoaded] = useState(false);
   const [newOnCallUser, setNewOnCallUser] = useState("");
   const [newOnCallRecipient, setNewOnCallRecipient] = useState("");
+
+  // Mirth servers state (admin)
+  interface MirthServerAdmin { id: string; name: string; url: string; username: string; passwordSet: boolean; ignoreSslErrors: boolean; enabled: boolean; sortOrder: number; createdAt: string; }
+  const [mirthServers, setMirthServers] = useState<MirthServerAdmin[]>([]);
+  const [mirthTestResults, setMirthTestResults] = useState<Record<string, { ok: boolean; version?: string; error?: string }>>({});
+  const [mirthTesting, setMirthTesting] = useState<string | null>(null);
+  const [mirthDeleting, setMirthDeleting] = useState<string | null>(null);
+  const [mirthSaving, setMirthSaving] = useState(false);
+  const [showMirthForm, setShowMirthForm] = useState(false);
+  const [editingMirthId, setEditingMirthId] = useState<string | null>(null);
+  const emptyMirthForm = () => ({ name: "", url: "", username: "", password: "", ignoreSslErrors: true, enabled: true, sortOrder: 0 });
+  const [mirthForm, setMirthForm] = useState(emptyMirthForm());
+
+  const fetchMirthServers = useCallback(async () => {
+    const r = await fetch("/api/mirth/servers").catch(() => null);
+    if (r?.ok) { const d = await r.json(); setMirthServers(d.servers ?? []); }
+  }, []);
+
+  const testMirthServer = async (id: string) => {
+    setMirthTesting(id);
+    const r = await fetch(`/api/mirth/servers/${id}/test`).catch(() => null);
+    const d = r ? await r.json() : { ok: false, error: "Network error" };
+    setMirthTestResults(prev => ({ ...prev, [id]: d }));
+    setMirthTesting(null);
+  };
+
+  const deleteMirthServer = async (id: string) => {
+    if (!confirm("Delete this Mirth server?")) return;
+    setMirthDeleting(id);
+    await fetch(`/api/mirth/servers/${id}`, { method: "DELETE" }).catch(() => {});
+    setMirthDeleting(null);
+    fetchMirthServers();
+  };
 
   // VMware settings state
   const [vmwareCfg, setVmwareCfg] = useState({
@@ -772,6 +805,15 @@ function AdminContent() {
           >
             <Network className="w-4 h-4" />
             VMware
+          </button>
+          <button
+            onClick={() => { setTab("mirth"); fetchMirthServers(); }}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
+              tab === "mirth" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
+            }`}
+          >
+            <GitBranch className="w-4 h-4" />
+            Mirth
           </button>
         </div>
 
@@ -3335,6 +3377,157 @@ function AdminContent() {
                   {vmwareTesting ? "Testing…" : "Test Connection"}
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Mirth Tab */}
+        {tab === "mirth" && (
+          <div className="space-y-4">
+            <div className="bg-surface rounded-xl shadow-sm border border-border">
+              <div className="px-6 py-4 border-b border-border flex items-center gap-2">
+                <GitBranch className="w-4 h-4 text-accent" />
+                <h2 className="text-lg font-semibold text-text-primary">Mirth Connect Servers</h2>
+                <button
+                  onClick={() => { setEditingMirthId(null); setMirthForm(emptyMirthForm()); setShowMirthForm(true); }}
+                  className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors"
+                >
+                  <Plus className="w-4 h-4" /> Add Server
+                </button>
+              </div>
+
+              {/* Add / Edit form */}
+              {showMirthForm && (
+                <div className="px-6 py-4 bg-gray-50 border-b border-border">
+                  <p className="text-xs font-semibold text-gray-600 mb-3">{editingMirthId ? "Edit Server" : "New Server"}</p>
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
+                      <input type="text" value={mirthForm.name} onChange={(e) => setMirthForm({ ...mirthForm, name: e.target.value })} placeholder="Production Mirth" className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">URL</label>
+                      <input type="url" value={mirthForm.url} onChange={(e) => setMirthForm({ ...mirthForm, url: e.target.value })} placeholder="https://mirth.example.com:8443" className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Username</label>
+                      <input type="text" value={mirthForm.username} onChange={(e) => setMirthForm({ ...mirthForm, username: e.target.value })} placeholder="admin" className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Password {editingMirthId && <span className="font-normal text-text-muted">(leave blank to keep current)</span>}</label>
+                      <input type="password" value={mirthForm.password} onChange={(e) => setMirthForm({ ...mirthForm, password: e.target.value })} placeholder={editingMirthId ? "unchanged" : "••••••••"} autoComplete="new-password" className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Sort Order</label>
+                      <input type="number" value={mirthForm.sortOrder} onChange={(e) => setMirthForm({ ...mirthForm, sortOrder: parseInt(e.target.value) || 0 })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div className="flex items-end gap-4 pb-1">
+                      <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
+                        <input type="checkbox" checked={mirthForm.ignoreSslErrors} onChange={(e) => setMirthForm({ ...mirthForm, ignoreSslErrors: e.target.checked })} className="rounded" />
+                        Ignore SSL errors
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
+                        <input type="checkbox" checked={mirthForm.enabled} onChange={(e) => setMirthForm({ ...mirthForm, enabled: e.target.checked })} className="rounded" />
+                        Enabled
+                      </label>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      disabled={mirthSaving || !mirthForm.name.trim() || !mirthForm.url.trim()}
+                      onClick={async () => {
+                        setMirthSaving(true);
+                        const body: Record<string, unknown> = {
+                          name: mirthForm.name.trim(),
+                          url: mirthForm.url.trim(),
+                          username: mirthForm.username.trim(),
+                          ignoreSslErrors: mirthForm.ignoreSslErrors,
+                          enabled: mirthForm.enabled,
+                          sortOrder: mirthForm.sortOrder,
+                        };
+                        if (mirthForm.password) body.password = mirthForm.password;
+                        const res = editingMirthId
+                          ? await fetch(`/api/mirth/servers/${editingMirthId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null)
+                          : await fetch("/api/mirth/servers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
+                        setMirthSaving(false);
+                        if (res?.ok) {
+                          setShowMirthForm(false);
+                          setEditingMirthId(null);
+                          setMirthForm(emptyMirthForm());
+                          fetchMirthServers();
+                        } else {
+                          const d = res ? await res.json().catch(() => ({})) : {};
+                          flash(d.error || "Failed to save server", "error");
+                        }
+                      }}
+                      className="px-4 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50"
+                    >
+                      {mirthSaving ? "Saving…" : editingMirthId ? "Update" : "Create"}
+                    </button>
+                    <button onClick={() => { setShowMirthForm(false); setEditingMirthId(null); setMirthForm(emptyMirthForm()); }} className="px-3 py-1.5 text-sm text-gray-500 hover:text-text-secondary">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Server list */}
+              {mirthServers.length === 0 ? (
+                <p className="px-6 py-6 text-sm text-text-muted text-center">No Mirth Connect servers configured.</p>
+              ) : (
+                <div className="divide-y divide-border">
+                  {mirthServers.map((s) => {
+                    const testResult = mirthTestResults[s.id];
+                    return (
+                      <div key={s.id} className="flex items-center gap-4 px-6 py-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-text-primary">{s.name}</span>
+                            {!s.enabled && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-500 rounded">Disabled</span>}
+                            {s.ignoreSslErrors && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-600 rounded">SSL bypassed</span>}
+                          </div>
+                          <p className="text-xs text-text-muted font-mono">{s.url} · {s.username}</p>
+                          {testResult && (
+                            <p className={`text-xs mt-0.5 ${testResult.ok ? "text-green-600" : "text-red-500"}`}>
+                              {testResult.ok ? `✓ Connected${testResult.version ? ` — Mirth ${testResult.version}` : ""}` : `✗ ${testResult.error}`}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={() => testMirthServer(s.id)}
+                            disabled={mirthTesting === s.id}
+                            className="flex items-center gap-1 px-2.5 py-1.5 text-xs border border-border rounded-lg hover:bg-muted disabled:opacity-50 transition-colors"
+                            title="Test connection"
+                          >
+                            <Wifi className="w-3.5 h-3.5" />
+                            {mirthTesting === s.id ? "Testing…" : "Test"}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingMirthId(s.id);
+                              setMirthForm({ name: s.name, url: s.url, username: s.username, password: "", ignoreSslErrors: s.ignoreSslErrors, enabled: s.enabled, sortOrder: s.sortOrder });
+                              setShowMirthForm(true);
+                            }}
+                            className="p-1.5 rounded-lg hover:bg-muted text-gray-400 hover:text-gray-600 transition-colors"
+                            title="Edit"
+                          >
+                            <Settings className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => deleteMirthServer(s.id)}
+                            disabled={mirthDeleting === s.id}
+                            className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 disabled:opacity-50 transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}
