@@ -744,6 +744,8 @@ export default function MirthPage() {
     fetch("/api/auth/me").then(r => r.json()).then(d => setIsAdmin(!!d.user?.isAdmin)).catch(() => {});
   }, []);
 
+  const selectedServerIdRef = useRef<string | null>(null);
+
   const loadDashboard = useCallback(async () => {
     setLoading(true); setError(null);
     try {
@@ -752,15 +754,18 @@ export default function MirthPage() {
       if (!r.ok) { setError(d.error ?? "Failed"); }
       else {
         setDashboard(d);
-        // Update selected server data if in server/channel view
-        if (selectedServer) {
-          const updated = (d as Dashboard).servers.find(s => s.serverId === selectedServer.serverId);
+        // Update selected server without adding it as a dependency (avoids infinite loop)
+        if (selectedServerIdRef.current) {
+          const updated = (d as Dashboard).servers.find(s => s.serverId === selectedServerIdRef.current);
           if (updated) setSelectedServer(updated);
         }
       }
     } catch { setError("Network error"); }
     setLoading(false);
-  }, [selectedServer]);
+  }, []); // no deps — uses ref to avoid infinite loop
+
+  // Keep ref in sync with state without triggering loadDashboard re-creation
+  useEffect(() => { selectedServerIdRef.current = selectedServer?.serverId ?? null; }, [selectedServer]);
 
   const loadServers = useCallback(async () => {
     const r = await fetch("/api/mirth/servers").catch(() => null);

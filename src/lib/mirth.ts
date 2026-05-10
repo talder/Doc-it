@@ -274,7 +274,31 @@ async function rowToServer(row: MirthServerRecord): Promise<MirthServer> {
 
 // ── HTTP helper ────────────────────────────────────────────────────────────────
 
-const xmlParser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_", parseTagValue: true, isArray: (name) => ["channel", "channelStatus", "event", "entry", "message"].includes(name) });
+const xmlParser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_", parseTagValue: true, isArray: (name) => ["channel", "channelStatus", "dashboardStatus", "event", "entry", "message"].includes(name) });
+
+/** Parse Mirth statistics — handles both simple fields and the 3.x entry-map format. */
+function parseStats(stats: unknown): { received: number; sent: number; error: number; filtered: number; queued: number } {
+  const r = { received: 0, sent: 0, error: 0, filtered: 0, queued: 0 };
+  if (!stats || typeof stats !== "object") return r;
+  const s = stats as Record<string, unknown>;
+  // Simple format: <received>N</received>
+  if (s.received !== undefined || s.sent !== undefined) {
+    return { received: Number(s.received ?? 0), sent: Number(s.sent ?? 0), error: Number(s.error ?? 0), filtered: Number(s.filtered ?? 0), queued: Number(s.queued ?? 0) };
+  }
+  // Entry-map format used by Mirth 3.x
+  const STATUS_KEY = "com.mirth.connect.donkey.model.message.Status";
+  const entries = (Array.isArray(s.entry) ? s.entry : s.entry ? [s.entry] : []) as Array<Record<string, unknown>>;
+  for (const e of entries) {
+    const status = String(e[STATUS_KEY] ?? "");
+    const n = Number(e.long ?? 0);
+    if (status === "RECEIVED") r.received += n;
+    else if (status === "SENT") r.sent += n;
+    else if (status === "ERROR") r.error += n;
+    else if (status === "FILTERED") r.filtered += n;
+    else if (status === "QUEUED") r.queued += n;
+  }
+  return r;
+}
 
 async function mirthFetch(
   server: MirthServer,
@@ -377,12 +401,16 @@ export async function getMirthChannels(server: MirthServer): Promise<MirthChanne
   interface RawChannel { id?: string; name?: string; description?: string; enabled?: boolean | string; }
   const rawChannels: RawChannel[] = ((chData?.list as Record<string, unknown>)?.channel ?? []) as RawChannel[];
 
-  // XML: <list><channelStatus>...</channelStatus></list>
+  // XML: <list><dashboardStatus>...</dashboardStatus></list>  (Mirth 3.x)
+  //   or <list><channelStatus>...</channelStatus></list>      (older)
   interface RawStatus {
     channelId?: string; name?: string; state?: string;
-    statistics?: { received?: number; sent?: number; error?: number; filtered?: number; queued?: number; };
+    statistics?: unknown;
   }
-  const rawStatuses: RawStatus[] = ((stData?.list as Record<string, unknown>)?.channelStatus ?? []) as RawStatus[];
+  const stList = stData?.list as Record<string, unknown>;
+  const rawStatuses: RawStatus[] = (
+    (stList?.dashboardStatus ?? stList?.channelStatus ?? []) as RawStatus[]
+  );
 
   const statusMap = new Map<string, RawStatus>();
   for (const st of rawStatuses) {
@@ -393,18 +421,14 @@ export async function getMirthChannels(server: MirthServer): Promise<MirthChanne
   const channels: MirthChannel[] = rawChannels.map((ch) => {
     const cid = String(ch.id ?? "");
     const st = statusMap.get(cid);
-    const stats = st?.statistics ?? {};
+    const stats = parseStats(st?.statistics);
     const base = {
       id: cid,
       name: ch.name ?? st?.name ?? cid,
       description: ch.description ?? "",
       enabled: ch.enabled !== false && ch.enabled !== "false",
       state: st?.state ?? "UNKNOWN",
-      received: Number(stats.received ?? 0),
-      sent: Number(stats.sent ?? 0),
-      error: Number(stats.error ?? 0),
-      filtered: Number(stats.filtered ?? 0),
-      queued: Number(stats.queued ?? 0),
+      ...stats,
     };
     return { ...base, health: classifyChannel(base) };
   });
@@ -414,18 +438,14 @@ export async function getMirthChannels(server: MirthServer): Promise<MirthChanne
   for (const st of rawStatuses) {
     const cid = String(st.channelId ?? "");
     if (cid && !seenIds.has(cid)) {
-      const stats = st.statistics ?? {};
+      const stats = parseStats(st.statistics);
       const base = {
         id: cid,
         name: st.name ?? cid,
         description: "",
         enabled: true,
         state: st.state ?? "UNKNOWN",
-        received: Number(stats.received ?? 0),
-        sent: Number(stats.sent ?? 0),
-        error: Number(stats.error ?? 0),
-        filtered: Number(stats.filtered ?? 0),
-        queued: Number(stats.queued ?? 0),
+        ...stats,
       };
       channels.push({ ...base, health: classifyChannel(base) });
     }
