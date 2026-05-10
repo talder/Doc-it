@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { getMirthChannelNote, setMirthChannelNote } from "@/lib/mirth";
+import { getMirthChannelNote, setMirthChannelNote, logMirthHistory } from "@/lib/mirth";
 import { auditLog } from "@/lib/audit";
 
 type Params = Promise<{ id: string; channelId: string }>;
@@ -27,6 +27,13 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
     resource: channelId,
     resourceType: "mirth-channel",
     details: { serverId: id, channelId, channelName, note: note.slice(0, 200) },
+  });
+  logMirthHistory({
+    serverId: id, serverName: "",
+    channelId, channelName,
+    eventType: "channel.note.set",
+    actor: user.username,
+    details: { note: note ? note.slice(0, 200) : "(cleared)" },
   });
   return NextResponse.json({ ok: true, note: getMirthChannelNote(id, channelId) });
 }

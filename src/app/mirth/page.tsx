@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Activity, AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, Bell, Check, CheckCircle,
   ChevronDown, ChevronRight, Clock, Copy, Download, FileText, Filter, GitBranch,
-  Pause, Play, RefreshCw, Search, Settings, Square, Timer, Trash2, X, Plus, Edit2, Wifi, WifiOff, Info,
+  History, Pause, Play, RefreshCw, Search, Settings, Square, Timer, Trash2, X, Plus, Edit2, Wifi, WifiOff, Info,
 } from "lucide-react";
 
 // ── Types (mirroring lib/mirth.ts) ────────────────────────────────────────────
@@ -1331,6 +1331,182 @@ function DashboardView({ dashboard, onSelectServer, onSelectChannel }: {
   );
 }
 
+// ── Mirth History Panel ────────────────────────────────────────────────────────
+
+interface MirthHistoryEntry {
+  id: number;
+  timestamp: string;
+  serverId: string;
+  serverName: string;
+  channelId: string | null;
+  channelName: string | null;
+  eventType: string;
+  actor: string | null;
+  details: Record<string, unknown>;
+}
+
+function MirthHistoryPanel({ onClose }: { onClose: () => void }) {
+  const [entries, setEntries] = useState<MirthHistoryEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [panelWidth, setPanelWidth] = useState(680);
+  const [colWidths, setColWidths] = useState([148, 110, 130, 110, 200]);
+
+  const load = () => {
+    setLoading(true);
+    fetch("/api/mirth/history?limit=500")
+      .then(r => r.json())
+      .then(d => { setEntries(d.entries ?? []); setLoading(false); })
+      .catch(() => setLoading(false));
+  };
+  useEffect(load, []);
+
+  const startPanelResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = panelWidth;
+    const onMove = (ev: MouseEvent) => setPanelWidth(Math.max(400, Math.min(1400, startW + (startX - ev.clientX))));
+    const onUp = () => { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); document.body.style.cursor = ""; document.body.style.userSelect = ""; };
+    document.body.style.cursor = "ew-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
+
+  const startColResize = (col: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = colWidths[col];
+    const onMove = (ev: MouseEvent) => setColWidths(ws => ws.map((w, i) => i === col ? Math.max(48, startW + ev.clientX - startX) : w));
+    const onUp = () => { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); document.body.style.cursor = ""; document.body.style.userSelect = ""; };
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
+
+  const EVENT_CFG: Record<string, { label: string; cls: string }> = {
+    "channel.action":        { label: "Action",       cls: "bg-blue-100 text-blue-800 border-blue-200" },
+    "channel.batch-action":  { label: "Batch Action", cls: "bg-indigo-100 text-indigo-800 border-indigo-200" },
+    "channel.errors.acked":  { label: "Ack Errors",   cls: "bg-green-100 text-green-800 border-green-200" },
+    "channel.note.set":      { label: "Note",         cls: "bg-purple-100 text-purple-800 border-purple-200" },
+    "channel.config.set":    { label: "Config",       cls: "bg-teal-100 text-teal-800 border-teal-200" },
+    "channel.state.changed": { label: "State Change", cls: "bg-gray-100 text-gray-700 border-gray-300" },
+    "channel.health.alert":  { label: "Health Alert", cls: "bg-red-100 text-red-800 border-red-200" },
+  };
+
+  function fmtDetails(entry: MirthHistoryEntry): string {
+    const d = entry.details;
+    switch (entry.eventType) {
+      case "channel.action":        return `${String(d.action ?? "").toUpperCase()}${ d.outcome === "failure" ? " (failed)" : "" }`;
+      case "channel.batch-action":  return `${String(d.action ?? "").toUpperCase()} × ${Number(d.count ?? 0)}${ Number(d.failed ?? 0) > 0 ? ` (${d.failed} failed)` : "" }`;
+      case "channel.errors.acked":  return `Acknowledged ${d.ackedErrors ?? 0} errors`;
+      case "channel.note.set":      return String(d.note ?? "").slice(0, 60) || "(cleared)";
+      case "channel.config.set":    return `Inactivity: ${d.inactivityEnabled ? "on" : "off"}${ d.inactivityThresholdMinutes !== undefined ? `, ${d.inactivityThresholdMinutes}m` : "" }`;
+      case "channel.state.changed": return `${String(d.prevState ?? "—")} → ${String(d.newState ?? "—")}`;
+      case "channel.health.alert":  return `${String(d.health ?? "")} (was ${String(d.prevHealth ?? "")})`;
+      default:                      return JSON.stringify(d).slice(0, 80);
+    }
+  }
+
+  const exportCSV = () => {
+    const header = ["Timestamp", "Server", "Channel", "Event", "Details", "Actor"];
+    const rows = entries.map(e => [
+      e.timestamp,
+      e.serverName,
+      e.channelName ?? e.channelId ?? "",
+      e.eventType,
+      fmtDetails(e),
+      e.actor ?? "",
+    ]);
+    const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `mirth-history-${new Date().toISOString().slice(0,10)}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const colLabels = ["Time", "Server", "Channel", "Event", "Details / Actor"];
+  const fmtTime = (ts: string) => { try { return new Date(ts).toLocaleString(); } catch { return ts; } };
+
+  return (
+    <div style={{ width: panelWidth }} className="border-l border-border bg-surface flex flex-col overflow-hidden relative flex-shrink-0">
+      <div onMouseDown={startPanelResize} className="absolute left-0 top-0 w-1.5 h-full cursor-ew-resize hover:bg-accent/40 z-20" />
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <History className="w-4 h-4 text-accent" />
+          <span className="text-sm font-bold text-text-primary">Activity History</span>
+          {!loading && <span className="text-xs text-text-muted">({entries.length} entries)</span>}
+        </div>
+        <div className="flex items-center gap-2">
+          {entries.length > 0 && (
+            <button onClick={exportCSV} className="jp-action-btn text-[10px] px-2 py-1" title="Export CSV">
+              <Download className="w-3 h-3" /> CSV
+            </button>
+          )}
+          <button onClick={load} disabled={loading} className="p-1 rounded hover:bg-muted text-text-muted disabled:opacity-40" title="Refresh">
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+          </button>
+          <button onClick={onClose} className="p-1 rounded hover:bg-muted text-text-muted"><X className="w-4 h-4" /></button>
+        </div>
+      </div>
+      <div className="flex-1 overflow-auto">
+        {loading ? (
+          <div className="flex items-center justify-center h-32"><RefreshCw className="w-5 h-5 animate-spin text-text-muted" /></div>
+        ) : entries.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-40 text-text-muted px-4 text-center">
+            <History className="w-8 h-8 mb-2 opacity-30" />
+            <p className="text-sm">No activity recorded yet.</p>
+            <p className="text-xs mt-1">Events appear after actions are performed or state changes are detected.</p>
+          </div>
+        ) : (
+          <table className="text-xs" style={{ tableLayout: "fixed", width: colWidths.reduce((a, b) => a + b, 0) }}>
+            <colgroup>{colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>
+            <thead>
+              <tr className="border-b border-border bg-surface-alt sticky top-0 z-10">
+                {colLabels.map((label, i) => (
+                  <th key={i} className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase tracking-wide select-none" style={{ position: "relative", width: colWidths[i] }}>
+                    {label}
+                    <div onMouseDown={(e) => startColResize(i, e)} className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-accent/40 active:bg-accent/60" />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map(e => {
+                const ev = EVENT_CFG[e.eventType] ?? { label: e.eventType, cls: "bg-gray-100 text-gray-700 border-gray-200" };
+                return (
+                  <tr key={e.id} className="border-b border-border hover:bg-muted/40">
+                    <td className="px-3 py-1.5 text-text-muted text-[10px] overflow-hidden">
+                      <span className="block truncate" title={fmtTime(e.timestamp)}>{fmtTime(e.timestamp)}</span>
+                    </td>
+                    <td className="px-3 py-1.5 overflow-hidden">
+                      <span className="block truncate text-text-secondary" title={e.serverName}>{e.serverName || "—"}</span>
+                    </td>
+                    <td className="px-3 py-1.5 overflow-hidden">
+                      <span className="block truncate text-text-primary font-medium" title={e.channelName ?? e.channelId ?? ""}>
+                        {e.channelName ?? e.channelId ?? <span className="text-text-muted italic">—</span>}
+                      </span>
+                    </td>
+                    <td className="px-3 py-1.5 overflow-hidden">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold ${ev.cls}`}>{ev.label}</span>
+                    </td>
+                    <td className="px-3 py-1.5 overflow-hidden">
+                      <span className="block truncate" title={`${fmtDetails(e)}${e.actor ? ` · ${e.actor}` : ""}`}>
+                        {fmtDetails(e)}
+                        {e.actor && <span className="text-text-muted ml-1.5 text-[10px]">· {e.actor}</span>}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function MirthPage() {
@@ -1355,6 +1531,7 @@ export default function MirthPage() {
   const [showServerForm, setShowServerForm] = useState(false);
   const [editingServer, setEditingServer] = useState<MirthServerPublic | undefined>();
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
 
   const runQueryRef = useRef<() => void>(() => {});
 
@@ -1454,6 +1631,13 @@ export default function MirthPage() {
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
             {loading ? "Loading…" : "Refresh"}
           </button>
+          <button
+            className={`jp-action-btn ${showHistory ? "jp-action-btn--primary" : ""}`}
+            onClick={() => setShowHistory(v => !v)}
+            title="Activity History"
+          >
+            <History className="w-4 h-4" /> History
+          </button>
         </div>
       </header>
 
@@ -1531,6 +1715,7 @@ export default function MirthPage() {
         </aside>
 
         {/* Main content */}
+        <div className="flex flex-1 overflow-hidden">
         <div className="flex flex-col flex-1 overflow-hidden">
           {error && (
             <div className="flex-shrink-0 mx-6 mt-4 flex items-center gap-2 px-3 py-2 bg-red-50 text-red-600 text-xs rounded-lg border border-red-200">
@@ -1565,6 +1750,8 @@ export default function MirthPage() {
               <ChannelExplorer serverId={selectedServer.serverId} channel={selectedChannel} />
             </div>
           )}
+        </div>
+        {showHistory && <MirthHistoryPanel onClose={() => setShowHistory(false)} />}
         </div>
       </div>
 

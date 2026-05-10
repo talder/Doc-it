@@ -223,6 +223,19 @@ function initHistoryTables(): void {
       updated_at  TEXT NOT NULL,
       PRIMARY KEY (server_id, channel_id)
     );
+    CREATE TABLE IF NOT EXISTS mirth_history_log (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp    TEXT NOT NULL,
+      server_id    TEXT NOT NULL,
+      server_name  TEXT NOT NULL DEFAULT '',
+      channel_id   TEXT,
+      channel_name TEXT,
+      event_type   TEXT NOT NULL,
+      actor        TEXT,
+      details      TEXT NOT NULL DEFAULT '{}'
+    );
+    CREATE INDEX IF NOT EXISTS idx_mhl_ts
+      ON mirth_history_log(timestamp DESC);
   `);
 }
 
@@ -511,6 +524,90 @@ export function getMirthChannelHistory(
       WHERE server_id = ? AND channel_id = ?
       ORDER BY ts DESC LIMIT ?
     `).all(serverId, channelId, limit) as Array<ChannelSnapshot & { snapshot_time: string }>;
+  } catch { return []; }
+}
+
+// ── Activity history log ───────────────────────────────────────────────────────
+
+export interface MirthHistoryEntry {
+  id: number;
+  timestamp: string;
+  serverId: string;
+  serverName: string;
+  channelId: string | null;
+  channelName: string | null;
+  eventType: string;
+  actor: string | null;
+  details: Record<string, unknown>;
+}
+
+/** Look up the most recent known name for a channel from the snapshot table. */
+export function getMirthChannelName(serverId: string, channelId: string): string | null {
+  try {
+    initHistoryTables();
+    const row = getDb().prepare(`
+      SELECT channel_name FROM mirth_channel_snapshots
+      WHERE server_id = ? AND channel_id = ?
+      ORDER BY ts DESC LIMIT 1
+    `).get(serverId, channelId) as { channel_name: string } | undefined;
+    return row?.channel_name ?? null;
+  } catch { return null; }
+}
+
+/** Record an activity history entry (fire-and-forget safe). */
+export function logMirthHistory(entry: {
+  serverId: string;
+  serverName: string;
+  channelId?: string | null;
+  channelName?: string | null;
+  eventType: string;
+  actor?: string | null;
+  details?: Record<string, unknown>;
+}): void {
+  try {
+    initHistoryTables();
+    getDb().prepare(`
+      INSERT INTO mirth_history_log
+        (timestamp, server_id, server_name, channel_id, channel_name, event_type, actor, details)
+      VALUES (datetime('now'), ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      entry.serverId,
+      entry.serverName,
+      entry.channelId ?? null,
+      entry.channelName ?? null,
+      entry.eventType,
+      entry.actor ?? null,
+      JSON.stringify(entry.details ?? {}),
+    );
+  } catch { /* non-critical */ }
+}
+
+/** Return the most recent history entries (newest first). */
+export function getMirthHistory(limit = 300): MirthHistoryEntry[] {
+  try {
+    initHistoryTables();
+    const rows = getDb().prepare(`
+      SELECT id, timestamp, server_id, server_name, channel_id, channel_name,
+             event_type, actor, details
+      FROM mirth_history_log
+      ORDER BY id DESC
+      LIMIT ?
+    `).all(limit) as Array<{
+      id: number; timestamp: string; server_id: string; server_name: string;
+      channel_id: string | null; channel_name: string | null;
+      event_type: string; actor: string | null; details: string;
+    }>;
+    return rows.map(r => ({
+      id: r.id,
+      timestamp: r.timestamp,
+      serverId: r.server_id,
+      serverName: r.server_name,
+      channelId: r.channel_id,
+      channelName: r.channel_name,
+      eventType: r.event_type,
+      actor: r.actor,
+      details: (() => { try { return JSON.parse(r.details) as Record<string, unknown>; } catch { return {}; } })(),
+    }));
   } catch { return []; }
 }
 
@@ -1074,7 +1171,7 @@ export async function getMirthDashboard(): Promise<MirthDashboard> {
         // Persist snapshots + state transition log; get back detected changes for audit
         const stateChanges = saveSnapshotsAndStateLog(server.id, channels, prevSnaps);
 
-        // Audit each auto-detected state transition (fire-and-forget)
+        // Audit + history for each auto-detected state transition (fire-and-forget)
         for (const { channelId, channelName, prevState, newState } of stateChanges) {
           _writeAuditLogDirect({
             event: "mirth.channel.state.changed",
@@ -1085,9 +1182,16 @@ export async function getMirthDashboard(): Promise<MirthDashboard> {
             resourceType: "mirth-channel",
             details: { serverId: server.id, serverName: server.name, channelId, channelName, prevState, newState },
           }).catch(() => {});
+          logMirthHistory({
+            serverId: server.id, serverName: server.name,
+            channelId, channelName,
+            eventType: "channel.state.changed",
+            actor: "scheduler",
+            details: { prevState, newState },
+          });
         }
 
-        // Fire notifications + audit for calm→alert transitions (fire-and-forget)
+        // Fire notifications + audit + history for calm→alert transitions (fire-and-forget)
         for (const ch of channels) {
           if (shouldNotify(prevHealthMap.get(ch.id), ch.health)) {
             notifyAdminsOfMirthAlert(
@@ -1108,6 +1212,17 @@ export async function getMirthDashboard(): Promise<MirthDashboard> {
                 errors: ch.error, queued: ch.queued,
               },
             }).catch(() => {});
+            logMirthHistory({
+              serverId: server.id, serverName: server.name,
+              channelId: ch.id, channelName: ch.name,
+              eventType: "channel.health.alert",
+              actor: "scheduler",
+              details: {
+                health: ch.health,
+                prevHealth: prevHealthMap.get(ch.id) ?? "unknown",
+                errors: ch.error, queued: ch.queued,
+              },
+            });
           }
         }
         updatePrevHealthMap(server.id, channels);

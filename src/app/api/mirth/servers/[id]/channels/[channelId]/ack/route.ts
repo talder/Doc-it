@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { acknowledgeMirthErrors } from "@/lib/mirth";
+import { acknowledgeMirthErrors, logMirthHistory, getMirthChannelName } from "@/lib/mirth";
 import { auditLog } from "@/lib/audit";
 
 /**
@@ -20,6 +20,7 @@ export async function POST(
   const body = await req.json().catch(() => ({}));
   const upToErrors = Number(body.upToErrors ?? 0);
 
+  const channelName = getMirthChannelName(id, channelId);
   acknowledgeMirthErrors(id, channelId, upToErrors);
   auditLog(req, {
     event: "mirth.channel.errors.acked",
@@ -27,6 +28,13 @@ export async function POST(
     resource: channelId,
     resourceType: "mirth-channel",
     details: { serverId: id, channelId, ackedErrors: upToErrors },
+  });
+  logMirthHistory({
+    serverId: id, serverName: "",
+    channelId, channelName,
+    eventType: "channel.errors.acked",
+    actor: user.username,
+    details: { ackedErrors: upToErrors },
   });
   return NextResponse.json({ ok: true, serverId: id, channelId, ackedErrors: upToErrors });
 }

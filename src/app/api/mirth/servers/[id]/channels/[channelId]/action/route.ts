@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { getMirthServerById, mirthChannelAction } from "@/lib/mirth";
+import { getMirthServerById, mirthChannelAction, logMirthHistory, getMirthChannelName } from "@/lib/mirth";
 import type { ChannelAction } from "@/lib/mirth";
 import { auditLog } from "@/lib/audit";
 
@@ -27,6 +27,7 @@ export async function POST(request: NextRequest, { params }: Params) {
     );
   }
 
+  const channelName = getMirthChannelName(id, channelId);
   try {
     await mirthChannelAction(server, channelId, action);
     auditLog(request, {
@@ -36,6 +37,13 @@ export async function POST(request: NextRequest, { params }: Params) {
       resourceType: "mirth-channel",
       details: { serverId: id, serverName: server.name, channelId, action },
     });
+    logMirthHistory({
+      serverId: id, serverName: server.name,
+      channelId, channelName,
+      eventType: "channel.action",
+      actor: user.username,
+      details: { action, outcome: "success" },
+    });
     return NextResponse.json({ ok: true, action, channelId });
   } catch (err) {
     auditLog(request, {
@@ -44,6 +52,13 @@ export async function POST(request: NextRequest, { params }: Params) {
       resource: channelId,
       resourceType: "mirth-channel",
       details: { serverId: id, serverName: server.name, channelId, action, error: err instanceof Error ? err.message : "Action failed" },
+    });
+    logMirthHistory({
+      serverId: id, serverName: server.name,
+      channelId, channelName,
+      eventType: "channel.action",
+      actor: user.username,
+      details: { action, outcome: "failure", error: err instanceof Error ? err.message : "Action failed" },
     });
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Action failed" },

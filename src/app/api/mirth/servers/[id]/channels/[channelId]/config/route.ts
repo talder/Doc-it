@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { getMirthServerById, getMirthChannelConfig, setMirthChannelConfig } from "@/lib/mirth";
+import { getMirthServerById, getMirthChannelConfig, setMirthChannelConfig, logMirthHistory } from "@/lib/mirth";
 import { auditLog } from "@/lib/audit";
 
 type Params = Promise<{ id: string; channelId: string }>;
@@ -34,6 +34,16 @@ export async function PUT(req: NextRequest, { params }: { params: Params }) {
     resourceType: "mirth-channel",
     details: {
       serverId: id, serverName: server.name, channelId, channelName,
+      inactivityEnabled: body.inactivityEnabled,
+      inactivityThresholdMinutes: body.inactivityThresholdMinutes,
+    },
+  });
+  logMirthHistory({
+    serverId: id, serverName: server.name,
+    channelId, channelName,
+    eventType: "channel.config.set",
+    actor: user.username,
+    details: {
       inactivityEnabled: body.inactivityEnabled,
       inactivityThresholdMinutes: body.inactivityThresholdMinutes,
     },

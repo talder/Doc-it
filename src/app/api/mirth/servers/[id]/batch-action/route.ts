@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { getMirthServerById, mirthBatchChannelAction, ChannelAction } from "@/lib/mirth";
+import { getMirthServerById, mirthBatchChannelAction, logMirthHistory, ChannelAction } from "@/lib/mirth";
 import { auditLog } from "@/lib/audit";
 
 const VALID_ACTIONS: ChannelAction[] = ["start", "stop", "pause", "resume"];
@@ -35,6 +35,12 @@ export async function POST(
       resourceType: "mirth-channel",
       details: { serverId: id, serverName: server.name, action, succeeded: result.succeeded, failed: result.failed },
     });
+    logMirthHistory({
+      serverId: id, serverName: server.name,
+      eventType: "channel.batch-action",
+      actor: user.username,
+      details: { action, count: channelIds.length, succeeded: result.succeeded.length, failed: result.failed.length },
+    });
     return NextResponse.json(result);
   } catch (err) {
     auditLog(req, {
@@ -42,6 +48,12 @@ export async function POST(
       outcome: "failure",
       resourceType: "mirth-channel",
       details: { serverId: id, serverName: server.name, action, channelIds, error: err instanceof Error ? err.message : "Batch action failed" },
+    });
+    logMirthHistory({
+      serverId: id, serverName: server.name,
+      eventType: "channel.batch-action",
+      actor: user.username,
+      details: { action, count: channelIds.length, outcome: "failure", error: err instanceof Error ? err.message : "Batch action failed" },
     });
     return NextResponse.json({ error: err instanceof Error ? err.message : "Batch action failed" }, { status: 500 });
   }
