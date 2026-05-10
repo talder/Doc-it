@@ -193,7 +193,7 @@ function lsSaveFilters(fs: ChannelFilter[]) {
 function matchCond(ch: MirthChannel, cond: FilterCondition): boolean {
   const fd = FILTER_FIELDS.find(x => x.value === cond.field);
   if (!fd) return true;
-  const raw = (ch as Record<string, unknown>)[cond.field] ?? "";
+  const raw = (ch as unknown as Record<string, unknown>)[cond.field] ?? "";
   if (fd.numeric) {
     const n = Number(raw), v = Number(cond.value || 0);
     switch (cond.op) {
@@ -224,8 +224,8 @@ function applyChannelFilter(channels: MirthChannel[], filter: ChannelFilter): Mi
 }
 function sortChannelList(channels: MirthChannel[], col: FilterField, dir: SortDir): MirthChannel[] {
   return [...channels].sort((a, b) => {
-    const av = (a as Record<string, unknown>)[col] as number | string ?? "";
-    const bv = (b as Record<string, unknown>)[col] as number | string ?? "";
+    const av = (a as unknown as Record<string, unknown>)[col] as number | string ?? "";
+    const bv = (b as unknown as Record<string, unknown>)[col] as number | string ?? "";
     const cmp = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv));
     return dir === "asc" ? cmp : -cmp;
   });
