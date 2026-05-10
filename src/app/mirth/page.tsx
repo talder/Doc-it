@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Activity, AlertTriangle, ArrowLeft, Bell, Check, CheckCircle,
-  ChevronDown, ChevronRight, Clock, Copy, Download, FileText, GitBranch,
+  Activity, AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, Bell, Check, CheckCircle,
+  ChevronDown, ChevronRight, Clock, Copy, Download, FileText, Filter, GitBranch,
   Pause, Play, RefreshCw, Search, Settings, Square, Timer, Trash2, X, Plus, Edit2, Wifi, WifiOff, Info,
 } from "lucide-react";
 
@@ -150,6 +150,85 @@ function downloadBlob(name: string, content: string, type: string) {
   const a = document.createElement("a");
   a.href = url; a.download = name; a.click();
   URL.revokeObjectURL(url);
+}
+
+// ── Filter & Sort ─────────────────────────────────────────────────────────────
+
+type SortDir = "asc" | "desc";
+type FilterField = "name" | "state" | "health" | "received" | "sent" | "error" | "filtered" | "queued";
+type FilterOp    = "contains" | "not_contains" | "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
+interface FilterCondition { field: FilterField; op: FilterOp; value: string; }
+interface ChannelFilter { id: string; name: string; conditions: FilterCondition[]; conjunction: "AND" | "OR"; }
+
+const FILTER_FIELDS: { value: FilterField; label: string; numeric: boolean }[] = [
+  { value: "name",     label: "Name",     numeric: false },
+  { value: "state",    label: "State",    numeric: false },
+  { value: "health",   label: "Health",   numeric: false },
+  { value: "received", label: "Received", numeric: true  },
+  { value: "sent",     label: "Sent",     numeric: true  },
+  { value: "error",    label: "Errors",   numeric: true  },
+  { value: "filtered", label: "Filtered", numeric: true  },
+  { value: "queued",   label: "Queued",   numeric: true  },
+];
+const OPS_STR: { value: FilterOp; label: string }[] = [
+  { value: "contains",     label: "contains"        },
+  { value: "not_contains", label: "doesn\u2019t contain" },
+  { value: "eq",           label: "equals"          },
+  { value: "neq",          label: "not equals"      },
+];
+const OPS_NUM: { value: FilterOp; label: string }[] = [
+  { value: "eq",  label: "=" }, { value: "neq", label: "\u2260" },
+  { value: "gt",  label: ">" }, { value: "gte", label: "\u2265" },
+  { value: "lt",  label: "<" }, { value: "lte", label: "\u2264" },
+];
+const FILTERS_LS_KEY = "mirth_channel_filters_v1";
+
+function lsLoadFilters(): ChannelFilter[] {
+  if (typeof window === "undefined") return [];
+  try { return JSON.parse(localStorage.getItem(FILTERS_LS_KEY) ?? "[]") as ChannelFilter[]; } catch { return []; }
+}
+function lsSaveFilters(fs: ChannelFilter[]) {
+  try { localStorage.setItem(FILTERS_LS_KEY, JSON.stringify(fs)); } catch { /* quota */ }
+}
+function matchCond(ch: MirthChannel, cond: FilterCondition): boolean {
+  const fd = FILTER_FIELDS.find(x => x.value === cond.field);
+  if (!fd) return true;
+  const raw = (ch as Record<string, unknown>)[cond.field] ?? "";
+  if (fd.numeric) {
+    const n = Number(raw), v = Number(cond.value || 0);
+    switch (cond.op) {
+      case "eq":  return n === v;
+      case "neq": return n !== v;
+      case "gt":  return n > v;
+      case "gte": return n >= v;
+      case "lt":  return n < v;
+      case "lte": return n <= v;
+      default:    return true;
+    }
+  }
+  const s = String(raw).toLowerCase(), v = cond.value.toLowerCase();
+  switch (cond.op) {
+    case "contains":     return s.includes(v);
+    case "not_contains": return !s.includes(v);
+    case "eq":           return s === v;
+    case "neq":          return s !== v;
+    default:             return true;
+  }
+}
+function applyChannelFilter(channels: MirthChannel[], filter: ChannelFilter): MirthChannel[] {
+  if (!filter.conditions.length) return channels;
+  return channels.filter(ch => {
+    const rs = filter.conditions.map(c => matchCond(ch, c));
+    return filter.conjunction === "AND" ? rs.every(Boolean) : rs.some(Boolean);
+  });
+}
+function sortChannelList(channels: MirthChannel[], col: FilterField, dir: SortDir): MirthChannel[] {
+  return [...channels].sort((a, b) => {
+    const av = (a as Record<string, unknown>)[col] as number | string ?? "";
+    const bv = (b as Record<string, unknown>)[col] as number | string ?? "";
+    const cmp = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv));
+    return dir === "asc" ? cmp : -cmp;
+  });
 }
 
 // ── Sparkline ──────────────────────────────────────────────────────────────────
@@ -629,7 +708,178 @@ function ChannelExplorer({ serverId, channel }: { serverId: string; channel: Mir
   );
 }
 
-// ── Server Detail ──────────────────────────────────────────────────────────────
+// ── Filter editor modal (form) ───────────────────────────────────────────────────
+
+function FilterEditor({ filter: init, onSave, onCancel }: {
+  filter: ChannelFilter; onSave: (f: ChannelFilter) => void; onCancel: () => void;
+}) {
+  const [f, setF] = useState<ChannelFilter>({ ...init, conditions: init.conditions.map(c => ({ ...c })) });
+  const [err, setErr] = useState("");
+
+  const updCond = (i: number, patch: Partial<FilterCondition>) =>
+    setF(p => ({ ...p, conditions: p.conditions.map((c, idx) => idx === i ? { ...c, ...patch } : c) }));
+  const remCond = (i: number) =>
+    setF(p => ({ ...p, conditions: p.conditions.filter((_, idx) => idx !== i) }));
+  const addCond = () =>
+    setF(p => ({ ...p, conditions: [...p.conditions, { field: "name", op: "contains", value: "" }] }));
+
+  const handleSave = () => {
+    if (!f.name.trim()) { setErr("Filter name is required"); return; }
+    if (!f.conditions.length) { setErr("Add at least one condition"); return; }
+    setErr(""); onSave(f);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-surface rounded-xl border border-border shadow-xl w-full max-w-xl p-6 max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-2 mb-4">
+          <button onClick={onCancel} className="p-1 rounded hover:bg-muted text-text-muted"><ArrowLeft className="w-4 h-4" /></button>
+          <h2 className="text-base font-semibold text-text-primary flex-1">{init.name ? `Edit: ${init.name}` : "New Filter"}</h2>
+          <button onClick={onCancel} className="p-1 rounded hover:bg-muted text-text-muted"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="flex-1 overflow-auto space-y-4 min-h-0">
+          <div className="flex gap-3 items-end">
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-text-secondary mb-1">Filter Name</label>
+              <input value={f.name} onChange={e => setF(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Error channels"
+                className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">Match</label>
+              <div className="flex rounded-lg border border-border overflow-hidden">
+                {(["AND", "OR"] as const).map(conj => (
+                  <button key={conj} onClick={() => setF(p => ({ ...p, conjunction: conj }))}
+                    className={`px-3 py-2 text-xs font-medium transition-colors ${f.conjunction === conj ? "bg-accent text-white" : "text-text-secondary hover:bg-muted"}`}>
+                    {conj}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-text-secondary">Conditions</p>
+            {f.conditions.map((cond, i) => {
+              const fd = FILTER_FIELDS.find(x => x.value === cond.field) ?? FILTER_FIELDS[0];
+              const ops = fd.numeric ? OPS_NUM : OPS_STR;
+              const opValid = ops.some(o => o.value === cond.op);
+              return (
+                <div key={i} className="flex items-center gap-2">
+                  <select value={cond.field}
+                    onChange={e => {
+                      const nf = e.target.value as FilterField;
+                      const isNum = FILTER_FIELDS.find(x => x.value === nf)?.numeric ?? false;
+                      updCond(i, { field: nf, op: (isNum !== fd.numeric) ? (isNum ? "eq" : "contains") : cond.op });
+                    }}
+                    className="text-xs px-2 py-1.5 border border-border rounded-lg bg-surface text-text-secondary w-28 focus:outline-none focus:border-accent">
+                    {FILTER_FIELDS.map(x => <option key={x.value} value={x.value}>{x.label}</option>)}
+                  </select>
+                  <select value={opValid ? cond.op : ops[0].value}
+                    onChange={e => updCond(i, { op: e.target.value as FilterOp })}
+                    className="text-xs px-2 py-1.5 border border-border rounded-lg bg-surface text-text-secondary w-36 focus:outline-none focus:border-accent">
+                    {ops.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                  <input value={cond.value} onChange={e => updCond(i, { value: e.target.value })}
+                    type={fd.numeric ? "number" : "text"} min={0} placeholder={fd.numeric ? "0" : "value"}
+                    className="flex-1 min-w-0 px-2 py-1.5 text-xs border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent" />
+                  <button onClick={() => remCond(i)} disabled={f.conditions.length === 1}
+                    className="flex-shrink-0 p-1 rounded hover:bg-red-50 text-text-muted hover:text-red-500 disabled:opacity-30">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          <button onClick={addCond} className="flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary px-2 py-1 rounded hover:bg-muted">
+            <Plus className="w-3 h-3" /> Add condition
+          </button>
+          {err && <p className="text-xs text-red-500">{err}</p>}
+        </div>
+        <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-border">
+          <button onClick={onCancel} className="px-4 py-2 text-sm text-text-muted hover:bg-muted rounded-lg">Cancel</button>
+          <button onClick={handleSave} className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent/90">
+            <Check className="w-3.5 h-3.5" /> Save Filter
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Filter manager modal (list) ────────────────────────────────────────────────
+
+function ChannelFilterModal({ activeFilter, onApply, onClose }: {
+  activeFilter: ChannelFilter | null;
+  onApply: (f: ChannelFilter | null) => void;
+  onClose: () => void;
+}) {
+  const [filters, setFilters] = useState<ChannelFilter[]>(lsLoadFilters);
+  const [editing, setEditing] = useState<ChannelFilter | null>(null);
+
+  const persist = (updated: ChannelFilter[]) => { setFilters(updated); lsSaveFilters(updated); };
+
+  const handleDelete = (id: string) => {
+    persist(filters.filter(f => f.id !== id));
+    if (activeFilter?.id === id) onApply(null);
+  };
+  const handleSave = (saved: ChannelFilter) => {
+    const idx = filters.findIndex(f => f.id === saved.id);
+    persist(idx >= 0 ? filters.map(f => f.id === saved.id ? saved : f) : [...filters, saved]);
+    setEditing(null);
+  };
+  const mkNew = (): ChannelFilter => ({
+    id: Math.random().toString(36).slice(2),
+    name: "", conjunction: "AND",
+    conditions: [{ field: "name", op: "contains", value: "" }],
+  });
+
+  if (editing) return <FilterEditor filter={editing} onSave={handleSave} onCancel={() => setEditing(null)} />;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="bg-surface rounded-xl border border-border shadow-xl w-full max-w-lg p-6 max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-semibold text-text-primary flex items-center gap-2">
+            <Filter className="w-4 h-4 text-text-muted" /> Channel Filters
+          </h2>
+          <button onClick={onClose} className="p-1 rounded hover:bg-muted text-text-muted"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="flex-1 overflow-auto space-y-2 min-h-0">
+          {filters.length === 0 && (
+            <p className="text-center py-10 text-sm text-text-muted">No saved filters yet. Create one to quickly slice your channel list.</p>
+          )}
+          {filters.map(f => (
+            <div key={f.id} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border ${
+              activeFilter?.id === f.id ? "border-accent bg-accent/5" : "border-border"
+            }`}>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-text-primary truncate">{f.name}</p>
+                <p className="text-[10px] text-text-muted">{f.conditions.length} condition{f.conditions.length !== 1 ? "s" : ""} · {f.conjunction}</p>
+              </div>
+              <button onClick={() => { const isActive = activeFilter?.id === f.id; onApply(isActive ? null : f); if (!isActive) onClose(); }}
+                className={`text-[11px] px-2.5 py-1 rounded border font-medium whitespace-nowrap ${
+                  activeFilter?.id === f.id ? "border-accent text-accent bg-accent/10" : "border-border text-text-secondary hover:bg-muted"
+                }`}>
+                {activeFilter?.id === f.id ? "\u2713 Active" : "Apply"}
+              </button>
+              <button onClick={() => setEditing({ ...f })} className="p-1 rounded hover:bg-muted text-text-muted"><Edit2 className="w-3.5 h-3.5" /></button>
+              <button onClick={() => handleDelete(f.id)} className="p-1 rounded hover:bg-red-50 text-text-muted hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center justify-between mt-4 pt-3 border-t border-border">
+          {activeFilter
+            ? <button onClick={() => onApply(null)} className="text-xs text-text-muted hover:text-red-500 flex items-center gap-1"><X className="w-3 h-3" /> Clear filter</button>
+            : <span />}
+          <button onClick={() => setEditing(mkNew())} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent/90">
+            <Plus className="w-3.5 h-3.5" /> New Filter
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Server Detail ──────────────────────────────────────────────────────────────────
 
 function ServerDetail({
   server,
@@ -651,6 +901,11 @@ function ServerDetail({
   const [batching, setBatching] = useState(false);
   // Channel settings modal
   const [settingsChannel, setSettingsChannel] = useState<MirthChannel | null>(null);
+  // Sort & filter
+  const [sortCol, setSortCol] = useState<FilterField | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [activeFilter, setActiveFilter] = useState<ChannelFilter | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
 
   const doAction = async (channelId: string, action: string) => {
     setActioning(`${channelId}-${action}`);
@@ -695,14 +950,26 @@ function ServerDetail({
     setEventsLoading(false);
   };
 
+  const handleSort = (col: FilterField) => {
+    if (sortCol === col) {
+      if (sortDir === "asc") setSortDir("desc");
+      else { setSortCol(null); setSortDir("asc"); }
+    } else { setSortCol(col); setSortDir("asc"); }
+  };
+
   useEffect(() => { setChannels(server.channels); }, [server.channels]);
 
   // display must be defined BEFORE toggleSelect/allSelected/toggleAll
   const display = useMemo(() => {
-    if (!clientSearch.trim()) return channels;
-    const t = clientSearch.toLowerCase();
-    return channels.filter(c => c.name.toLowerCase().includes(t) || c.state.toLowerCase().includes(t));
-  }, [channels, clientSearch]);
+    let result = channels;
+    if (clientSearch.trim()) {
+      const t = clientSearch.toLowerCase();
+      result = result.filter(c => c.name.toLowerCase().includes(t) || c.state.toLowerCase().includes(t));
+    }
+    if (activeFilter) result = applyChannelFilter(result, activeFilter);
+    if (sortCol) result = sortChannelList(result, sortCol, sortDir);
+    return result;
+  }, [channels, clientSearch, activeFilter, sortCol, sortDir]);
 
   const toggleSelect = (id: string) => setSelectedIds(prev => {
     const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;
@@ -714,15 +981,29 @@ function ServerDetail({
     <div className="flex flex-col h-full overflow-auto">
       {/* Channel table */}
       <div className="px-6 py-4">
-        <div className="flex items-center gap-3 mb-3">
+        <div className="flex items-center gap-3 mb-3 flex-wrap">
           <h2 className="text-base font-semibold text-text-primary">{server.serverName}</h2>
           <HealthBadge health={server.health} />
           {server.version && <span className="text-xs text-text-muted">v{server.version}</span>}
           {!server.reachable && <span className="text-xs text-red-500 flex items-center gap-1"><WifiOff className="w-3 h-3" />{server.error}</span>}
-          <div className="relative ml-auto flex items-center">
-            <Search className="w-3 h-3 text-text-muted absolute left-1.5 pointer-events-none" />
-            <input value={clientSearch} onChange={e => setClientSearch(e.target.value)} placeholder="Filter channels…"
-              className="pl-6 pr-2 py-1 text-xs border border-border rounded-lg bg-surface focus:outline-none focus:border-accent w-36" />
+          <div className="ml-auto flex items-center gap-2">
+            {activeFilter && (
+              <span className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border border-accent bg-accent/10 text-accent font-medium">
+                <Filter className="w-3 h-3" />{activeFilter.name}
+                <button onClick={() => setActiveFilter(null)} className="ml-0.5 hover:text-red-500"><X className="w-2.5 h-2.5" /></button>
+              </span>
+            )}
+            <button onClick={() => setShowFilters(true)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg border font-medium transition-colors ${
+                activeFilter ? "border-accent text-accent bg-accent/10" : "border-border text-text-secondary hover:bg-muted"
+              }`}>
+              <Filter className="w-3 h-3" /> Filters
+            </button>
+            <div className="relative flex items-center">
+              <Search className="w-3 h-3 text-text-muted absolute left-1.5 pointer-events-none" />
+              <input value={clientSearch} onChange={e => setClientSearch(e.target.value)} placeholder="Search…"
+                className="pl-6 pr-2 py-1 text-xs border border-border rounded-lg bg-surface focus:outline-none focus:border-accent w-32" />
+            </div>
           </div>
         </div>
 
@@ -751,13 +1032,29 @@ function ServerDetail({
             <colgroup>{isAdmin && <col style={{ width: 28 }} />}<col style={{ width: 28 }} /><col /><col style={{ width: 96 }} /><col style={{ width: 72 }} /><col style={{ width: 72 }} /><col style={{ width: 72 }} /><col style={{ width: 72 }} /><col style={{ width: 72 }} />{isAdmin && <col style={{ width: 180 }} />}</colgroup>
             <thead><tr className="border-b border-border bg-surface-alt">
               {isAdmin && <th className="px-2"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="rounded" /></th>}
-              <th /><th className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase">Channel</th>
-              <th className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase">State</th>
-              <th className="text-right px-3 py-2 text-[10px] font-semibold text-text-muted uppercase">Rcvd</th>
-              <th className="text-right px-3 py-2 text-[10px] font-semibold text-text-muted uppercase">Sent</th>
-              <th className="text-right px-3 py-2 text-[10px] font-semibold text-text-muted uppercase text-red-500">Error</th>
-              <th className="text-right px-3 py-2 text-[10px] font-semibold text-text-muted uppercase">Filtrd</th>
-              <th className="text-right px-3 py-2 text-[10px] font-semibold text-amber-600 uppercase">Queued</th>
+              <th />
+              {([
+                { field: "name"     as FilterField, label: "Channel", align: "left",  extra: "" },
+                { field: "health"   as FilterField, label: "State",   align: "left",  extra: "" },
+                { field: "received" as FilterField, label: "Rcvd",    align: "right", extra: "" },
+                { field: "sent"     as FilterField, label: "Sent",    align: "right", extra: "" },
+                { field: "error"    as FilterField, label: "Error",   align: "right", extra: "text-red-500" },
+                { field: "filtered" as FilterField, label: "Filtrd",  align: "right", extra: "" },
+                { field: "queued"   as FilterField, label: "Queued",  align: "right", extra: "text-amber-600" },
+              ]).map(({ field, label, align, extra }) => (
+                <th key={field}
+                  onClick={() => handleSort(field)}
+                  className={`text-${align} px-3 py-2 text-[10px] font-semibold text-text-muted uppercase cursor-pointer select-none hover:bg-muted/60 ${extra}`}>
+                  <span className="inline-flex items-center gap-1 justify-${align}">
+                    {label}
+                    {sortCol === field
+                      ? sortDir === "asc"
+                        ? <ArrowUp className="w-2.5 h-2.5 text-accent" />
+                        : <ArrowDown className="w-2.5 h-2.5 text-accent" />
+                      : <span className="opacity-20 text-[8px]">⇅</span>}
+                  </span>
+                </th>
+              ))}
               {isAdmin && <th className="px-3 py-2 text-[10px] font-semibold text-text-muted uppercase text-center">Actions</th>}
             </tr></thead>
             <tbody>
@@ -896,6 +1193,13 @@ function ServerDetail({
           onSaved={(note) => {
             setChannels(prev => prev.map(c => c.id === settingsChannel!.id ? { ...c, note: note || undefined } : c));
           }}
+        />
+      )}
+      {showFilters && (
+        <ChannelFilterModal
+          activeFilter={activeFilter}
+          onApply={f => setActiveFilter(f)}
+          onClose={() => setShowFilters(false)}
         />
       )}
     </div>
