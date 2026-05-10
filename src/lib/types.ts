@@ -479,7 +479,14 @@ export type AuditEventType =
   | "user.group.delete"
   | "snapshot.create"
   | "snapshot.restore"
-  | "snapshot.delete";
+  | "snapshot.delete"
+  | "mirth.channel.action"
+  | "mirth.channel.errors.acked"
+  | "mirth.channel.batch-action"
+  | "mirth.channel.note.set"
+  | "mirth.channel.config.set"
+  | "mirth.channel.state.changed"
+  | "mirth.channel.health.alert";
 
 export interface AuditEntry {
   eventId: string;
