@@ -141,6 +141,126 @@ function initMirthTable(): void {
   `);
 }
 
+// ── Snapshot / history tables ──────────────────────────────────────────────────
+
+/** Lean snapshot of a channel state stored after each dashboard poll. */
+export interface ChannelSnapshot {
+  state: string;
+  received: number;
+  error: number;
+  queued: number;
+  snapshot_time?: string;
+}
+
+function initHistoryTables(): void {
+  getDb().exec(`
+    CREATE TABLE IF NOT EXISTS mirth_channel_snapshots (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      server_id    TEXT NOT NULL,
+      channel_id   TEXT NOT NULL,
+      channel_name TEXT NOT NULL,
+      ts           TEXT NOT NULL,
+      state        TEXT NOT NULL,
+      received     INTEGER NOT NULL DEFAULT 0,
+      sent         INTEGER NOT NULL DEFAULT 0,
+      error        INTEGER NOT NULL DEFAULT 0,
+      queued       INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_mcs_lookup
+      ON mirth_channel_snapshots(server_id, channel_id, ts);
+    CREATE TABLE IF NOT EXISTS mirth_channel_ack (
+      server_id    TEXT NOT NULL,
+      channel_id   TEXT NOT NULL,
+      acked_error  INTEGER NOT NULL DEFAULT 0,
+      acked_at     TEXT NOT NULL,
+      PRIMARY KEY (server_id, channel_id)
+    );
+  `);
+}
+
+/** Returns the most recent snapshot for each channel on a server (from the last poll). */
+function getPrevSnapshots(serverId: string): Map<string, ChannelSnapshot> {
+  try {
+    initHistoryTables();
+    const rows = getDb().prepare(`
+      SELECT s.channel_id, s.state, s.received, s.error, s.queued
+      FROM mirth_channel_snapshots s
+      INNER JOIN (
+        SELECT channel_id, MAX(ts) AS max_ts
+        FROM mirth_channel_snapshots WHERE server_id = ?
+        GROUP BY channel_id
+      ) latest ON s.channel_id = latest.channel_id AND s.ts = latest.max_ts
+      WHERE s.server_id = ?
+    `).all(serverId, serverId) as Array<{ channel_id: string } & ChannelSnapshot>;
+    const map = new Map<string, ChannelSnapshot>();
+    for (const r of rows) map.set(r.channel_id, { state: r.state, received: r.received, error: r.error, queued: r.queued });
+    return map;
+  } catch { return new Map(); }
+}
+
+/** Persist current channel states; prune entries older than 7 days. Call AFTER classification. */
+function saveSnapshots(serverId: string, channels: MirthChannel[]): void {
+  try {
+    initHistoryTables();
+    const now = new Date().toISOString();
+    const db = getDb();
+    const ins = db.prepare(
+      "INSERT INTO mirth_channel_snapshots (server_id,channel_id,channel_name,ts,state,received,sent,error,queued) VALUES (?,?,?,?,?,?,?,?,?)"
+    );
+    const prune = db.prepare(
+      "DELETE FROM mirth_channel_snapshots WHERE server_id=? AND channel_id=? AND ts < datetime('now','-7 days')"
+    );
+    db.transaction(() => {
+      for (const ch of channels) {
+        ins.run(serverId, ch.id, ch.name, now, ch.state, ch.received, ch.sent, ch.error, ch.queued);
+        prune.run(serverId, ch.id);
+      }
+    })();
+  } catch { /* non-critical */ }
+}
+
+/** Load per-channel acknowledged error baselines. */
+function getAckedErrors(serverId: string): Map<string, number> {
+  try {
+    initHistoryTables();
+    const rows = getDb().prepare(
+      "SELECT channel_id, acked_error FROM mirth_channel_ack WHERE server_id = ?"
+    ).all(serverId) as Array<{ channel_id: string; acked_error: number }>;
+    const map = new Map<string, number>();
+    for (const r of rows) map.set(r.channel_id, r.acked_error);
+    return map;
+  } catch { return new Map(); }
+}
+
+/**
+ * Acknowledge errors up to `upToErrors` for a channel.
+ * Errors at or below this count will no longer trigger the error health state.
+ */
+export function acknowledgeMirthErrors(serverId: string, channelId: string, upToErrors: number): void {
+  initHistoryTables();
+  getDb().prepare(`
+    INSERT INTO mirth_channel_ack (server_id, channel_id, acked_error, acked_at)
+    VALUES (?, ?, ?, datetime('now'))
+    ON CONFLICT(server_id, channel_id) DO UPDATE
+      SET acked_error = excluded.acked_error, acked_at = excluded.acked_at
+  `).run(serverId, channelId, upToErrors);
+}
+
+/** Recent snapshots for a channel — useful for history/sparkline display. */
+export function getMirthChannelHistory(
+  serverId: string, channelId: string, limit = 100,
+): Array<ChannelSnapshot & { snapshot_time: string }> {
+  try {
+    initHistoryTables();
+    return getDb().prepare(`
+      SELECT state, received, sent, error, queued, ts AS snapshot_time
+      FROM mirth_channel_snapshots
+      WHERE server_id = ? AND channel_id = ?
+      ORDER BY ts DESC LIMIT ?
+    `).all(serverId, channelId, limit) as Array<ChannelSnapshot & { snapshot_time: string }>;
+  } catch { return []; }
+}
+
 // ── Server CRUD ────────────────────────────────────────────────────────────────
 
 export function listMirthServersPublic(): MirthServerPublic[] {
@@ -300,6 +420,22 @@ function parseStats(stats: unknown): { received: number; sent: number; error: nu
   return r;
 }
 
+/**
+ * Extract text from a parsed XML value.
+ * fast-xml-parser stores the text of elements that also have attributes under "#text".
+ * e.g. <content class="...">MSH|...</content> → { "#text": "MSH|...", "@_class": "..." }
+ */
+function extractContent(val: unknown): string {
+  if (val === null || val === undefined) return "";
+  if (typeof val === "string") return val;
+  if (typeof val === "number" || typeof val === "boolean") return String(val);
+  if (typeof val === "object") {
+    const t = (val as Record<string, unknown>)["#text"];
+    if (t !== undefined && t !== null) return String(t);
+  }
+  return "";
+}
+
 async function mirthFetch(
   server: MirthServer,
   path: string,
@@ -354,13 +490,26 @@ export async function getMirthVersion(server: MirthServer): Promise<string> {
 
 // ── Health classification ──────────────────────────────────────────────────────
 
-function classifyChannel(ch: Omit<MirthChannel, "health">): ChannelHealth {
+/**
+ * Classify channel health.
+ * When `prev` is provided the error state is only triggered when the error
+ * count has INCREASED since the last snapshot — accumulated historic errors
+ * no longer cause false alerts. `ackedErrors` lets admins acknowledge a
+ * known error baseline so it won't fire again until count rises above it.
+ */
+function classifyChannel(
+  ch: Omit<MirthChannel, "health">,
+  prev?: ChannelSnapshot | null,
+  ackedErrors = 0,
+): ChannelHealth {
   if (!ch.enabled) return "disabled";
-  const s = ch.state?.toUpperCase();
+  const s = ch.state?.toUpperCase() ?? "";
   if (s === "STOPPED") return "down";
   if (s === "PAUSED")  return "paused";
   if (s === "STARTED") {
-    if (ch.error > 0)  return "error";
+    const unacked = ch.error - ackedErrors;
+    // Only surface errors that are new (increased since last snapshot)
+    if (unacked > 0 && (!prev || ch.error > prev.error)) return "error";
     if (ch.queued > 0) return "stuck";
     return "healthy";
   }
@@ -497,12 +646,54 @@ export async function getMirthMessages(
       receivedDate: ts,
       status: sourceConn?.status ?? "UNKNOWN",
       connectorName: sourceConn?.connectorName ?? "",
-      rawContent: sourceConn?.rawData?.content ?? "",
-      processedContent: sourceConn?.processedData?.content ?? "",
+      rawContent: extractContent((sourceConn?.rawData as Record<string, unknown>)?.content),
+      processedContent: extractContent((sourceConn?.processedData as Record<string, unknown>)?.content),
     };
   });
 
   return { messages, total };
+}
+
+// ── Single-message fetch ──────────────────────────────────────────────────────
+
+/**
+ * Fetch a single message by ID (with full content).
+ * Used for lazy-loading message content in the UI.
+ */
+export async function getMirthMessage(
+  server: MirthServer,
+  channelId: string,
+  messageId: string,
+): Promise<MirthMessage | null> {
+  try {
+    const res = await mirthFetch(server, `/channels/${channelId}/messages/${messageId}?includeContent=true`);
+    if (!res.ok) return null;
+    const data = await parseXml(res) as Record<string, unknown>;
+    const m = (data?.message ?? data) as Record<string, unknown>;
+    if (!m) return null;
+
+    interface ConnEntry { int?: number; connectorMessage?: Record<string, unknown>; }
+    const connMap = m?.connectorMessages as Record<string, unknown> | undefined;
+    const rawEntries = connMap?.entry;
+    const entries: ConnEntry[] = Array.isArray(rawEntries) ? rawEntries : rawEntries ? [rawEntries as ConnEntry] : [];
+    // Source connector is metaDataId 0
+    const source = entries.find(e => Number(e.int ?? 0) === 0) ?? entries[0];
+    const conn = source?.connectorMessage;
+
+    const rd = m.receivedDate as Record<string, unknown> | string | undefined;
+    const ts = rd && typeof rd === "object" && "time" in rd
+      ? new Date(Number((rd as Record<string, unknown>).time)).toISOString()
+      : typeof rd === "string" ? rd : "";
+
+    return {
+      messageId: String(m.messageId ?? messageId),
+      receivedDate: ts,
+      status: String(conn?.status ?? "UNKNOWN"),
+      connectorName: String(conn?.connectorName ?? ""),
+      rawContent: extractContent((conn?.rawData as Record<string, unknown>)?.content),
+      processedContent: extractContent((conn?.processedData as Record<string, unknown>)?.content),
+    };
+  } catch { return null; }
 }
 
 // ── Events ─────────────────────────────────────────────────────────────────────
@@ -579,10 +770,23 @@ export async function getMirthDashboard(): Promise<MirthDashboard> {
   const serverResults = await Promise.all(
     enabled.map(async (server): Promise<MirthDashboardServer> => {
       try {
-        const [version, channels] = await Promise.all([
+        // Load history context BEFORE fetching (prev = last poll's state)
+        const prevSnaps = getPrevSnapshots(server.id);
+        const ackedErrs = getAckedErrors(server.id);
+
+        const [version, rawChannels] = await Promise.all([
           getMirthVersion(server).catch(() => null),
           getMirthChannels(server),
         ]);
+
+        // Reclassify with delta-based logic (new errors only, ack support)
+        const channels: MirthChannel[] = rawChannels.map(ch => ({
+          ...ch,
+          health: classifyChannel(ch, prevSnaps.get(ch.id), ackedErrs.get(ch.id) ?? 0),
+        }));
+
+        // Persist for next poll comparison
+        saveSnapshots(server.id, channels);
 
         const health = channels.length > 0 ? worstHealth(channels) : "unknown";
         const counts = { healthy: 0, error: 0, stuck: 0, paused: 0, down: 0, disabled: 0, unknown: 0 };

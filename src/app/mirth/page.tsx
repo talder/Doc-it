@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Activity, AlertTriangle, ArrowLeft, Check, ChevronDown, ChevronRight,
+  Activity, AlertTriangle, ArrowLeft, Check, CheckCircle, ChevronDown, ChevronRight,
   Copy, Download, GitBranch, Pause, Play, RefreshCw, Search, Square,
   Timer, Trash2, X, Plus, Edit2, Wifi, WifiOff, Info,
 } from "lucide-react";
@@ -262,12 +262,38 @@ const STATUS_BADGE: Record<string, string> = {
   TRANSFORMED: "bg-purple-50 text-purple-700 border-purple-200",
 };
 
-function MessageRow({ msg, index }: { msg: MirthMessage; index: number }) {
+function MessageRow({
+  msg, index, serverId, channelId,
+}: {
+  msg: MirthMessage; index: number; serverId: string; channelId: string;
+}) {
   const [expanded, setExpanded] = useState(false);
+  const [fetching, setFetching] = useState(false);
+  const [overrideContent, setOverrideContent] = useState<{ raw: string; processed: string } | null>(null);
   const [copied, setCopied] = useState(false);
-  const content = msg.rawContent || msg.processedContent || "";
+
+  const raw  = overrideContent?.raw  ?? msg.rawContent  ?? "";
+  const proc = overrideContent?.processed ?? msg.processedContent ?? "";
+  const content   = raw || proc;
   const formatted = content ? formatRaw(content) : "";
-  const fmt = content ? detectFormat(content) : "text";
+  const fmt       = content ? detectFormat(content) : "text";
+
+  const handleToggle = async () => {
+    const opening = !expanded;
+    setExpanded(opening);
+    // Lazy-load when expanding and content not yet available
+    if (opening && !content && !overrideContent) {
+      setFetching(true);
+      try {
+        const r = await fetch(`/api/mirth/servers/${serverId}/channels/${channelId}/messages/${msg.messageId}`);
+        if (r.ok) {
+          const d = await r.json();
+          setOverrideContent({ raw: d.message?.rawContent ?? "", processed: d.message?.processedContent ?? "" });
+        }
+      } catch { /* ignore */ }
+      setFetching(false);
+    }
+  };
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -279,7 +305,7 @@ function MessageRow({ msg, index }: { msg: MirthMessage; index: number }) {
     <>
       <tr
         className={`border-b border-border hover:bg-muted/40 cursor-pointer group ${index % 2 === 1 ? "bg-surface-alt/20" : ""}`}
-        onClick={() => content && setExpanded(v => !v)}
+        onClick={handleToggle}
       >
         <td className="px-3 py-1.5 text-[10px] text-text-muted font-mono whitespace-nowrap">{fmtTime(msg.receivedDate)}</td>
         <td className="px-3 py-1.5">
@@ -287,30 +313,47 @@ function MessageRow({ msg, index }: { msg: MirthMessage; index: number }) {
             {msg.status}
           </span>
         </td>
-        <td className="px-3 py-1.5 text-xs text-text-secondary">{msg.connectorName || "—"}</td>
+        <td className="px-3 py-1.5 text-xs text-text-secondary">{msg.connectorName || "\u2014"}</td>
         <td className="px-3 py-1.5 text-[10px] text-text-muted font-mono">{msg.messageId}</td>
         <td className="px-2 py-1.5 w-7">
-          {content && (
-            <div className="flex gap-1 opacity-0 group-hover:opacity-100">
-              {expanded
+          <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+            {fetching
+              ? <RefreshCw className="w-3 h-3 text-text-muted animate-spin" />
+              : expanded
                 ? <ChevronDown className="w-3 h-3 text-text-muted" />
                 : <ChevronRight className="w-3 h-3 text-text-muted" />}
+            {content && (
               <button onClick={handleCopy} className="p-0.5 rounded hover:bg-muted text-text-muted">
                 {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </td>
       </tr>
-      {expanded && content && (
+      {expanded && (
         <tr className="border-b border-border">
           <td colSpan={5} className="px-6 py-3 bg-surface-alt/60">
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-[10px] font-medium text-text-muted uppercase">{fmt}</span>
-            </div>
-            <pre className="text-xs font-mono text-text-primary whitespace-pre-wrap break-all max-h-64 overflow-auto bg-surface border border-border rounded-lg p-3">
-              {formatted}
-            </pre>
+            {fetching ? (
+              <div className="flex items-center gap-2 text-xs text-text-muted">
+                <RefreshCw className="w-3 h-3 animate-spin" /> Loading content…
+              </div>
+            ) : content ? (
+              <>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-[10px] font-medium text-text-muted uppercase">{fmt}</span>
+                  {content && (
+                    <button onClick={handleCopy} className="ml-auto flex items-center gap-1 text-[10px] text-text-muted hover:text-text-primary">
+                      {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />} Copy
+                    </button>
+                  )}
+                </div>
+                <pre className="text-xs font-mono text-text-primary whitespace-pre-wrap break-all max-h-64 overflow-auto bg-surface border border-border rounded-lg p-3">
+                  {formatted}
+                </pre>
+              </>
+            ) : (
+              <p className="text-xs text-text-muted italic">No content available for this message.</p>
+            )}
           </td>
         </tr>
       )}
@@ -410,7 +453,7 @@ function ChannelExplorer({ serverId, channel }: { serverId: string; channel: Mir
                 <th className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase">ID</th>
                 <th />
               </tr></thead>
-              <tbody>{display.map((m, i) => <MessageRow key={m.messageId} msg={m} index={i} />)}</tbody>
+              <tbody>{display.map((m, i) => <MessageRow key={m.messageId} msg={m} index={i} serverId={serverId} channelId={channel.id} />)}</tbody>
             </table>
           </>
         )}
@@ -444,9 +487,21 @@ function ServerDetail({
       body: JSON.stringify({ action }),
     });
     setActioning(null);
-    // Refresh channels
     const r = await fetch(`/api/mirth/servers/${server.serverId}/channels`).catch(() => null);
     if (r?.ok) { const d = await r.json(); setChannels(d.channels ?? channels); }
+  };
+
+  const handleAcknowledge = async (channelId: string, errorCount: number) => {
+    setActioning(`${channelId}-ack`);
+    await fetch(`/api/mirth/servers/${server.serverId}/channels/${channelId}/ack`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ upToErrors: errorCount }),
+    }).catch(() => {});
+    setActioning(null);
+    // Optimistically clear error indicator locally
+    setChannels(prev => prev.map(c =>
+      c.id === channelId ? { ...c, health: c.queued > 0 ? "stuck" : "healthy" } : c
+    ));
   };
 
   const loadEvents = async () => {
@@ -533,6 +588,13 @@ function ServerDetail({
                           <button onClick={() => doAction(ch.id, "stop")} disabled={!!actioning}
                             className="p-1 rounded hover:bg-red-50 text-red-600 disabled:opacity-40" title="Stop">
                             {actioning === `${ch.id}-stop` ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Square className="w-3 h-3" />}
+                          </button>
+                        )}
+                        {ch.error > 0 && (
+                          <button onClick={() => handleAcknowledge(ch.id, ch.error)} disabled={!!actioning}
+                            className="p-1 rounded hover:bg-blue-50 text-blue-500 disabled:opacity-40"
+                            title={`Acknowledge ${ch.error} error${ch.error !== 1 ? "s" : ""} — won't alert again until new errors appear`}>
+                            {actioning === `${ch.id}-ack` ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
                           </button>
                         )}
                       </div>
