@@ -14,6 +14,7 @@ import { getDb } from "./config";
 import { encryptField, decryptField } from "./crypto";
 import { XMLParser } from "fast-xml-parser";
 import { notifyAdminsOfMirthAlert } from "./notifications";
+import { _writeAuditLogDirect } from "./audit";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -245,15 +246,18 @@ function getPrevSnapshots(serverId: string): Map<string, ChannelSnapshot> {
   } catch { return new Map(); }
 }
 
+interface StateChange { channelId: string; channelName: string; prevState: string | null; newState: string; }
+
 /**
  * Persist current channel states, log state transitions, prune old data.
- * prevSnaps should be the snapshot map loaded BEFORE this poll.
+ * Returns the list of state transitions detected this poll (for audit logging).
  */
 function saveSnapshotsAndStateLog(
   serverId: string,
   channels: MirthChannel[],
   prevSnaps: Map<string, ChannelSnapshot>,
-): void {
+): StateChange[] {
+  const changes: StateChange[] = [];
   try {
     initHistoryTables();
     const now = new Date().toISOString();
@@ -278,10 +282,12 @@ function saveSnapshotsAndStateLog(
         if (!prev || prev.state !== ch.state) {
           logState.run(serverId, ch.id, ch.name, prev?.state ?? null, ch.state, now);
           pruneLog.run(serverId, ch.id);
+          changes.push({ channelId: ch.id, channelName: ch.name, prevState: prev?.state ?? null, newState: ch.state });
         }
       }
     })();
   } catch { /* non-critical */ }
+  return changes;
 }
 
 /** All channel configs for a server (missing channels get defaults). */
@@ -1065,16 +1071,43 @@ export async function getMirthDashboard(): Promise<MirthDashboard> {
           };
         });
 
-        // Persist snapshots + state transition log
-        saveSnapshotsAndStateLog(server.id, channels, prevSnaps);
+        // Persist snapshots + state transition log; get back detected changes for audit
+        const stateChanges = saveSnapshotsAndStateLog(server.id, channels, prevSnaps);
 
-        // Fire notifications for calm→alert transitions (fire-and-forget)
+        // Audit each auto-detected state transition (fire-and-forget)
+        for (const { channelId, channelName, prevState, newState } of stateChanges) {
+          _writeAuditLogDirect({
+            event: "mirth.channel.state.changed",
+            outcome: "success",
+            actor: "scheduler",
+            sessionType: "anonymous",
+            resource: channelId,
+            resourceType: "mirth-channel",
+            details: { serverId: server.id, serverName: server.name, channelId, channelName, prevState, newState },
+          }).catch(() => {});
+        }
+
+        // Fire notifications + audit for calm→alert transitions (fire-and-forget)
         for (const ch of channels) {
           if (shouldNotify(prevHealthMap.get(ch.id), ch.health)) {
             notifyAdminsOfMirthAlert(
               server.name, ch.name, ch.health,
               { serverId: server.id, channelId: ch.id, serverName: server.name, channelName: ch.name, health: ch.health },
             ).catch(() => {});
+            _writeAuditLogDirect({
+              event: "mirth.channel.health.alert",
+              outcome: "failure",
+              actor: "scheduler",
+              sessionType: "anonymous",
+              resource: ch.id,
+              resourceType: "mirth-channel",
+              details: {
+                serverId: server.id, serverName: server.name,
+                channelId: ch.id, channelName: ch.name,
+                health: ch.health, prevHealth: prevHealthMap.get(ch.id) ?? "unknown",
+                errors: ch.error, queued: ch.queued,
+              },
+            }).catch(() => {});
           }
         }
         updatePrevHealthMap(server.id, channels);

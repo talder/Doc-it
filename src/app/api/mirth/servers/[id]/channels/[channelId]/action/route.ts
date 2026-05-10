@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getMirthServerById, mirthChannelAction } from "@/lib/mirth";
 import type { ChannelAction } from "@/lib/mirth";
+import { auditLog } from "@/lib/audit";
 
 type Params = { params: Promise<{ id: string; channelId: string }> };
 
@@ -28,8 +29,22 @@ export async function POST(request: NextRequest, { params }: Params) {
 
   try {
     await mirthChannelAction(server, channelId, action);
+    auditLog(request, {
+      event: "mirth.channel.action",
+      outcome: "success",
+      resource: channelId,
+      resourceType: "mirth-channel",
+      details: { serverId: id, serverName: server.name, channelId, action },
+    });
     return NextResponse.json({ ok: true, action, channelId });
   } catch (err) {
+    auditLog(request, {
+      event: "mirth.channel.action",
+      outcome: "failure",
+      resource: channelId,
+      resourceType: "mirth-channel",
+      details: { serverId: id, serverName: server.name, channelId, action, error: err instanceof Error ? err.message : "Action failed" },
+    });
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Action failed" },
       { status: 502 },

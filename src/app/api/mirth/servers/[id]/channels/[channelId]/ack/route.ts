@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { acknowledgeMirthErrors } from "@/lib/mirth";
+import { auditLog } from "@/lib/audit";
 
 /**
  * POST — acknowledge errors for a channel up to the given count.
@@ -20,5 +21,12 @@ export async function POST(
   const upToErrors = Number(body.upToErrors ?? 0);
 
   acknowledgeMirthErrors(id, channelId, upToErrors);
+  auditLog(req, {
+    event: "mirth.channel.errors.acked",
+    outcome: "success",
+    resource: channelId,
+    resourceType: "mirth-channel",
+    details: { serverId: id, channelId, ackedErrors: upToErrors },
+  });
   return NextResponse.json({ ok: true, serverId: id, channelId, ackedErrors: upToErrors });
 }
