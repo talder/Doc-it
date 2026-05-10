@@ -4,8 +4,8 @@ import { getMirthChannelNote, setMirthChannelNote } from "@/lib/mirth";
 
 type Params = Promise<{ id: string; channelId: string }>;
 
-export async function GET(req: NextRequest, { params }: { params: Params }) {
-  const user = await getCurrentUser(req);
+export async function GET(_req: NextRequest, { params }: { params: Params }) {
+  const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id, channelId } = await params;
   const note = getMirthChannelNote(id, channelId);
@@ -13,7 +13,7 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
 }
 
 export async function POST(req: NextRequest, { params }: { params: Params }) {
-  const user = await getCurrentUser(req);
+  const user = await getCurrentUser();
   if (!user?.isAdmin) return NextResponse.json({ error: "Admin required" }, { status: 403 });
   const { id, channelId } = await params;
   const body = await req.json().catch(() => ({}));

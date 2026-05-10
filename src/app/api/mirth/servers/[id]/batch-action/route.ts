@@ -8,7 +8,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const user = await getCurrentUser(req);
+  const user = await getCurrentUser();
   if (!user?.isAdmin) return NextResponse.json({ error: "Admin required" }, { status: 403 });
 
   const { id } = await params;
