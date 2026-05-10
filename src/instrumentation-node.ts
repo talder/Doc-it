@@ -10,6 +10,7 @@
  * NEXT_RUNTIME === "nodejs", keeping Node-only modules out of the Edge bundle.
  */
 
+import { getMirthDashboard } from "./lib/mirth";
 import { getBackupConfig, runBackup, getBackupState } from "./lib/backup";
 import { readVmwareConfig, saveVmwareConfig, getCachedInventory, buildVmwareReportHtml } from "./lib/vmware";
 import {
@@ -306,6 +307,28 @@ setInterval(async () => {
     console.error("[vmware] Weekly report scheduler error:", err);
   }
 }, INTERVAL_MS);
+
+// ── Mirth Connect background poller (every 10 minutes) ─────────────────────
+
+const MIRTH_POLL_INTERVAL_MS = 10 * 60_000; // 10 minutes
+let lastMirthPollAt = 0;
+
+async function pollMirthDashboard() {
+  // Debounce: skip if a poll ran less than 9 minutes ago
+  if (Date.now() - lastMirthPollAt < 9 * 60_000) return;
+  lastMirthPollAt = Date.now();
+  try {
+    await getMirthDashboard();
+    console.log("[mirth] Background poll completed");
+  } catch (err) {
+    console.error("[mirth] Background poll error:", err);
+  }
+}
+
+setInterval(pollMirthDashboard, MIRTH_POLL_INTERVAL_MS);
+
+// Also run once at startup (after 30 s to let the server boot)
+setTimeout(pollMirthDashboard, 30_000);
 
 // ── Crash log retention cleanup (once per day) ──────────────────────────────────────
 
