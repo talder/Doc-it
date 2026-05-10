@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Activity, AlertTriangle, ArrowLeft, Check, CheckCircle, ChevronDown, ChevronRight,
-  Copy, Download, GitBranch, Pause, Play, RefreshCw, Search, Square,
-  Timer, Trash2, X, Plus, Edit2, Wifi, WifiOff, Info,
+  Activity, AlertTriangle, ArrowLeft, Bell, Check, CheckCircle,
+  ChevronDown, ChevronRight, Clock, Copy, Download, FileText, GitBranch,
+  Pause, Play, RefreshCw, Search, Settings, Square, Timer, Trash2, X, Plus, Edit2, Wifi, WifiOff, Info,
 } from "lucide-react";
 
 // ── Types (mirroring lib/mirth.ts) ────────────────────────────────────────────
@@ -23,6 +23,20 @@ interface MirthChannel {
   id: string; name: string; description: string; enabled: boolean;
   state: string; received: number; sent: number; error: number;
   filtered: number; queued: number; health: ChannelHealth;
+  stateChangedAt?: string;
+  prevState?: string;
+  note?: string;
+  inactiveForMinutes?: number;
+}
+
+interface MirthChannelConfig {
+  inactivityThresholdMinutes: number;
+  inactivityEnabled: boolean;
+}
+
+interface HistoryPoint {
+  received: number; sent: number; error: number; queued: number;
+  state: string; snapshot_time: string;
 }
 
 interface IssueChannel extends MirthChannel { serverId: string; serverName: string; }
@@ -94,11 +108,26 @@ function HealthBadge({ health }: { health: string }) {
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function fmtTime(iso: string) {
-  if (!iso) return "—";
+  if (!iso) return "\u2014";
   try { return new Date(iso).toLocaleString(); } catch { return iso; }
 }
 
 function fmtNum(n: number) { return n.toLocaleString(); }
+
+function formatDuration(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
+function timeSince(iso: string): string {
+  if (!iso) return "";
+  return formatDuration(Date.now() - new Date(iso).getTime());
+}
 
 function detectFormat(raw: string): "hl7" | "xml" | "json" | "text" {
   const s = raw.trim();
@@ -123,6 +152,28 @@ function downloadBlob(name: string, content: string, type: string) {
   URL.revokeObjectURL(url);
 }
 
+// ── Sparkline ──────────────────────────────────────────────────────────────────
+
+function Sparkline({ history, width = 120, height = 32 }: { history: HistoryPoint[]; width?: number; height?: number }) {
+  if (history.length < 2) return <span className="text-[10px] text-text-muted italic">No history</span>;
+  // Compute deltas (received per interval)
+  const rcvd  = history.map((p, i) => i === 0 ? 0 : Math.max(0, p.received - history[i - 1].received));
+  const errs  = history.map((p, i) => i === 0 ? 0 : Math.max(0, p.error    - history[i - 1].error));
+  const maxR  = Math.max(...rcvd, 1);
+  const toX   = (i: number) => (i / (history.length - 1)) * width;
+  const toY   = (v: number) => height - 2 - ((v / maxR) * (height - 4));
+  const rcvdPts = rcvd.map((v, i) => `${toX(i)},${toY(v)}`).join(" ");
+  const errPts  = errs.map((v, i) => `${toX(i)},${toY(v)}`).join(" ");
+  return (
+    <svg width={width} height={height} className="overflow-visible flex-shrink-0">
+      <polyline fill="none" stroke="#22c55e" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" points={rcvdPts} />
+      {errs.some(e => e > 0) && (
+        <polyline fill="none" stroke="#ef4444" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" points={errPts} />
+      )}
+    </svg>
+  );
+}
+
 // ── REFRESH_OPTIONS ────────────────────────────────────────────────────────────
 
 const REFRESH_OPTIONS = [
@@ -130,6 +181,107 @@ const REFRESH_OPTIONS = [
   { label: "30s", value: 30 }, { label: "1 min", value: 60 },
   { label: "5 min", value: 300 },
 ] as const;
+
+// ── Channel Settings Modal (note + inactivity config) ─────────────────────────
+
+function ChannelSettingsModal({
+  serverId, channel, onClose, onSaved,
+}: {
+  serverId: string; channel: MirthChannel;
+  onClose: () => void; onSaved: (note?: string) => void;
+}) {
+  const [note, setNote]       = useState(channel.note ?? "");
+  const [enabled, setEnabled] = useState(true);
+  const [threshold, setThreshold] = useState(60);
+  const [saving, setSaving]   = useState(false);
+  const [loaded, setLoaded]   = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      fetch(`/api/mirth/servers/${serverId}/channels/${channel.id}/config`).then(r => r.json()).catch(() => null),
+    ]).then(([cfg]: [{ config: MirthChannelConfig } | null]) => {
+      if (cfg?.config) {
+        setEnabled(cfg.config.inactivityEnabled);
+        setThreshold(cfg.config.inactivityThresholdMinutes);
+      }
+      setLoaded(true);
+    });
+  }, [serverId, channel.id]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    await Promise.all([
+      fetch(`/api/mirth/servers/${serverId}/channels/${channel.id}/note`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note, channelName: channel.name }),
+      }),
+      fetch(`/api/mirth/servers/${serverId}/channels/${channel.id}/config`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channelName: channel.name, inactivityEnabled: enabled, inactivityThresholdMinutes: threshold }),
+      }),
+    ]);
+    setSaving(false);
+    onSaved(note);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="bg-surface rounded-xl border border-border shadow-xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-semibold text-text-primary flex items-center gap-2">
+            <Settings className="w-4 h-4 text-text-muted" /> {channel.name}
+          </h2>
+          <button onClick={onClose} className="p-1 rounded hover:bg-muted text-text-muted"><X className="w-4 h-4" /></button>
+        </div>
+        {!loaded ? (
+          <div className="flex justify-center py-6"><RefreshCw className="w-5 h-5 animate-spin text-text-muted" /></div>
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1 flex items-center gap-1">
+                <FileText className="w-3 h-3" /> Channel Note
+              </label>
+              <textarea value={note} onChange={e => setNote(e.target.value)} rows={3}
+                placeholder="Add a note visible to all users (e.g. 'Intentionally stopped on weekends')"
+                className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent resize-none" />
+            </div>
+            <div className="border border-border rounded-lg p-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <Bell className="w-3.5 h-3.5 text-text-muted" />
+                  <span className="text-sm text-text-secondary font-medium">Inactivity monitoring</span>
+                </label>
+                <button onClick={() => setEnabled(v => !v)}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${ enabled ? "bg-accent" : "bg-gray-300"}`}>
+                  <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${ enabled ? "translate-x-5" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+              {enabled && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-text-muted">Alert if no messages for</span>
+                  <input type="number" min={1} max={10080} value={threshold}
+                    onChange={e => setThreshold(Math.max(1, Number(e.target.value)))}
+                    className="w-20 px-2 py-1 text-xs border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent" />
+                  <span className="text-xs text-text-muted">minutes</span>
+                </div>
+              )}
+              <p className="text-[10px] text-text-muted">When enabled, the channel will be marked STUCK if it has been running but received no new messages within the threshold.</p>
+            </div>
+          </div>
+        )}
+        <div className="flex justify-end gap-2 mt-5">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-text-muted hover:bg-muted rounded-lg">Cancel</button>
+          <button onClick={handleSave} disabled={saving || !loaded}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent/90 disabled:opacity-40">
+            {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── Server form modal ──────────────────────────────────────────────────────────
 
@@ -371,7 +523,13 @@ function ChannelExplorer({ serverId, channel }: { serverId: string; channel: Mir
   const [offset, setOffset] = useState(0);
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [clientSearch, setClientSearch] = useState("");
+  const [history, setHistory] = useState<HistoryPoint[]>([]);
   const limit = 20;
+
+  useEffect(() => {
+    fetch(`/api/mirth/servers/${serverId}/channels/${channel.id}/history?limit=24`)
+      .then(r => r.ok ? r.json() : null).then(d => { if (d?.history) setHistory(d.history); }).catch(() => {});
+  }, [serverId, channel.id]);
 
   const fetchMessages = useCallback(async (off = 0) => {
     setLoading(true); setError(null);
@@ -400,6 +558,15 @@ function ChannelExplorer({ serverId, channel }: { serverId: string; channel: Mir
 
   return (
     <div className="flex flex-col h-full">
+      {/* Sparkline header */}
+      {history.length >= 2 && (
+        <div className="flex-shrink-0 border-b border-border bg-surface-alt/40 px-4 py-2 flex items-center gap-3">
+          <span className="text-[10px] text-text-muted uppercase font-semibold tracking-wide">Activity (last {history.length} snapshots)</span>
+          <Sparkline history={history} width={160} height={28} />
+          <span className="text-[10px] text-green-600 font-medium">● rcvd</span>
+          <span className="text-[10px] text-red-500 font-medium">● err</span>
+        </div>
+      )}
       {/* Filter bar */}
       <div className="flex-shrink-0 border-b border-border bg-surface px-4 py-2 flex items-center gap-3 flex-wrap">
         <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); fetchMessages(0); }}
@@ -479,6 +646,11 @@ function ServerDetail({
   const [events, setEvents] = useState<MirthEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
   const [clientSearch, setClientSearch] = useState("");
+  // Batch selection
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batching, setBatching] = useState(false);
+  // Channel settings modal
+  const [settingsChannel, setSettingsChannel] = useState<MirthChannel | null>(null);
 
   const doAction = async (channelId: string, action: string) => {
     setActioning(`${channelId}-${action}`);
@@ -498,10 +670,22 @@ function ServerDetail({
       body: JSON.stringify({ upToErrors: errorCount }),
     }).catch(() => {});
     setActioning(null);
-    // Optimistically clear error indicator locally
     setChannels(prev => prev.map(c =>
       c.id === channelId ? { ...c, health: c.queued > 0 ? "stuck" : "healthy" } : c
     ));
+  };
+
+  const handleBatchAction = async (action: string) => {
+    if (selectedIds.size === 0) return;
+    setBatching(true);
+    await fetch(`/api/mirth/servers/${server.serverId}/batch-action`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ channelIds: [...selectedIds], action }),
+    }).catch(() => {});
+    setBatching(false);
+    setSelectedIds(new Set());
+    const r = await fetch(`/api/mirth/servers/${server.serverId}/channels`).catch(() => null);
+    if (r?.ok) { const d = await r.json(); setChannels(d.channels ?? channels); }
   };
 
   const loadEvents = async () => {
@@ -513,11 +697,18 @@ function ServerDetail({
 
   useEffect(() => { setChannels(server.channels); }, [server.channels]);
 
+  // display must be defined BEFORE toggleSelect/allSelected/toggleAll
   const display = useMemo(() => {
     if (!clientSearch.trim()) return channels;
     const t = clientSearch.toLowerCase();
     return channels.filter(c => c.name.toLowerCase().includes(t) || c.state.toLowerCase().includes(t));
   }, [channels, clientSearch]);
+
+  const toggleSelect = (id: string) => setSelectedIds(prev => {
+    const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;
+  });
+  const allSelected = display.length > 0 && display.every(c => selectedIds.has(c.id));
+  const toggleAll = () => setSelectedIds(allSelected ? new Set() : new Set(display.map(c => c.id)));
 
   return (
     <div className="flex flex-col h-full overflow-auto">
@@ -535,12 +726,31 @@ function ServerDetail({
           </div>
         </div>
 
+        {/* Batch toolbar */}
+        {isAdmin && selectedIds.size > 0 && (
+          <div className="flex items-center gap-2 mb-3 px-3 py-2 bg-muted/60 rounded-lg border border-border">
+            <span className="text-xs text-text-secondary font-medium">{selectedIds.size} selected</span>
+            {[{ label: "Start",  icon: <Play className="w-3 h-3" />,   action: "start",  cls: "text-green-600 hover:bg-green-50" },
+              { label: "Stop",   icon: <Square className="w-3 h-3" />, action: "stop",   cls: "text-red-500   hover:bg-red-50"   },
+              { label: "Pause",  icon: <Pause className="w-3 h-3" />,  action: "pause",  cls: "text-yellow-600 hover:bg-yellow-50" },
+              { label: "Resume", icon: <Play className="w-3 h-3" />,   action: "resume", cls: "text-blue-500  hover:bg-blue-50"   },
+            ].map(b => (
+              <button key={b.action} onClick={() => handleBatchAction(b.action)} disabled={batching}
+                className={`flex items-center gap-1 px-2 py-1 text-xs rounded border border-border ${b.cls} disabled:opacity-40`}>
+                {batching ? <RefreshCw className="w-3 h-3 animate-spin" /> : b.icon} {b.label}
+              </button>
+            ))}
+            <button onClick={() => setSelectedIds(new Set())} className="ml-auto p-1 rounded hover:bg-muted text-text-muted"><X className="w-3.5 h-3.5" /></button>
+          </div>
+        )}
+
         {display.length === 0 ? (
           <div className="jp-empty py-12"><GitBranch className="w-10 h-10 opacity-20 mb-3" /><p className="text-text-muted">No channels</p></div>
         ) : (
           <table className="w-full text-xs" style={{ tableLayout: "fixed" }}>
-            <colgroup><col style={{ width: 28 }} /><col /><col style={{ width: 80 }} /><col style={{ width: 72 }} /><col style={{ width: 72 }} /><col style={{ width: 72 }} /><col style={{ width: 72 }} /><col style={{ width: 72 }} />{isAdmin && <col style={{ width: 160 }} />}</colgroup>
+            <colgroup>{isAdmin && <col style={{ width: 28 }} />}<col style={{ width: 28 }} /><col /><col style={{ width: 96 }} /><col style={{ width: 72 }} /><col style={{ width: 72 }} /><col style={{ width: 72 }} /><col style={{ width: 72 }} /><col style={{ width: 72 }} />{isAdmin && <col style={{ width: 180 }} />}</colgroup>
             <thead><tr className="border-b border-border bg-surface-alt">
+              {isAdmin && <th className="px-2"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="rounded" /></th>}
               <th /><th className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase">Channel</th>
               <th className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase">State</th>
               <th className="text-right px-3 py-2 text-[10px] font-semibold text-text-muted uppercase">Rcvd</th>
@@ -553,11 +763,36 @@ function ServerDetail({
             <tbody>
               {display.map((ch, i) => (
                 <tr key={ch.id}
-                  className={`border-b border-border hover:bg-muted/40 cursor-pointer group ${i % 2 === 1 ? "bg-surface-alt/20" : ""}`}
+                  className={`border-b border-border hover:bg-muted/40 cursor-pointer group ${
+                    selectedIds.has(ch.id) ? "bg-accent/5" : i % 2 === 1 ? "bg-surface-alt/20" : ""
+                  }`}
                   onClick={() => onSelectChannel(ch)}>
+                  {isAdmin && (
+                    <td className="px-2" onClick={e => { e.stopPropagation(); toggleSelect(ch.id); }}>
+                      <input type="checkbox" checked={selectedIds.has(ch.id)} onChange={() => toggleSelect(ch.id)} className="rounded" />
+                    </td>
+                  )}
                   <td className="px-3 py-2"><HealthDot health={ch.health} /></td>
-                  <td className="px-3 py-2 font-medium text-text-primary truncate" title={ch.name}>{ch.name}</td>
-                  <td className="px-3 py-2"><HealthBadge health={ch.health} /></td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-1 min-w-0">
+                      <span className="font-medium text-text-primary truncate flex-1" title={ch.name}>{ch.name}</span>
+                      {ch.note && (
+                        <span title={ch.note} className="flex-shrink-0">
+                          <FileText className="w-3 h-3 text-blue-400" />
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div>
+                      <HealthBadge health={ch.health} />
+                      {ch.stateChangedAt && (
+                        <div className="text-[9px] text-text-muted mt-0.5 flex items-center gap-0.5">
+                          <Clock className="w-2 h-2" />{timeSince(ch.stateChangedAt)} ago
+                        </div>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-3 py-2 text-right text-text-secondary font-mono">{fmtNum(ch.received)}</td>
                   <td className="px-3 py-2 text-right text-text-secondary font-mono">{fmtNum(ch.sent)}</td>
                   <td className={`px-3 py-2 text-right font-mono font-semibold ${ch.error > 0 ? "text-red-600" : "text-text-muted"}`}>{fmtNum(ch.error)}</td>
@@ -593,10 +828,15 @@ function ServerDetail({
                         {ch.error > 0 && (
                           <button onClick={() => handleAcknowledge(ch.id, ch.error)} disabled={!!actioning}
                             className="p-1 rounded hover:bg-blue-50 text-blue-500 disabled:opacity-40"
-                            title={`Acknowledge ${ch.error} error${ch.error !== 1 ? "s" : ""} — won't alert again until new errors appear`}>
+                            title={`Acknowledge ${ch.error} error${ch.error !== 1 ? "s" : ""} \u2014 won't alert again until new errors appear`}>
                             {actioning === `${ch.id}-ack` ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
                           </button>
                         )}
+                        <button onClick={() => setSettingsChannel(ch)}
+                          className="p-1 rounded hover:bg-muted text-text-muted opacity-0 group-hover:opacity-100"
+                          title="Channel settings (note + inactivity)">
+                          <Settings className="w-3 h-3" />
+                        </button>
                       </div>
                     </td>
                   )}
@@ -638,7 +878,7 @@ function ServerDetail({
                         : "bg-blue-50 text-blue-700 border-blue-200"}`}>{ev.level}</span>
                     </td>
                     <td className="px-3 py-1.5 text-text-secondary">{ev.name}</td>
-                    <td className="px-3 py-1.5 text-text-muted">{ev.username || "—"}</td>
+                    <td className="px-3 py-1.5 text-text-muted">{ev.username || "\u2014"}</td>
                   </tr>
                 ))}</tbody>
               </table>
@@ -646,6 +886,18 @@ function ServerDetail({
           </div>
         )}
       </div>
+
+      {/* Channel settings modal — rendered outside any nested div */}
+      {settingsChannel && (
+        <ChannelSettingsModal
+          serverId={server.serverId}
+          channel={settingsChannel}
+          onClose={() => setSettingsChannel(null)}
+          onSaved={(note) => {
+            setChannels(prev => prev.map(c => c.id === settingsChannel!.id ? { ...c, note: note || undefined } : c));
+          }}
+        />
+      )}
     </div>
   );
 }

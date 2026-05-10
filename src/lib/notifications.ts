@@ -20,7 +20,7 @@ const NOTIF_DIR = path.join(process.cwd(), "config", "notifications");
 
 export interface AppNotification {
   id: string;
-  type: "mention" | "new_user" | "bundle_ready";
+  type: "mention" | "new_user" | "bundle_ready" | "mirth_alert";
   message: string;
   from: string;
   spaceSlug: string;
@@ -136,6 +136,67 @@ export async function notifyAdminsOfNewUser(
   } catch (err) {
     console.error("[notifications] Failed to notify admins of new user:", err);
   }
+}
+
+/**
+ * Notify all admin users of a Mirth Connect channel health change.
+ * Fire-and-forget — never throws.
+ */
+export async function notifyAdminsOfMirthAlert(
+  serverName: string,
+  channelName: string,
+  health: string,
+  meta?: Record<string, string>,
+): Promise<void> {
+  try {
+    const users = await getUsers();
+    const admins = users.filter((u) => u.isAdmin);
+    if (admins.length === 0) return;
+
+    const message = `Mirth: "${channelName}" on ${serverName} is now ${health.toUpperCase()}`;
+    const notif: AppNotification = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type: "mirth_alert",
+      message,
+      from: "system",
+      spaceSlug: "",
+      docName: channelName,
+      category: "mirth",
+      createdAt: new Date().toISOString(),
+      read: false,
+      meta,
+    };
+
+    await Promise.all(
+      admins.map(async (admin) => {
+        const notifs = await readNotifications(admin.username);
+        notifs.unshift(notif);
+        if (notifs.length > 100) notifs.length = 100;
+        await writeNotifications(admin.username, notifs);
+      })
+    );
+
+    // Email (best-effort)
+    const cfg = await getSmtpConfig();
+    if (!cfg.host || !cfg.from) return;
+    const recipients = new Set<string>();
+    for (const admin of admins) { if (admin.email) recipients.add(admin.email); }
+    if (cfg.adminEmail) recipients.add(cfg.adminEmail);
+    if (recipients.size === 0) return;
+
+    const healthColor = health === "down" ? "#dc2626" : health === "error" ? "#ef4444" : "#f59e0b";
+    const subject = `[Doc-it] Mirth alert: ${channelName} is ${health}`;
+    const html = `
+      <h2 style="color:${healthColor};font-family:sans-serif">Mirth Channel Alert</h2>
+      <table style="border-collapse:collapse;font-family:sans-serif;font-size:14px">
+        <tr><td style="padding:4px 12px;font-weight:bold">Server</td><td style="padding:4px 12px">${escapeHtml(serverName)}</td></tr>
+        <tr><td style="padding:4px 12px;font-weight:bold">Channel</td><td style="padding:4px 12px">${escapeHtml(channelName)}</td></tr>
+        <tr><td style="padding:4px 12px;font-weight:bold">Status</td><td style="padding:4px 12px;color:${healthColor};font-weight:bold">${escapeHtml(health.toUpperCase())}</td></tr>
+      </table>
+      <p style="color:#888;font-size:12px;margin-top:16px">Automated notification from Doc-it Mirth Connect module.</p>`;
+
+    await Promise.all([...recipients].map((to) => sendMail(to, subject, html).catch(() => {})));
+  } catch { /* never throws */ }
 }
 
 function escapeHtml(s: string): string {

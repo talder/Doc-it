@@ -13,6 +13,7 @@
 import { getDb } from "./config";
 import { encryptField, decryptField } from "./crypto";
 import { XMLParser } from "fast-xml-parser";
+import { notifyAdminsOfMirthAlert } from "./notifications";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -69,6 +70,16 @@ export interface MirthChannel {
   queued: number;
   // Computed
   health: ChannelHealth;
+  // Enrichment (populated by getMirthDashboard)
+  stateChangedAt?: string;       // ISO timestamp when current state was entered
+  prevState?: string;            // Previous state before current one
+  note?: string;                 // Admin annotation
+  inactiveForMinutes?: number;   // Set when inactivity threshold exceeded
+}
+
+export interface MirthChannelConfig {
+  inactivityThresholdMinutes: number; // default 60
+  inactivityEnabled: boolean;         // default true
 }
 
 export interface MirthMessage {
@@ -175,6 +186,42 @@ function initHistoryTables(): void {
       acked_at     TEXT NOT NULL,
       PRIMARY KEY (server_id, channel_id)
     );
+    CREATE TABLE IF NOT EXISTS mirth_channel_config (
+      server_id                    TEXT NOT NULL,
+      channel_id                   TEXT NOT NULL,
+      channel_name                 TEXT NOT NULL,
+      inactivity_threshold_minutes INTEGER NOT NULL DEFAULT 60,
+      inactivity_enabled           INTEGER NOT NULL DEFAULT 1,
+      updated_at                   TEXT NOT NULL,
+      PRIMARY KEY (server_id, channel_id)
+    );
+    CREATE TABLE IF NOT EXISTS mirth_channel_state_log (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      server_id    TEXT NOT NULL,
+      channel_id   TEXT NOT NULL,
+      channel_name TEXT NOT NULL,
+      prev_state   TEXT,
+      new_state    TEXT NOT NULL,
+      changed_at   TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_mcsl_lookup
+      ON mirth_channel_state_log(server_id, channel_id, changed_at);
+    CREATE TABLE IF NOT EXISTS mirth_channel_notes (
+      server_id    TEXT NOT NULL,
+      channel_id   TEXT NOT NULL,
+      channel_name TEXT NOT NULL,
+      note         TEXT NOT NULL DEFAULT '',
+      updated_by   TEXT,
+      updated_at   TEXT NOT NULL,
+      PRIMARY KEY (server_id, channel_id)
+    );
+    CREATE TABLE IF NOT EXISTS mirth_channel_prev_health (
+      server_id   TEXT NOT NULL,
+      channel_id  TEXT NOT NULL,
+      health      TEXT NOT NULL DEFAULT 'unknown',
+      updated_at  TEXT NOT NULL,
+      PRIMARY KEY (server_id, channel_id)
+    );
   `);
 }
 
@@ -198,8 +245,15 @@ function getPrevSnapshots(serverId: string): Map<string, ChannelSnapshot> {
   } catch { return new Map(); }
 }
 
-/** Persist current channel states; prune entries older than 7 days. Call AFTER classification. */
-function saveSnapshots(serverId: string, channels: MirthChannel[]): void {
+/**
+ * Persist current channel states, log state transitions, prune old data.
+ * prevSnaps should be the snapshot map loaded BEFORE this poll.
+ */
+function saveSnapshotsAndStateLog(
+  serverId: string,
+  channels: MirthChannel[],
+  prevSnaps: Map<string, ChannelSnapshot>,
+): void {
   try {
     initHistoryTables();
     const now = new Date().toISOString();
@@ -210,13 +264,127 @@ function saveSnapshots(serverId: string, channels: MirthChannel[]): void {
     const prune = db.prepare(
       "DELETE FROM mirth_channel_snapshots WHERE server_id=? AND channel_id=? AND ts < datetime('now','-7 days')"
     );
+    const logState = db.prepare(
+      "INSERT INTO mirth_channel_state_log (server_id,channel_id,channel_name,prev_state,new_state,changed_at) VALUES (?,?,?,?,?,?)"
+    );
+    const pruneLog = db.prepare(
+      "DELETE FROM mirth_channel_state_log WHERE server_id=? AND channel_id=? AND changed_at < datetime('now','-30 days')"
+    );
     db.transaction(() => {
       for (const ch of channels) {
         ins.run(serverId, ch.id, ch.name, now, ch.state, ch.received, ch.sent, ch.error, ch.queued);
         prune.run(serverId, ch.id);
+        const prev = prevSnaps.get(ch.id);
+        if (!prev || prev.state !== ch.state) {
+          logState.run(serverId, ch.id, ch.name, prev?.state ?? null, ch.state, now);
+          pruneLog.run(serverId, ch.id);
+        }
       }
     })();
   } catch { /* non-critical */ }
+}
+
+/** All channel configs for a server (missing channels get defaults). */
+function getAllChannelConfigs(serverId: string): Map<string, MirthChannelConfig> {
+  try {
+    initHistoryTables();
+    const rows = getDb().prepare(
+      "SELECT channel_id, inactivity_threshold_minutes, inactivity_enabled FROM mirth_channel_config WHERE server_id = ?"
+    ).all(serverId) as Array<{ channel_id: string; inactivity_threshold_minutes: number; inactivity_enabled: number }>;
+    const map = new Map<string, MirthChannelConfig>();
+    for (const r of rows) map.set(r.channel_id, { inactivityThresholdMinutes: r.inactivity_threshold_minutes, inactivityEnabled: r.inactivity_enabled === 1 });
+    return map;
+  } catch { return new Map(); }
+}
+
+/** All notes for a server keyed by channelId. */
+function getAllChannelNotes(serverId: string): Map<string, string> {
+  try {
+    initHistoryTables();
+    const rows = getDb().prepare(
+      "SELECT channel_id, note FROM mirth_channel_notes WHERE server_id = ?"
+    ).all(serverId) as Array<{ channel_id: string; note: string }>;
+    const map = new Map<string, string>();
+    for (const r of rows) map.set(r.channel_id, r.note);
+    return map;
+  } catch { return new Map(); }
+}
+
+/** Last known health for each channel on a server (for notification dedup). */
+function getPrevHealthMap(serverId: string): Map<string, ChannelHealth> {
+  try {
+    initHistoryTables();
+    const rows = getDb().prepare(
+      "SELECT channel_id, health FROM mirth_channel_prev_health WHERE server_id = ?"
+    ).all(serverId) as Array<{ channel_id: string; health: ChannelHealth }>;
+    const map = new Map<string, ChannelHealth>();
+    for (const r of rows) map.set(r.channel_id, r.health);
+    return map;
+  } catch { return new Map(); }
+}
+
+/** Persist current health for each channel (used on next poll for notification dedup). */
+function updatePrevHealthMap(serverId: string, channels: MirthChannel[]): void {
+  try {
+    initHistoryTables();
+    const db = getDb();
+    const upsert = db.prepare(`
+      INSERT INTO mirth_channel_prev_health (server_id, channel_id, health, updated_at)
+      VALUES (?, ?, ?, datetime('now'))
+      ON CONFLICT(server_id, channel_id) DO UPDATE SET health = excluded.health, updated_at = excluded.updated_at
+    `);
+    db.transaction(() => { for (const ch of channels) upsert.run(serverId, ch.id, ch.health); })();
+  } catch { /* non-critical */ }
+}
+
+/** Most recent state transition for each channel on a server. */
+function getAllLastStateChanges(
+  serverId: string,
+): Map<string, { prevState: string | null; changedAt: string }> {
+  try {
+    initHistoryTables();
+    const rows = getDb().prepare(`
+      SELECT l.channel_id, l.prev_state, l.changed_at
+      FROM mirth_channel_state_log l
+      INNER JOIN (
+        SELECT channel_id, MAX(changed_at) AS max_ts
+        FROM mirth_channel_state_log WHERE server_id = ?
+        GROUP BY channel_id
+      ) latest ON l.channel_id = latest.channel_id AND l.changed_at = latest.max_ts
+      WHERE l.server_id = ?
+    `).all(serverId, serverId) as Array<{ channel_id: string; prev_state: string | null; changed_at: string }>;
+    const map = new Map<string, { prevState: string | null; changedAt: string }>();
+    for (const r of rows) map.set(r.channel_id, { prevState: r.prev_state, changedAt: r.changed_at });
+    return map;
+  } catch { return new Map(); }
+}
+
+/**
+ * Returns true if the channel's received count has not changed since
+ * `thresholdMinutes` ago (channel is running but not processing messages).
+ */
+function checkInactivity(
+  serverId: string, channelId: string, thresholdMinutes: number, currentReceived: number,
+): boolean {
+  try {
+    initHistoryTables();
+    const row = getDb().prepare(`
+      SELECT received FROM mirth_channel_snapshots
+      WHERE server_id = ? AND channel_id = ?
+        AND ts <= datetime('now', ? || ' minutes')
+      ORDER BY ts DESC LIMIT 1
+    `).get(serverId, channelId, String(-thresholdMinutes)) as { received: number } | undefined;
+    if (!row) return false;
+    return row.received === currentReceived;
+  } catch { return false; }
+}
+
+/** True when transitioning from a calm state to an alert state (notify once). */
+function shouldNotify(prevHealth: ChannelHealth | undefined, newHealth: ChannelHealth): boolean {
+  if (!prevHealth || prevHealth === "unknown") return false;
+  const ALERT: Set<ChannelHealth> = new Set(["error", "down", "stuck"]);
+  const CALM:  Set<ChannelHealth> = new Set(["healthy", "paused", "disabled"]);
+  return CALM.has(prevHealth) && ALERT.has(newHealth);
 }
 
 /** Load per-channel acknowledged error baselines. */
@@ -244,6 +412,85 @@ export function acknowledgeMirthErrors(serverId: string, channelId: string, upTo
     ON CONFLICT(server_id, channel_id) DO UPDATE
       SET acked_error = excluded.acked_error, acked_at = excluded.acked_at
   `).run(serverId, channelId, upToErrors);
+}
+
+// ── Exported config / note / state-log CRUD ───────────────────────────────────
+
+/** Get inactivity monitoring config for a channel (defaults if not set). */
+export function getMirthChannelConfig(serverId: string, channelId: string): MirthChannelConfig {
+  try {
+    initHistoryTables();
+    const row = getDb().prepare(
+      "SELECT inactivity_threshold_minutes, inactivity_enabled FROM mirth_channel_config WHERE server_id = ? AND channel_id = ?"
+    ).get(serverId, channelId) as { inactivity_threshold_minutes: number; inactivity_enabled: number } | undefined;
+    if (!row) return { inactivityThresholdMinutes: 60, inactivityEnabled: true };
+    return { inactivityThresholdMinutes: row.inactivity_threshold_minutes, inactivityEnabled: row.inactivity_enabled === 1 };
+  } catch { return { inactivityThresholdMinutes: 60, inactivityEnabled: true }; }
+}
+
+/** Upsert inactivity monitoring config for a channel. */
+export function setMirthChannelConfig(
+  serverId: string, channelId: string, channelName: string, config: Partial<MirthChannelConfig>,
+): void {
+  initHistoryTables();
+  getDb().prepare(`
+    INSERT INTO mirth_channel_config (server_id, channel_id, channel_name, inactivity_threshold_minutes, inactivity_enabled, updated_at)
+    VALUES (?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(server_id, channel_id) DO UPDATE
+      SET channel_name = excluded.channel_name,
+          inactivity_threshold_minutes = COALESCE(?, inactivity_threshold_minutes),
+          inactivity_enabled = COALESCE(?, inactivity_enabled),
+          updated_at = excluded.updated_at
+  `).run(
+    serverId, channelId, channelName,
+    config.inactivityThresholdMinutes ?? 60,
+    config.inactivityEnabled !== undefined ? (config.inactivityEnabled ? 1 : 0) : 1,
+    config.inactivityThresholdMinutes ?? null,
+    config.inactivityEnabled !== undefined ? (config.inactivityEnabled ? 1 : 0) : null,
+  );
+}
+
+/** Get the admin note for a channel. */
+export function getMirthChannelNote(
+  serverId: string, channelId: string,
+): { note: string; updatedBy?: string; updatedAt?: string } | null {
+  try {
+    initHistoryTables();
+    const row = getDb().prepare(
+      "SELECT note, updated_by, updated_at FROM mirth_channel_notes WHERE server_id = ? AND channel_id = ?"
+    ).get(serverId, channelId) as { note: string; updated_by: string | null; updated_at: string } | undefined;
+    if (!row || !row.note) return null;
+    return { note: row.note, updatedBy: row.updated_by ?? undefined, updatedAt: row.updated_at };
+  } catch { return null; }
+}
+
+/** Upsert the admin note for a channel. */
+export function setMirthChannelNote(
+  serverId: string, channelId: string, channelName: string, note: string, updatedBy?: string,
+): void {
+  initHistoryTables();
+  getDb().prepare(`
+    INSERT INTO mirth_channel_notes (server_id, channel_id, channel_name, note, updated_by, updated_at)
+    VALUES (?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(server_id, channel_id) DO UPDATE
+      SET note = excluded.note, channel_name = excluded.channel_name,
+          updated_by = excluded.updated_by, updated_at = excluded.updated_at
+  `).run(serverId, channelId, channelName, note, updatedBy ?? null);
+}
+
+/** Recent state transitions for a channel (most recent first). */
+export function getChannelStateLog(
+  serverId: string, channelId: string, limit = 20,
+): Array<{ prevState: string | null; newState: string; changedAt: string }> {
+  try {
+    initHistoryTables();
+    return (getDb().prepare(`
+      SELECT prev_state, new_state, changed_at FROM mirth_channel_state_log
+      WHERE server_id = ? AND channel_id = ?
+      ORDER BY changed_at DESC LIMIT ?
+    `).all(serverId, channelId, limit) as Array<{ prev_state: string | null; new_state: string; changed_at: string }>)
+      .map(r => ({ prevState: r.prev_state, newState: r.new_state, changedAt: r.changed_at }));
+  } catch { return []; }
 }
 
 /** Recent snapshots for a channel — useful for history/sparkline display. */
@@ -492,15 +739,15 @@ export async function getMirthVersion(server: MirthServer): Promise<string> {
 
 /**
  * Classify channel health.
- * When `prev` is provided the error state is only triggered when the error
- * count has INCREASED since the last snapshot — accumulated historic errors
- * no longer cause false alerts. `ackedErrors` lets admins acknowledge a
- * known error baseline so it won't fire again until count rises above it.
+ * - `prev`: last snapshot (for delta-based error detection)
+ * - `ackedErrors`: acknowledged baseline (errors at or below won't alert)
+ * - `isInactive`: true when received count hasn't changed in threshold time
  */
 function classifyChannel(
-  ch: Omit<MirthChannel, "health">,
+  ch: Omit<MirthChannel, "health" | "stateChangedAt" | "prevState" | "note" | "inactiveForMinutes">,
   prev?: ChannelSnapshot | null,
   ackedErrors = 0,
+  isInactive = false,
 ): ChannelHealth {
   if (!ch.enabled) return "disabled";
   const s = ch.state?.toUpperCase() ?? "";
@@ -508,8 +755,8 @@ function classifyChannel(
   if (s === "PAUSED")  return "paused";
   if (s === "STARTED") {
     const unacked = ch.error - ackedErrors;
-    // Only surface errors that are new (increased since last snapshot)
     if (unacked > 0 && (!prev || ch.error > prev.error)) return "error";
+    if (isInactive) return "stuck";
     if (ch.queued > 0) return "stuck";
     return "healthy";
   }
@@ -757,7 +1004,22 @@ export async function mirthChannelAction(
   }
 }
 
-// ── Dashboard aggregation ──────────────────────────────────────────────────────
+/** Execute an action on multiple channels in parallel. */
+export async function mirthBatchChannelAction(
+  server: MirthServer,
+  channelIds: string[],
+  action: ChannelAction,
+): Promise<{ succeeded: string[]; failed: string[] }> {
+  const results = await Promise.allSettled(
+    channelIds.map(id => mirthChannelAction(server, id, action))
+  );
+  return {
+    succeeded: channelIds.filter((_, i) => results[i].status === "fulfilled"),
+    failed:    channelIds.filter((_, i) => results[i].status === "rejected"),
+  };
+}
+
+// ── Dashboard aggregation ──────
 
 /**
  * Fetches all enabled servers in parallel and returns a single aggregated
@@ -770,23 +1032,52 @@ export async function getMirthDashboard(): Promise<MirthDashboard> {
   const serverResults = await Promise.all(
     enabled.map(async (server): Promise<MirthDashboardServer> => {
       try {
-        // Load history context BEFORE fetching (prev = last poll's state)
-        const prevSnaps = getPrevSnapshots(server.id);
-        const ackedErrs = getAckedErrors(server.id);
+        // Load all context maps before network calls (prev = last poll's state)
+        const prevSnaps       = getPrevSnapshots(server.id);
+        const ackedErrs       = getAckedErrors(server.id);
+        const channelConfigs  = getAllChannelConfigs(server.id);
+        const lastChanges     = getAllLastStateChanges(server.id);
+        const prevHealthMap   = getPrevHealthMap(server.id);
+        const notesMap        = getAllChannelNotes(server.id);
 
         const [version, rawChannels] = await Promise.all([
           getMirthVersion(server).catch(() => null),
           getMirthChannels(server),
         ]);
 
-        // Reclassify with delta-based logic (new errors only, ack support)
-        const channels: MirthChannel[] = rawChannels.map(ch => ({
-          ...ch,
-          health: classifyChannel(ch, prevSnaps.get(ch.id), ackedErrs.get(ch.id) ?? 0),
-        }));
+        // Classify with full context and enrich with metadata
+        const channels: MirthChannel[] = rawChannels.map(ch => {
+          const prev    = prevSnaps.get(ch.id);
+          const acked   = ackedErrs.get(ch.id) ?? 0;
+          const cfg     = channelConfigs.get(ch.id) ?? { inactivityThresholdMinutes: 60, inactivityEnabled: true };
+          const isInactive = cfg.inactivityEnabled && ch.state?.toUpperCase() === "STARTED"
+            ? checkInactivity(server.id, ch.id, cfg.inactivityThresholdMinutes, ch.received)
+            : false;
+          const stateInfo = lastChanges.get(ch.id);
+          const health    = classifyChannel(ch, prev, acked, isInactive);
+          return {
+            ...ch,
+            health,
+            stateChangedAt:    stateInfo?.changedAt,
+            prevState:         stateInfo?.prevState ?? undefined,
+            note:              notesMap.get(ch.id),
+            inactiveForMinutes: isInactive ? cfg.inactivityThresholdMinutes : undefined,
+          };
+        });
 
-        // Persist for next poll comparison
-        saveSnapshots(server.id, channels);
+        // Persist snapshots + state transition log
+        saveSnapshotsAndStateLog(server.id, channels, prevSnaps);
+
+        // Fire notifications for calm→alert transitions (fire-and-forget)
+        for (const ch of channels) {
+          if (shouldNotify(prevHealthMap.get(ch.id), ch.health)) {
+            notifyAdminsOfMirthAlert(
+              server.name, ch.name, ch.health,
+              { serverId: server.id, channelId: ch.id, serverName: server.name, channelName: ch.name, health: ch.health },
+            ).catch(() => {});
+          }
+        }
+        updatePrevHealthMap(server.id, channels);
 
         const health = channels.length > 0 ? worstHealth(channels) : "unknown";
         const counts = { healthy: 0, error: 0, stuck: 0, paused: 0, down: 0, disabled: 0, unknown: 0 };
