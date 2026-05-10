@@ -12,6 +12,7 @@
 
 import { getDb } from "./config";
 import { encryptField, decryptField } from "./crypto";
+import { XMLParser } from "fast-xml-parser";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -273,6 +274,8 @@ async function rowToServer(row: MirthServerRecord): Promise<MirthServer> {
 
 // ── HTTP helper ────────────────────────────────────────────────────────────────
 
+const xmlParser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_", parseTagValue: true, isArray: (name) => ["channel", "channelStatus", "event", "entry", "message"].includes(name) });
+
 async function mirthFetch(
   server: MirthServer,
   path: string,
@@ -282,13 +285,17 @@ async function mirthFetch(
   const creds = Buffer.from(`${server.username}:${server.passwordDecrypted}`).toString("base64");
   const headers: Record<string, string> = {
     Authorization: `Basic ${creds}`,
-    Accept: "application/json",
+    Accept: "application/xml",
     "X-Requested-With": "XMLHttpRequest",
     ...(options.headers as Record<string, string> ?? {}),
   };
 
-  const doFetch = () =>
-    fetch(url, { ...options, headers, signal: AbortSignal.timeout(15_000) });
+  const doFetch = () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10_000);
+    return fetch(url, { ...options, headers, signal: controller.signal })
+      .finally(() => clearTimeout(timer));
+  };
 
   if (server.ignoreSslErrors) {
     const prev = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
@@ -303,14 +310,22 @@ async function mirthFetch(
   return doFetch();
 }
 
+/** Parse an XML response body into a JS object. */
+async function parseXml(res: Response): Promise<unknown> {
+  const text = await res.text();
+  return xmlParser.parse(text);
+}
+
 // ── Version / connectivity test ────────────────────────────────────────────────
 
 export async function getMirthVersion(server: MirthServer): Promise<string> {
   const res = await mirthFetch(server, "/server/version");
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  // May return plain text or JSON string
   const text = await res.text();
-  try { return (JSON.parse(text) as string).trim(); } catch { return text.trim(); }
+  // XML: <string>3.12.0</string>  or plain text
+  const match = text.match(/<string[^>]*>([^<]+)<\/string>/);
+  if (match) return match[1].trim();
+  return text.trim();
 }
 
 // ── Health classification ──────────────────────────────────────────────────────
@@ -355,61 +370,49 @@ export async function getMirthChannels(server: MirthServer): Promise<MirthChanne
   if (!chRes.ok) throw new Error(`Channels fetch failed: HTTP ${chRes.status}`);
   if (!stRes.ok) throw new Error(`Statuses fetch failed: HTTP ${stRes.status}`);
 
-  // Mirth may return a JSON array or a wrapped object
-  const chData = await chRes.json() as unknown;
-  const stData = await stRes.json() as unknown;
+  const chData = await parseXml(chRes) as Record<string, unknown>;
+  const stData = await parseXml(stRes) as Record<string, unknown>;
 
-  // Normalise channel list
-  const rawChannels: Array<{ id?: string; channelId?: string; name?: string; description?: string; enabled?: boolean }> =
-    Array.isArray(chData) ? chData
-    : (chData as { channel?: unknown[] })?.channel ? [(chData as { channel: unknown[] }).channel].flat()
-    : [];
+  // XML: <list><channel>...</channel></list>
+  interface RawChannel { id?: string; name?: string; description?: string; enabled?: boolean | string; }
+  const rawChannels: RawChannel[] = ((chData?.list as Record<string, unknown>)?.channel ?? []) as RawChannel[];
 
-  // Build status map { channelId → stats }
+  // XML: <list><channelStatus>...</channelStatus></list>
   interface RawStatus {
-    channelId?: string;
-    name?: string;
-    state?: string;
-    statistics?: {
-      received?: number; sent?: number; error?: number; filtered?: number; queued?: number;
-    };
+    channelId?: string; name?: string; state?: string;
+    statistics?: { received?: number; sent?: number; error?: number; filtered?: number; queued?: number; };
   }
-  const rawStatuses: RawStatus[] = Array.isArray(stData)
-    ? (stData as RawStatus[])
-    : (stData as { channelStatus?: unknown[] })?.channelStatus
-      ? [(stData as { channelStatus: unknown[] }).channelStatus].flat() as RawStatus[]
-      : [];
+  const rawStatuses: RawStatus[] = ((stData?.list as Record<string, unknown>)?.channelStatus ?? []) as RawStatus[];
 
   const statusMap = new Map<string, RawStatus>();
   for (const st of rawStatuses) {
-    const cid = st.channelId ?? "";
+    const cid = String(st.channelId ?? "");
     if (cid) statusMap.set(cid, st);
   }
 
-  // Merge
   const channels: MirthChannel[] = rawChannels.map((ch) => {
-    const cid = ch.id ?? ch.channelId ?? "";
+    const cid = String(ch.id ?? "");
     const st = statusMap.get(cid);
     const stats = st?.statistics ?? {};
     const base = {
       id: cid,
       name: ch.name ?? st?.name ?? cid,
       description: ch.description ?? "",
-      enabled: ch.enabled !== false,
+      enabled: ch.enabled !== false && ch.enabled !== "false",
       state: st?.state ?? "UNKNOWN",
-      received: stats.received ?? 0,
-      sent: stats.sent ?? 0,
-      error: stats.error ?? 0,
-      filtered: stats.filtered ?? 0,
-      queued: stats.queued ?? 0,
+      received: Number(stats.received ?? 0),
+      sent: Number(stats.sent ?? 0),
+      error: Number(stats.error ?? 0),
+      filtered: Number(stats.filtered ?? 0),
+      queued: Number(stats.queued ?? 0),
     };
     return { ...base, health: classifyChannel(base) };
   });
 
-  // Add any statuses for channels not in the channel list (edge case)
+  // Include any statuses for channels missing from the channel list
   const seenIds = new Set(channels.map((c) => c.id));
   for (const st of rawStatuses) {
-    const cid = st.channelId ?? "";
+    const cid = String(st.channelId ?? "");
     if (cid && !seenIds.has(cid)) {
       const stats = st.statistics ?? {};
       const base = {
@@ -418,11 +421,11 @@ export async function getMirthChannels(server: MirthServer): Promise<MirthChanne
         description: "",
         enabled: true,
         state: st.state ?? "UNKNOWN",
-        received: stats.received ?? 0,
-        sent: stats.sent ?? 0,
-        error: stats.error ?? 0,
-        filtered: stats.filtered ?? 0,
-        queued: stats.queued ?? 0,
+        received: Number(stats.received ?? 0),
+        sent: Number(stats.sent ?? 0),
+        error: Number(stats.error ?? 0),
+        filtered: Number(stats.filtered ?? 0),
+        queued: Number(stats.queued ?? 0),
       };
       channels.push({ ...base, health: classifyChannel(base) });
     }
@@ -448,31 +451,24 @@ export async function getMirthMessages(
   });
   const res = await mirthFetch(server, `/channels/${channelId}/messages?${q}`);
   if (!res.ok) throw new Error(`Messages fetch failed: HTTP ${res.status}`);
-  const data = await res.json() as unknown;
+  const data = await parseXml(res) as Record<string, unknown>;
 
-  // Mirth wraps messages in a list object
-  interface RawMsgList {
-    message?: unknown[];
-    "@count"?: string | number;
-    count?: string | number;
-  }
   interface RawMsg {
     messageId?: number | string;
-    receivedDate?: unknown;
-    processed?: boolean;
+    receivedDate?: { time?: number | string } | string;
     connectorMessages?: {
       entry?: Array<{ connectorMessage?: { connectorName?: string; status?: string; rawData?: { content?: string }; processedData?: { content?: string } } }>;
     };
   }
 
-  const listObj = data as RawMsgList;
-  const rawMsgs: RawMsg[] = Array.isArray(listObj) ? (listObj as RawMsg[]) : (listObj?.message ? [listObj.message].flat() as RawMsg[] : []);
-  const total = Number(listObj?.["@count"] ?? listObj?.count ?? rawMsgs.length);
+  const listObj = (data?.list ?? data) as Record<string, unknown>;
+  const rawMsgs: RawMsg[] = ((listObj?.message ?? []) as RawMsg[]);
+  const total = Number((listObj as Record<string, unknown>)?.["@_count"] ?? rawMsgs.length);
 
   const messages: MirthMessage[] = rawMsgs.map((m) => {
     const connectors = m.connectorMessages?.entry ?? [];
     const sourceConn = connectors[0]?.connectorMessage;
-    const rd = m.receivedDate as { time?: number | string } | string | undefined;
+    const rd = m.receivedDate;
     const ts = typeof rd === "object" && rd !== null && "time" in rd
       ? new Date(Number(rd.time)).toISOString()
       : typeof rd === "string" ? rd : "";
@@ -502,21 +498,20 @@ export async function getMirthEvents(
   });
   const res = await mirthFetch(server, `/events?${q}`);
   if (!res.ok) throw new Error(`Events fetch failed: HTTP ${res.status}`);
-  const data = await res.json() as unknown;
+  const data = await parseXml(res) as Record<string, unknown>;
 
-  interface RawEventList { event?: unknown[]; "@count"?: string | number; count?: string | number; }
   interface RawEvent {
     id?: number; level?: string; name?: string; outcome?: string;
-    userId?: number; username?: string; ipAddress?: string; dateTime?: unknown;
-    attributes?: { entry?: Array<{ string?: string[] }> };
+    userId?: number; username?: string; ipAddress?: string;
+    dateTime?: { time?: number | string } | string;
   }
 
-  const listObj = data as RawEventList;
-  const rawEvents: RawEvent[] = Array.isArray(listObj) ? (listObj as RawEvent[]) : (listObj?.event ? [listObj.event].flat() as RawEvent[] : []);
-  const total = Number(listObj?.["@count"] ?? listObj?.count ?? rawEvents.length);
+  const listObj = (data?.list ?? data) as Record<string, unknown>;
+  const rawEvents: RawEvent[] = ((listObj?.event ?? []) as RawEvent[]);
+  const total = Number((listObj as Record<string, unknown>)?.["@_count"] ?? rawEvents.length);
 
   const events: MirthEvent[] = rawEvents.map((e) => {
-    const dt = e.dateTime as { time?: number | string } | string | undefined;
+    const dt = e.dateTime;
     const ts = typeof dt === "object" && dt !== null && "time" in dt
       ? new Date(Number(dt.time)).toISOString()
       : typeof dt === "string" ? dt : "";
