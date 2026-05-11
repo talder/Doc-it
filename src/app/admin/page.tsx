@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Plus, Trash2, Shield, ShieldCheck, Users, Layout, Settings, Key, Copy, Check, ClipboardList, ChevronLeft, ChevronRight, Download, Lock, LockOpen, ChevronDown, ChevronUp, ShieldOff, HardDrive, RefreshCw, PlayCircle, RotateCcw, Eye, EyeOff, UsersRound, X, Network, AlertTriangle, GitBranch, Wifi } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Shield, ShieldCheck, Users, Layout, Settings, Key, Copy, Check, ClipboardList, ChevronLeft, ChevronRight, Download, Lock, LockOpen, ChevronDown, ChevronUp, ShieldOff, HardDrive, RefreshCw, PlayCircle, RotateCcw, Eye, EyeOff, UsersRound, X, Network, AlertTriangle, GitBranch, Wifi, Mail } from "lucide-react";
 import PasswordStrengthMeter from "@/components/PasswordStrengthMeter";
 import { isPasswordValid } from "@/lib/password-policy";
 import type { SanitizedUser, Space, SpaceRole, AuditConfig, AuditEntry, UserGroup, AdConfig, AdGroupMapping, DashboardAccessConfig, CrashEntry, SnapshotEntry } from "@/lib/types";
@@ -203,6 +203,25 @@ function AdminContent() {
   const [editingMirthId, setEditingMirthId] = useState<string | null>(null);
   const emptyMirthForm = () => ({ name: "", url: "", username: "", password: "", ignoreSslErrors: true, enabled: true, sortOrder: 0 });
   const [mirthForm, setMirthForm] = useState(emptyMirthForm());
+  const emptyMirthNotif = () => ({ recipients: [] as string[], alertError: true, alertStuck: true, alertDown: true, alertPaused: false });
+  const [mirthNotif, setMirthNotif] = useState(emptyMirthNotif());
+  const [mirthNotifLoaded, setMirthNotifLoaded] = useState(false);
+  const [mirthNotifEmail, setMirthNotifEmail] = useState("");
+
+  const loadMirthNotifConfig = async (id: string) => {
+    const r = await fetch(`/api/mirth/servers/${id}/notifications`).catch(() => null);
+    if (r?.ok) {
+      const d = await r.json();
+      if (d.config) setMirthNotif({
+        recipients: d.config.recipients ?? [],
+        alertError:  d.config.alertError  !== false,
+        alertStuck:  d.config.alertStuck  !== false,
+        alertDown:   d.config.alertDown   !== false,
+        alertPaused: d.config.alertPaused === true,
+      });
+    }
+    setMirthNotifLoaded(true);
+  };
 
   const fetchMirthServers = useCallback(async () => {
     const r = await fetch("/api/mirth/servers").catch(() => null);
@@ -3432,7 +3451,78 @@ function AdminContent() {
                       </label>
                     </div>
                   </div>
-                  <div className="flex gap-2">
+                {/* Notification config — only shown when editing an existing server */}
+                {editingMirthId && (
+                  <div className="mt-4 pt-4 border-t border-border">
+                    <p className="text-xs font-semibold text-gray-600 mb-3 flex items-center gap-1.5">
+                      <Mail className="w-3.5 h-3.5" /> Notification Settings
+                    </p>
+                    {!mirthNotifLoaded ? (
+                      <p className="text-xs text-text-muted">Loading…</p>
+                    ) : (
+                      <>
+                        <p className="text-xs text-text-muted mb-2">Send an alert when a channel health transitions to:</p>
+                        <div className="grid grid-cols-4 gap-3 mb-3">
+                          {([
+                            { key: "alertError"  as const, label: "Error"  },
+                            { key: "alertStuck"  as const, label: "Stuck"  },
+                            { key: "alertDown"   as const, label: "Down"   },
+                            { key: "alertPaused" as const, label: "Paused" },
+                          ]).map(({ key, label }) => (
+                            <label key={key} className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
+                              <input type="checkbox" checked={mirthNotif[key]}
+                                onChange={e => setMirthNotif(p => ({ ...p, [key]: e.target.checked }))}
+                                className="rounded" />
+                              {label}
+                            </label>
+                          ))}
+                        </div>
+                        <p className="text-xs text-text-muted mb-1">Email recipients (leave empty to use default admin addresses):</p>
+                        <div className="flex gap-2 mb-2">
+                          <input type="email" value={mirthNotifEmail}
+                            onChange={e => setMirthNotifEmail(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                const v = mirthNotifEmail.trim();
+                                if (v && !mirthNotif.recipients.includes(v)) setMirthNotif(p => ({ ...p, recipients: [...p.recipients, v] }));
+                                setMirthNotifEmail("");
+                              }
+                            }}
+                            placeholder="email@example.com"
+                            className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                          <button
+                            onClick={() => {
+                              const v = mirthNotifEmail.trim();
+                              if (v && !mirthNotif.recipients.includes(v)) setMirthNotif(p => ({ ...p, recipients: [...p.recipients, v] }));
+                              setMirthNotifEmail("");
+                            }}
+                            disabled={!mirthNotifEmail.trim()}
+                            className="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50">
+                            Add
+                          </button>
+                        </div>
+                        {mirthNotif.recipients.length === 0 ? (
+                          <p className="text-xs text-text-muted italic">No overrides — using default admin email list.</p>
+                        ) : (
+                          <div className="space-y-1">
+                            {mirthNotif.recipients.map(email => (
+                              <div key={email} className="flex items-center justify-between px-2.5 py-1.5 rounded border border-border bg-gray-50 text-xs">
+                                <span className="text-text-secondary">{email}</span>
+                                <button onClick={() => setMirthNotif(p => ({ ...p, recipients: p.recipients.filter(e => e !== email) }))}
+                                  className="p-0.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500">
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+
+                  <div className="flex gap-2 mt-4">
                     <button
                       disabled={mirthSaving || !mirthForm.name.trim() || !mirthForm.url.trim()}
                       onClick={async () => {
@@ -3449,11 +3539,19 @@ function AdminContent() {
                         const res = editingMirthId
                           ? await fetch(`/api/mirth/servers/${editingMirthId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null)
                           : await fetch("/api/mirth/servers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
+                        if (res?.ok && editingMirthId) {
+                          await fetch(`/api/mirth/servers/${editingMirthId}/notifications`, {
+                            method: "PUT", headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(mirthNotif),
+                          }).catch(() => {});
+                        }
                         setMirthSaving(false);
                         if (res?.ok) {
                           setShowMirthForm(false);
                           setEditingMirthId(null);
                           setMirthForm(emptyMirthForm());
+                          setMirthNotif(emptyMirthNotif());
+                          setMirthNotifLoaded(false);
                           fetchMirthServers();
                         } else {
                           const d = res ? await res.json().catch(() => ({})) : {};
@@ -3464,7 +3562,7 @@ function AdminContent() {
                     >
                       {mirthSaving ? "Saving…" : editingMirthId ? "Update" : "Create"}
                     </button>
-                    <button onClick={() => { setShowMirthForm(false); setEditingMirthId(null); setMirthForm(emptyMirthForm()); }} className="px-3 py-1.5 text-sm text-gray-500 hover:text-text-secondary">
+                    <button onClick={() => { setShowMirthForm(false); setEditingMirthId(null); setMirthForm(emptyMirthForm()); setMirthNotif(emptyMirthNotif()); setMirthNotifLoaded(false); }} className="px-3 py-1.5 text-sm text-gray-500 hover:text-text-secondary">
                       Cancel
                     </button>
                   </div>
@@ -3504,9 +3602,13 @@ function AdminContent() {
                             {mirthTesting === s.id ? "Testing…" : "Test"}
                           </button>
                           <button
-                            onClick={() => {
+                          onClick={() => {
                               setEditingMirthId(s.id);
                               setMirthForm({ name: s.name, url: s.url, username: s.username, password: "", ignoreSslErrors: s.ignoreSslErrors, enabled: s.enabled, sortOrder: s.sortOrder });
+                              setMirthNotif(emptyMirthNotif());
+                              setMirthNotifLoaded(false);
+                              setMirthNotifEmail("");
+                              loadMirthNotifConfig(s.id);
                               setShowMirthForm(true);
                             }}
                             className="p-1.5 rounded-lg hover:bg-muted text-gray-400 hover:text-gray-600 transition-colors"

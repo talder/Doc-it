@@ -4,7 +4,14 @@ All notable changes to Doc-it are documented here.
 
 ---
 
-## [0.2.25] — 2026-04-01
+## [0.3.32] — 2026-05-11
+
+### Added
+- **Mirth notification settings in admin** — the Mirth server edit form in the admin panel now includes a Notification Settings section. Admins can configure which channel health transitions trigger an alert (Error, Stuck, Down, Paused) and optionally override the email recipients per server. Settings are saved via the existing `PUT /api/mirth/servers/{id}/notifications` route.
+
+---
+
+## [0.2.25]
 
 ### Added
 - **Inline Table of Contents** — new `/toc` slash command inserts a dynamic, auto-updating TOC block into the document body. Includes a "Number headings" toggle that adds hierarchical numbering (1., 1.1, 1.1.1) to headings via CSS counters. The sidebar TOC panel also shows numbers when the toggle is enabled.
