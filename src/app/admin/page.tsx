@@ -207,6 +207,7 @@ function AdminContent() {
   const [mirthNotif, setMirthNotif] = useState(emptyMirthNotif());
   const [mirthNotifLoaded, setMirthNotifLoaded] = useState(false);
   const [mirthNotifEmail, setMirthNotifEmail] = useState("");
+  const [mirthNotifSaving, setMirthNotifSaving] = useState(false);
 
   const loadMirthNotifConfig = async (id: string) => {
     const r = await fetch(`/api/mirth/servers/${id}/notifications`).catch(() => null);
@@ -3491,7 +3492,7 @@ function AdminContent() {
                             }}
                             placeholder="email@example.com"
                             className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                          <button
+                          <button type="button"
                             onClick={() => {
                               const v = mirthNotifEmail.trim();
                               if (v && !mirthNotif.recipients.includes(v)) setMirthNotif(p => ({ ...p, recipients: [...p.recipients, v] }));
@@ -3505,11 +3506,11 @@ function AdminContent() {
                         {mirthNotif.recipients.length === 0 ? (
                           <p className="text-xs text-text-muted italic">No overrides — using default admin email list.</p>
                         ) : (
-                          <div className="space-y-1">
+                          <div className="space-y-1 mb-3">
                             {mirthNotif.recipients.map(email => (
                               <div key={email} className="flex items-center justify-between px-2.5 py-1.5 rounded border border-border bg-gray-50 text-xs">
                                 <span className="text-text-secondary">{email}</span>
-                                <button onClick={() => setMirthNotif(p => ({ ...p, recipients: p.recipients.filter(e => e !== email) }))}
+                                <button type="button" onClick={() => setMirthNotif(p => ({ ...p, recipients: p.recipients.filter(e => e !== email) }))}
                                   className="p-0.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500">
                                   <X className="w-3 h-3" />
                                 </button>
@@ -3517,6 +3518,26 @@ function AdminContent() {
                             ))}
                           </div>
                         )}
+                        <button type="button"
+                          disabled={mirthNotifSaving}
+                          onClick={async () => {
+                            setMirthNotifSaving(true);
+                            const r = await fetch(`/api/mirth/servers/${editingMirthId}/notifications`, {
+                              method: "PUT",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify(mirthNotif),
+                            }).catch(() => null);
+                            setMirthNotifSaving(false);
+                            if (r?.ok) flash("Notification settings saved", "success");
+                            else {
+                              const d = r ? await r.json().catch(() => ({})) : {};
+                              flash(d.error || "Failed to save notification settings", "error");
+                            }
+                          }}
+                          className="px-3 py-1.5 text-sm font-medium border border-border rounded-lg hover:bg-muted disabled:opacity-50 transition-colors"
+                        >
+                          {mirthNotifSaving ? "Saving…" : "Save Notifications"}
+                        </button>
                       </>
                     )}
                   </div>
@@ -3539,12 +3560,6 @@ function AdminContent() {
                         const res = editingMirthId
                           ? await fetch(`/api/mirth/servers/${editingMirthId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null)
                           : await fetch("/api/mirth/servers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
-                        if (res?.ok && editingMirthId) {
-                          await fetch(`/api/mirth/servers/${editingMirthId}/notifications`, {
-                            method: "PUT", headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify(mirthNotif),
-                          }).catch(() => {});
-                        }
                         setMirthSaving(false);
                         if (res?.ok) {
                           setShowMirthForm(false);
@@ -3560,9 +3575,9 @@ function AdminContent() {
                       }}
                       className="px-4 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50"
                     >
-                      {mirthSaving ? "Saving…" : editingMirthId ? "Update" : "Create"}
+                      {mirthSaving ? "Saving…" : editingMirthId ? "Update Connection" : "Create"}
                     </button>
-                    <button onClick={() => { setShowMirthForm(false); setEditingMirthId(null); setMirthForm(emptyMirthForm()); setMirthNotif(emptyMirthNotif()); setMirthNotifLoaded(false); }} className="px-3 py-1.5 text-sm text-gray-500 hover:text-text-secondary">
+                    <button type="button" onClick={() => { setShowMirthForm(false); setEditingMirthId(null); setMirthForm(emptyMirthForm()); setMirthNotif(emptyMirthNotif()); setMirthNotifLoaded(false); }} className="px-3 py-1.5 text-sm text-gray-500 hover:text-text-secondary">
                       Cancel
                     </button>
                   </div>
