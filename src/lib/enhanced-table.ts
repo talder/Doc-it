@@ -64,11 +64,14 @@ async function readIndex(spaceSlug: string): Promise<Record<string, EnhancedTabl
   }
 }
 
-/** Write the metadata index atomically. */
+/** Write the metadata index atomically (write to .tmp then rename). */
 async function writeIndex(spaceSlug: string, index: Record<string, EnhancedTableMeta>): Promise<void> {
   const dir = getEnhancedTableDir(spaceSlug);
   await ensureDir(dir);
-  await fs.writeFile(indexPath(spaceSlug), JSON.stringify(index), "utf-8");
+  const target = indexPath(spaceSlug);
+  const tmp = target + ".tmp";
+  await fs.writeFile(tmp, JSON.stringify(index), "utf-8");
+  await fs.rename(tmp, target);
 }
 
 /** Update one entry in the index (called after write). */
@@ -229,7 +232,12 @@ export async function readEnhancedTable(spaceSlug: string, dbId: string): Promis
 export async function writeEnhancedTable(spaceSlug: string, dbId: string, db: EnhancedTable): Promise<void> {
   const dir = getEnhancedTableDir(spaceSlug);
   await ensureDir(dir);
-  await fs.writeFile(dbPath(spaceSlug, dbId), JSON.stringify(db, null, 2), "utf-8");
+  // Write to a .tmp file then rename — rename(2) is atomic on POSIX, so the live
+  // file is never seen in a partially-written state even under concurrent requests.
+  const target = dbPath(spaceSlug, dbId);
+  const tmp = target + ".tmp";
+  await fs.writeFile(tmp, JSON.stringify(db, null, 2), "utf-8");
+  await fs.rename(tmp, target);
   // Update the lightweight index (non-blocking — don't let index errors break writes)
   updateIndexEntry(spaceSlug, db).catch(() => {});
 }
