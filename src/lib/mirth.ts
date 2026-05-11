@@ -106,6 +106,37 @@ export interface MirthEvent {
   attributes?: Record<string, string>;
 }
 
+export interface MirthNotificationConfig {
+  recipients:  string[];
+  alertError:  boolean;
+  alertStuck:  boolean;
+  alertDown:   boolean;
+  alertPaused: boolean;
+}
+
+export interface ConnectorMessageDetail {
+  metaDataId:         number;
+  connectorName:      string;
+  status:             string;
+  receivedDate:       string;
+  sendDate:           string;
+  processingTime?:    number;
+  error?:             string;
+  rawContent:         string;
+  processedContent:   string;
+  transformedContent: string;
+  encodedContent:     string;
+  sentContent:        string;
+  responseContent:    string;
+}
+
+export interface MirthMessageDetail {
+  messageId:         string;
+  receivedDate:      string;
+  status:            string;
+  connectorMessages: ConnectorMessageDetail[];
+}
+
 export interface MirthDashboardServer {
   serverId: string;
   serverName: string;
@@ -236,6 +267,15 @@ function initHistoryTables(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_mhl_ts
       ON mirth_history_log(timestamp DESC);
+    CREATE TABLE IF NOT EXISTS mirth_notification_config (
+      server_id    TEXT PRIMARY KEY,
+      recipients   TEXT NOT NULL DEFAULT '[]',
+      alert_error  INTEGER NOT NULL DEFAULT 1,
+      alert_stuck  INTEGER NOT NULL DEFAULT 1,
+      alert_down   INTEGER NOT NULL DEFAULT 1,
+      alert_paused INTEGER NOT NULL DEFAULT 0,
+      updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 }
 
@@ -609,6 +649,52 @@ export function getMirthHistory(limit = 300): MirthHistoryEntry[] {
       details: (() => { try { return JSON.parse(r.details) as Record<string, unknown>; } catch { return {}; } })(),
     }));
   } catch { return []; }
+}
+
+// ── Notification config ────────────────────────────────────────────────────────
+
+/** Get per-server notification config (defaults if not set). */
+export function getMirthNotificationConfig(serverId: string): MirthNotificationConfig {
+  try {
+    initHistoryTables();
+    const row = getDb().prepare(
+      "SELECT recipients, alert_error, alert_stuck, alert_down, alert_paused FROM mirth_notification_config WHERE server_id = ?"
+    ).get(serverId) as {
+      recipients: string; alert_error: number; alert_stuck: number;
+      alert_down: number; alert_paused: number;
+    } | undefined;
+    if (!row) return { recipients: [], alertError: true, alertStuck: true, alertDown: true, alertPaused: false };
+    return {
+      recipients:  (() => { try { return JSON.parse(row.recipients) as string[]; } catch { return []; } })(),
+      alertError:  row.alert_error  === 1,
+      alertStuck:  row.alert_stuck  === 1,
+      alertDown:   row.alert_down   === 1,
+      alertPaused: row.alert_paused === 1,
+    };
+  } catch { return { recipients: [], alertError: true, alertStuck: true, alertDown: true, alertPaused: false }; }
+}
+
+/** Upsert per-server notification config. */
+export function setMirthNotificationConfig(serverId: string, config: MirthNotificationConfig): void {
+  initHistoryTables();
+  getDb().prepare(`
+    INSERT INTO mirth_notification_config (server_id, recipients, alert_error, alert_stuck, alert_down, alert_paused, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(server_id) DO UPDATE SET
+      recipients   = excluded.recipients,
+      alert_error  = excluded.alert_error,
+      alert_stuck  = excluded.alert_stuck,
+      alert_down   = excluded.alert_down,
+      alert_paused = excluded.alert_paused,
+      updated_at   = excluded.updated_at
+  `).run(
+    serverId,
+    JSON.stringify(config.recipients),
+    config.alertError  ? 1 : 0,
+    config.alertStuck  ? 1 : 0,
+    config.alertDown   ? 1 : 0,
+    config.alertPaused ? 1 : 0,
+  );
 }
 
 // ── Server CRUD ────────────────────────────────────────────────────────────────
@@ -1007,14 +1093,14 @@ export async function getMirthMessages(
 // ── Single-message fetch ──────────────────────────────────────────────────────
 
 /**
- * Fetch a single message by ID (with full content).
- * Used for lazy-loading message content in the UI.
+ * Fetch a single message by ID with full connector detail.
+ * Returns a MirthMessageDetail with one entry per connector (source + destinations).
  */
 export async function getMirthMessage(
   server: MirthServer,
   channelId: string,
   messageId: string,
-): Promise<MirthMessage | null> {
+): Promise<MirthMessageDetail | null> {
   try {
     const res = await mirthFetch(server, `/channels/${channelId}/messages/${messageId}?includeContent=true`);
     if (!res.ok) return null;
@@ -1022,26 +1108,53 @@ export async function getMirthMessage(
     const m = (data?.message ?? data) as Record<string, unknown>;
     if (!m) return null;
 
+    function parseTs(val: unknown): string {
+      if (val && typeof val === "object" && "time" in (val as Record<string, unknown>))
+        return new Date(Number((val as Record<string, unknown>).time)).toISOString();
+      if (typeof val === "string") return val;
+      return "";
+    }
+
     interface ConnEntry { int?: number; connectorMessage?: Record<string, unknown>; }
     const connMap = m?.connectorMessages as Record<string, unknown> | undefined;
     const rawEntries = connMap?.entry;
     const entries: ConnEntry[] = Array.isArray(rawEntries) ? rawEntries : rawEntries ? [rawEntries as ConnEntry] : [];
-    // Source connector is metaDataId 0
-    const source = entries.find(e => Number(e.int ?? 0) === 0) ?? entries[0];
-    const conn = source?.connectorMessage;
 
-    const rd = m.receivedDate as Record<string, unknown> | string | undefined;
-    const ts = rd && typeof rd === "object" && "time" in rd
-      ? new Date(Number((rd as Record<string, unknown>).time)).toISOString()
-      : typeof rd === "string" ? rd : "";
+    const connectorMessages: ConnectorMessageDetail[] = entries
+      .map((e): ConnectorMessageDetail | null => {
+        const conn = e.connectorMessage as Record<string, unknown> | undefined;
+        if (!conn) return null;
+        const metaDataId = Number(e.int ?? conn?.metaDataId ?? 0);
+        // Extract error text from errors element or errorCode
+        const errRaw = conn.errors as Record<string, unknown> | string | undefined;
+        const errText = errRaw
+          ? (typeof errRaw === "object" ? extractContent((errRaw as Record<string, unknown>).causeMessage ?? errRaw) : String(errRaw))
+          : conn.errorCode ? String(conn.errorCode) : undefined;
+        return {
+          metaDataId,
+          connectorName:      String(conn.connectorName ?? (metaDataId === 0 ? "Source" : `Destination ${metaDataId}`)),
+          status:             String(conn.status ?? "UNKNOWN"),
+          receivedDate:       parseTs(conn.receivedDate),
+          sendDate:           parseTs(conn.sendDate),
+          processingTime:     conn.processingTime !== undefined ? Number(conn.processingTime) : undefined,
+          error:              errText || undefined,
+          rawContent:         extractContent((conn.rawData         as Record<string, unknown>)?.content),
+          processedContent:   extractContent((conn.processedData   as Record<string, unknown>)?.content),
+          transformedContent: extractContent((conn.transformedData  as Record<string, unknown>)?.content),
+          encodedContent:     extractContent((conn.encodedData      as Record<string, unknown>)?.content),
+          sentContent:        extractContent((conn.sentData         as Record<string, unknown>)?.content),
+          responseContent:    extractContent((conn.responseData     as Record<string, unknown>)?.content),
+        };
+      })
+      .filter((c): c is ConnectorMessageDetail => c !== null)
+      .sort((a, b) => a.metaDataId - b.metaDataId);
 
+    const source = connectorMessages.find(c => c.metaDataId === 0) ?? connectorMessages[0];
     return {
-      messageId: String(m.messageId ?? messageId),
-      receivedDate: ts,
-      status: String(conn?.status ?? "UNKNOWN"),
-      connectorName: String(conn?.connectorName ?? ""),
-      rawContent: extractContent((conn?.rawData as Record<string, unknown>)?.content),
-      processedContent: extractContent((conn?.processedData as Record<string, unknown>)?.content),
+      messageId:         String(m.messageId ?? messageId),
+      receivedDate:      parseTs(m.receivedDate),
+      status:            source?.status ?? "UNKNOWN",
+      connectorMessages,
     };
   } catch { return null; }
 }
@@ -1065,6 +1178,7 @@ export async function getMirthEvents(
     id?: number; level?: string; name?: string; outcome?: string;
     userId?: number; username?: string; ipAddress?: string;
     dateTime?: { time?: number | string } | string;
+    attributes?: { entry?: Array<{ string?: string | string[] }> | { string?: string | string[] } };
   }
 
   const listObj = (data?.list ?? data) as Record<string, unknown>;
@@ -1076,6 +1190,17 @@ export async function getMirthEvents(
     const ts = typeof dt === "object" && dt !== null && "time" in dt
       ? new Date(Number(dt.time)).toISOString()
       : typeof dt === "string" ? dt : "";
+
+    // Parse attributes map (each entry has two <string> children: key + value)
+    const attributes: Record<string, string> = {};
+    if (e.attributes?.entry) {
+      const attrEntries = Array.isArray(e.attributes.entry) ? e.attributes.entry : [e.attributes.entry];
+      for (const entry of attrEntries) {
+        const strings = Array.isArray(entry.string) ? entry.string : entry.string ? [entry.string] : [];
+        if (strings.length >= 2) attributes[String(strings[0])] = String(strings[1]);
+      }
+    }
+
     return {
       id: e.id ?? 0,
       level: e.level ?? "INFORMATION",
@@ -1085,6 +1210,7 @@ export async function getMirthEvents(
       username: e.username ?? "",
       ipAddress: e.ipAddress ?? "",
       dateTime: ts,
+      attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
     };
   });
 
@@ -1142,6 +1268,7 @@ export async function getMirthDashboard(): Promise<MirthDashboard> {
         const lastChanges     = getAllLastStateChanges(server.id);
         const prevHealthMap   = getPrevHealthMap(server.id);
         const notesMap        = getAllChannelNotes(server.id);
+        const notifCfg        = getMirthNotificationConfig(server.id);
 
         const [version, rawChannels] = await Promise.all([
           getMirthVersion(server).catch(() => null),
@@ -1194,10 +1321,19 @@ export async function getMirthDashboard(): Promise<MirthDashboard> {
         // Fire notifications + audit + history for calm→alert transitions (fire-and-forget)
         for (const ch of channels) {
           if (shouldNotify(prevHealthMap.get(ch.id), ch.health)) {
-            notifyAdminsOfMirthAlert(
-              server.name, ch.name, ch.health,
-              { serverId: server.id, channelId: ch.id, serverName: server.name, channelName: ch.name, health: ch.health },
-            ).catch(() => {});
+            // Check per-server toggle before sending notification
+            const alertEnabled =
+              (ch.health === "error"  && notifCfg.alertError)  ||
+              (ch.health === "stuck"  && notifCfg.alertStuck)  ||
+              (ch.health === "down"   && notifCfg.alertDown)   ||
+              (ch.health === "paused" && notifCfg.alertPaused);
+            if (alertEnabled) {
+              notifyAdminsOfMirthAlert(
+                server.name, ch.name, ch.health,
+                { serverId: server.id, channelId: ch.id, serverName: server.name, channelName: ch.name, health: ch.health },
+                notifCfg.recipients.length > 0 ? notifCfg.recipients : undefined,
+              ).catch(() => {});
+            }
             _writeAuditLogDirect({
               event: "mirth.channel.health.alert",
               outcome: "failure",

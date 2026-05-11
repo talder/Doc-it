@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Activity, AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, Bell, Check, CheckCircle,
   ChevronDown, ChevronRight, Clock, Copy, Download, FileText, Filter, GitBranch,
-  History, Pause, Play, RefreshCw, Search, Settings, Square, Timer, Trash2, X, Plus, Edit2, Wifi, WifiOff, Info,
+  History, Mail, Pause, Play, RefreshCw, Search, Settings, Square, Timer, Trash2, X, Plus, Edit2, Wifi, WifiOff, Info,
 } from "lucide-react";
 
 // ── Types (mirroring lib/mirth.ts) ────────────────────────────────────────────
@@ -64,6 +64,25 @@ interface MirthMessage {
 interface MirthEvent {
   id: number; level: string; name: string; outcome: string;
   username?: string; ipAddress?: string; dateTime: string;
+  attributes?: Record<string, string>;
+}
+
+interface ConnectorMessageDetail {
+  metaDataId: number; connectorName: string; status: string;
+  receivedDate: string; sendDate: string; processingTime?: number;
+  error?: string;
+  rawContent: string; processedContent: string; transformedContent: string;
+  encodedContent: string; sentContent: string; responseContent: string;
+}
+
+interface MirthMessageDetail {
+  messageId: string; receivedDate: string; status: string;
+  connectorMessages: ConnectorMessageDetail[];
+}
+
+interface MirthNotificationConfig {
+  recipients: string[]; alertError: boolean; alertStuck: boolean;
+  alertDown: boolean; alertPaused: boolean;
 }
 
 // ── Health styling ─────────────────────────────────────────────────────────────
@@ -362,7 +381,7 @@ function ChannelSettingsModal({
   );
 }
 
-// ── Server form modal ──────────────────────────────────────────────────────────
+// ── Server form modal ──────────────────────────────────────────────────────
 
 function ServerFormModal({
   initial,
@@ -373,6 +392,9 @@ function ServerFormModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const [tab, setTab] = useState<"connection" | "notifications">("connection");
+
+  // Connection state
   const [name, setName] = useState(initial?.name ?? "");
   const [url, setUrl] = useState(initial?.url ?? "https://");
   const [username, setUsername] = useState(initial?.username ?? "");
@@ -385,6 +407,62 @@ function ServerFormModal({
   const [testResult, setTestResult] = useState<{ ok: boolean; version?: string; error?: string } | null>(null);
   const [err, setErr] = useState("");
   const isEdit = !!initial;
+
+  // Notification config state (edit-only)
+  const [notifLoaded, setNotifLoaded] = useState(false);
+  const [notifLoading, setNotifLoading] = useState(false);
+  const [notifRecipients, setNotifRecipients] = useState<string[]>([]);
+  const [notifAlertError, setNotifAlertError] = useState(true);
+  const [notifAlertStuck, setNotifAlertStuck] = useState(true);
+  const [notifAlertDown, setNotifAlertDown] = useState(true);
+  const [notifAlertPaused, setNotifAlertPaused] = useState(false);
+  const [notifEmail, setNotifEmail] = useState("");
+  const [notifSaving, setNotifSaving] = useState(false);
+  const [notifSaved, setNotifSaved] = useState(false);
+
+  const loadNotifConfig = async () => {
+    if (!isEdit || notifLoaded || notifLoading) return;
+    setNotifLoading(true);
+    const r = await fetch(`/api/mirth/servers/${initial!.id}/notifications`).catch(() => null);
+    if (r?.ok) {
+      const d = await r.json() as { config?: MirthNotificationConfig };
+      if (d.config) {
+        setNotifRecipients(d.config.recipients ?? []);
+        setNotifAlertError(d.config.alertError !== false);
+        setNotifAlertStuck(d.config.alertStuck !== false);
+        setNotifAlertDown(d.config.alertDown !== false);
+        setNotifAlertPaused(d.config.alertPaused === true);
+      }
+    }
+    setNotifLoaded(true);
+    setNotifLoading(false);
+  };
+
+  const saveNotifConfig = async () => {
+    if (!isEdit) return;
+    setNotifSaving(true);
+    await fetch(`/api/mirth/servers/${initial!.id}/notifications`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        recipients:  notifRecipients,
+        alertError:  notifAlertError,
+        alertStuck:  notifAlertStuck,
+        alertDown:   notifAlertDown,
+        alertPaused: notifAlertPaused,
+      }),
+    }).catch(() => {});
+    setNotifSaving(false);
+    setNotifSaved(true);
+    setTimeout(() => setNotifSaved(false), 2000);
+  };
+
+  const addNotifEmail = () => {
+    const e = notifEmail.trim();
+    if (!e) return;
+    setNotifRecipients(prev => prev.includes(e) ? prev : [...prev, e]);
+    setNotifEmail("");
+  };
 
   const handleSave = async () => {
     if (!name.trim() || !url.trim() || !username.trim()) { setErr("Name, URL and username are required"); return; }
@@ -412,77 +490,171 @@ function ServerFormModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
       <div className="bg-surface rounded-xl border border-border shadow-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
+        {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-base font-semibold text-text-primary">{isEdit ? "Edit Mirth Server" : "Add Mirth Server"}</h2>
           <button onClick={onClose} className="p-1 rounded hover:bg-muted text-text-muted"><X className="w-4 h-4" /></button>
         </div>
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-text-secondary mb-1">Display Name</label>
-              <input value={name} onChange={e => setName(e.target.value)} placeholder="Production Mirth" className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-text-secondary mb-1">Sort Order</label>
-              <input type="number" value={sortOrder} onChange={e => setSortOrder(e.target.value)} className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent" />
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1">URL</label>
-            <input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://mirthhost:8443" className="w-full px-3 py-2 text-sm font-mono border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-text-secondary mb-1">Username</label>
-              <input value={username} onChange={e => setUsername(e.target.value)} placeholder="admin" className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent" autoComplete="off" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-text-secondary mb-1">
-                Password {isEdit && initial.passwordSet ? "(leave blank to keep)" : ""}
-              </label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder={isEdit && initial.passwordSet ? "••••••••" : "required"} className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent" autoComplete="new-password" />
-            </div>
-          </div>
-          <div className="flex items-center gap-6">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={ignoreSsl} onChange={e => setIgnoreSsl(e.target.checked)} className="rounded" />
-              <span className="text-sm text-text-secondary">Ignore SSL errors (self-signed)</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} className="rounded" />
-              <span className="text-sm text-text-secondary">Enabled</span>
-            </label>
-          </div>
-          {err && <p className="text-xs text-red-500">{err}</p>}
-          {testResult && (
-            <div className={`text-xs px-3 py-2 rounded border ${testResult.ok ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-600 border-red-200"}`}>
-              {testResult.ok ? `✓ Connected — Mirth v${testResult.version}` : `✗ ${testResult.error}`}
-            </div>
-          )}
-        </div>
-        <div className="flex justify-between gap-2 mt-5">
-          <div>
-            {isEdit && (
-              <button onClick={handleTest} disabled={testing} className="flex items-center gap-1.5 px-3 py-2 text-sm border border-border rounded-lg hover:bg-muted text-text-secondary disabled:opacity-40">
-                {testing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Wifi className="w-3.5 h-3.5" />}
-                Test
+
+        {/* Tabs (edit mode only) */}
+        {isEdit && (
+          <div className="flex border-b border-border mb-4 -mx-6 px-6">
+            {(["connection", "notifications"] as const).map(t => (
+              <button key={t}
+                onClick={() => { setTab(t); if (t === "notifications") loadNotifConfig(); }}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors capitalize ${
+                  tab === t ? "border-accent text-accent" : "border-transparent text-text-muted hover:text-text-primary"
+                }`}>
+                {t}
               </button>
+            ))}
+          </div>
+        )}
+
+        {tab === "connection" ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-text-secondary mb-1">Display Name</label>
+                <input value={name} onChange={e => setName(e.target.value)} placeholder="Production Mirth" className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-text-secondary mb-1">Sort Order</label>
+                <input type="number" value={sortOrder} onChange={e => setSortOrder(e.target.value)} className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">URL</label>
+              <input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://mirthhost:8443" className="w-full px-3 py-2 text-sm font-mono border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-text-secondary mb-1">Username</label>
+                <input value={username} onChange={e => setUsername(e.target.value)} placeholder="admin" className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent" autoComplete="off" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-text-secondary mb-1">
+                  Password {isEdit && initial.passwordSet ? "(leave blank to keep)" : ""}
+                </label>
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder={isEdit && initial.passwordSet ? "••••••••" : "required"} className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent" autoComplete="new-password" />
+              </div>
+            </div>
+            <div className="flex items-center gap-6">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={ignoreSsl} onChange={e => setIgnoreSsl(e.target.checked)} className="rounded" />
+                <span className="text-sm text-text-secondary">Ignore SSL errors (self-signed)</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} className="rounded" />
+                <span className="text-sm text-text-secondary">Enabled</span>
+              </label>
+            </div>
+            {err && <p className="text-xs text-red-500">{err}</p>}
+            {testResult && (
+              <div className={`text-xs px-3 py-2 rounded border ${testResult.ok ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-600 border-red-200"}`}>
+                {testResult.ok ? `✓ Connected — Mirth v${testResult.version}` : `✗ ${testResult.error}`}
+              </div>
             )}
           </div>
-          <div className="flex gap-2">
+        ) : (
+          /* Notifications tab */
+          <div className="space-y-5" style={{ minHeight: 240 }}>
+            {notifLoading ? (
+              <div className="flex justify-center py-10"><RefreshCw className="w-5 h-5 animate-spin text-text-muted" /></div>
+            ) : (
+              <>
+                {/* Alert type toggles */}
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1.5">Alert triggers</label>
+                  <p className="text-[11px] text-text-muted mb-2">Send an alert when channel health transitions to:</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      { label: "Error",  state: notifAlertError,  set: setNotifAlertError  },
+                      { label: "Stuck",  state: notifAlertStuck,  set: setNotifAlertStuck  },
+                      { label: "Down",   state: notifAlertDown,   set: setNotifAlertDown   },
+                      { label: "Paused", state: notifAlertPaused, set: setNotifAlertPaused },
+                    ] as const).map(({ label, state, set }) => (
+                      <label key={label} className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={state} onChange={e => set(e.target.checked)} className="rounded" />
+                        <span className="text-sm text-text-secondary">{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                {/* Email recipients */}
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1 flex items-center gap-1">
+                    <Mail className="w-3 h-3" /> Email recipients
+                  </label>
+                  <p className="text-[11px] text-text-muted mb-2">Override emails (leave empty to use default admin addresses).</p>
+                  <div className="flex gap-2 mb-2">
+                    <input value={notifEmail} onChange={e => setNotifEmail(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addNotifEmail(); } }}
+                      placeholder="email@example.com" type="email"
+                      className="flex-1 px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent" />
+                    <button onClick={addNotifEmail} disabled={!notifEmail.trim()}
+                      className="px-3 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent/90 disabled:opacity-40">
+                      Add
+                    </button>
+                  </div>
+                  {notifRecipients.length === 0 ? (
+                    <p className="text-[11px] text-text-muted italic">No overrides — alerts use default admin email list.</p>
+                  ) : (
+                    <div className="space-y-1 max-h-28 overflow-auto">
+                      {notifRecipients.map(email => (
+                        <div key={email} className="flex items-center justify-between px-2.5 py-1.5 rounded border border-border bg-surface-alt/40 text-xs">
+                          <span className="text-text-secondary truncate">{email}</span>
+                          <button onClick={() => setNotifRecipients(prev => prev.filter(e => e !== email))}
+                            className="flex-shrink-0 ml-2 p-0.5 rounded hover:bg-red-50 text-text-muted hover:text-red-500">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Footer */}
+        {tab === "connection" ? (
+          <div className="flex justify-between gap-2 mt-5">
+            <div>
+              {isEdit && (
+                <button onClick={handleTest} disabled={testing} className="flex items-center gap-1.5 px-3 py-2 text-sm border border-border rounded-lg hover:bg-muted text-text-secondary disabled:opacity-40">
+                  {testing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Wifi className="w-3.5 h-3.5" />}
+                  Test
+                </button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={onClose} className="px-4 py-2 text-sm text-text-muted hover:bg-muted rounded-lg">Cancel</button>
+              <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent/90 disabled:opacity-40">
+                {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                {isEdit ? "Save" : "Add Server"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex justify-end gap-2 mt-5">
             <button onClick={onClose} className="px-4 py-2 text-sm text-text-muted hover:bg-muted rounded-lg">Cancel</button>
-            <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent/90 disabled:opacity-40">
-              {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-              {isEdit ? "Save" : "Add Server"}
+            <button onClick={saveNotifConfig} disabled={notifSaving || notifLoading}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent/90 disabled:opacity-40">
+              {notifSaving
+                ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                : notifSaved ? <Check className="w-3.5 h-3.5 text-green-300" /> : <Check className="w-3.5 h-3.5" />}
+              {notifSaved ? "Saved!" : "Save"}
             </button>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
 }
 
-// ── Message row ────────────────────────────────────────────────────────────────
+// ── Message detail modal ──────────────────────────────────────────────────────────
 
 const STATUS_BADGE: Record<string, string> = {
   SENT:        "bg-green-50 text-green-700 border-green-200",
@@ -493,102 +665,168 @@ const STATUS_BADGE: Record<string, string> = {
   TRANSFORMED: "bg-purple-50 text-purple-700 border-purple-200",
 };
 
-function MessageRow({
-  msg, index, serverId, channelId,
+function MessageDetailModal({
+  msg, serverId, channelId, onClose,
 }: {
-  msg: MirthMessage; index: number; serverId: string; channelId: string;
+  msg: MirthMessage; serverId: string; channelId: string; onClose: () => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const [fetching, setFetching] = useState(false);
-  const [overrideContent, setOverrideContent] = useState<{ raw: string; processed: string } | null>(null);
+  const [detail, setDetail] = useState<MirthMessageDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeConn, setActiveConn] = useState(0);
+  const [activeContentTab, setActiveContentTab] = useState("raw");
   const [copied, setCopied] = useState(false);
 
-  const raw  = overrideContent?.raw  ?? msg.rawContent  ?? "";
-  const proc = overrideContent?.processed ?? msg.processedContent ?? "";
-  const content   = raw || proc;
-  const formatted = content ? formatRaw(content) : "";
-  const fmt       = content ? detectFormat(content) : "text";
+  useEffect(() => {
+    fetch(`/api/mirth/servers/${serverId}/channels/${channelId}/messages/${msg.messageId}`)
+      .then(r => r.json())
+      .then(d => { setDetail((d.message ?? null) as MirthMessageDetail | null); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [serverId, channelId, msg.messageId]);
 
-  const handleToggle = async () => {
-    const opening = !expanded;
-    setExpanded(opening);
-    // Lazy-load when expanding and content not yet available
-    if (opening && !content && !overrideContent) {
-      setFetching(true);
-      try {
-        const r = await fetch(`/api/mirth/servers/${serverId}/channels/${channelId}/messages/${msg.messageId}`);
-        if (r.ok) {
-          const d = await r.json();
-          setOverrideContent({ raw: d.message?.rawContent ?? "", processed: d.message?.processedContent ?? "" });
-        }
-      } catch { /* ignore */ }
-      setFetching(false);
-    }
-  };
+  const connector = detail?.connectorMessages[activeConn];
+  const CONTENT_TABS = [
+    { key: "raw",         label: "Raw",         value: connector?.rawContent         },
+    { key: "processed",   label: "Processed",   value: connector?.processedContent   },
+    { key: "transformed", label: "Transformed", value: connector?.transformedContent },
+    { key: "encoded",     label: "Encoded",     value: connector?.encodedContent     },
+    { key: "sent",        label: "Sent",        value: connector?.sentContent        },
+    { key: "response",    label: "Response",    value: connector?.responseContent    },
+  ].filter(t => t.value);
+  const activeContent = CONTENT_TABS.find(t => t.key === activeContentTab) ?? CONTENT_TABS[0];
+  const formatted = activeContent?.value ? formatRaw(activeContent.value) : "";
 
-  const handleCopy = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleCopy = () => {
+    if (!formatted) return;
     navigator.clipboard.writeText(formatted).catch(() => {});
     setCopied(true); setTimeout(() => setCopied(false), 1500);
   };
 
   return (
-    <>
-      <tr
-        className={`border-b border-border hover:bg-muted/40 cursor-pointer group ${index % 2 === 1 ? "bg-surface-alt/20" : ""}`}
-        onClick={handleToggle}
-      >
-        <td className="px-3 py-1.5 text-[10px] text-text-muted font-mono whitespace-nowrap">{fmtTime(msg.receivedDate)}</td>
-        <td className="px-3 py-1.5">
-          <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold uppercase ${STATUS_BADGE[msg.status] ?? "border-border text-text-muted"}`}>
-            {msg.status}
-          </span>
-        </td>
-        <td className="px-3 py-1.5 text-xs text-text-secondary">{msg.connectorName || "\u2014"}</td>
-        <td className="px-3 py-1.5 text-[10px] text-text-muted font-mono">{msg.messageId}</td>
-        <td className="px-2 py-1.5 w-7">
-          <div className="flex gap-1 opacity-0 group-hover:opacity-100">
-            {fetching
-              ? <RefreshCw className="w-3 h-3 text-text-muted animate-spin" />
-              : expanded
-                ? <ChevronDown className="w-3 h-3 text-text-muted" />
-                : <ChevronRight className="w-3 h-3 text-text-muted" />}
-            {content && (
-              <button onClick={handleCopy} className="p-0.5 rounded hover:bg-muted text-text-muted">
-                {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
-              </button>
-            )}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div className="bg-surface rounded-xl border border-border shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-border flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <FileText className="w-4 h-4 text-accent" />
+            <span className="font-semibold text-text-primary text-sm">Message Detail</span>
+            <span className="text-xs font-mono text-text-muted">#{msg.messageId}</span>
+            <span className="text-[10px] text-text-muted">{fmtTime(msg.receivedDate)}</span>
           </div>
-        </td>
-      </tr>
-      {expanded && (
-        <tr className="border-b border-border">
-          <td colSpan={5} className="px-6 py-3 bg-surface-alt/60">
-            {fetching ? (
-              <div className="flex items-center gap-2 text-xs text-text-muted">
-                <RefreshCw className="w-3 h-3 animate-spin" /> Loading content…
-              </div>
-            ) : content ? (
-              <>
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="text-[10px] font-medium text-text-muted uppercase">{fmt}</span>
-                  {content && (
-                    <button onClick={handleCopy} className="ml-auto flex items-center gap-1 text-[10px] text-text-muted hover:text-text-primary">
-                      {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />} Copy
-                    </button>
+          <button onClick={onClose} className="p-1 rounded hover:bg-muted text-text-muted"><X className="w-4 h-4" /></button>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-16"><RefreshCw className="w-6 h-6 animate-spin text-text-muted" /></div>
+        ) : !detail || detail.connectorMessages.length === 0 ? (
+          <div className="flex items-center justify-center py-16 text-sm text-text-muted italic">No content available.</div>
+        ) : (
+          <>
+            {/* Connector tabs */}
+            <div className="flex-shrink-0 flex items-center border-b border-border px-2 overflow-x-auto bg-surface-alt/30">
+              {detail.connectorMessages.map((conn, i) => (
+                <button key={i}
+                  onClick={() => { setActiveConn(i); setActiveContentTab("raw"); }}
+                  className={`px-4 py-2.5 text-xs font-medium border-b-2 whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+                    i === activeConn ? "border-accent text-accent" : "border-transparent text-text-muted hover:text-text-primary"
+                  }`}>
+                  {conn.connectorName || (conn.metaDataId === 0 ? "Source" : `Destination ${conn.metaDataId}`)}
+                  <span className={`text-[9px] px-1 py-0.5 rounded border font-semibold uppercase ${STATUS_BADGE[conn.status] ?? "border-border text-text-muted bg-gray-50"}`}>
+                    {conn.status}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {/* Connector content */}
+            {connector && (
+              <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+                {/* Metadata bar */}
+                <div className="flex-shrink-0 px-5 py-2 flex flex-wrap items-center gap-4 border-b border-border bg-surface-alt/20 text-xs text-text-muted">
+                  {connector.receivedDate && (
+                    <span className="flex items-center gap-1"><Clock className="w-3 h-3 flex-shrink-0" />Rcvd: {fmtTime(connector.receivedDate)}</span>
+                  )}
+                  {connector.sendDate && <span>Sent: {fmtTime(connector.sendDate)}</span>}
+                  {connector.processingTime !== undefined && <span>{formatDuration(connector.processingTime)}</span>}
+                  {connector.error && (
+                    <span className="flex items-center gap-1 text-red-600 flex-1 min-w-0">
+                      <AlertTriangle className="w-3 h-3 flex-shrink-0" /><span className="truncate">{connector.error}</span>
+                    </span>
                   )}
                 </div>
-                <pre className="text-xs font-mono text-text-primary whitespace-pre-wrap break-all max-h-64 overflow-auto bg-surface border border-border rounded-lg p-3">
-                  {formatted}
-                </pre>
-              </>
-            ) : (
-              <p className="text-xs text-text-muted italic">No content available for this message.</p>
+                {/* Content tabs */}
+                {CONTENT_TABS.length > 0 ? (
+                  <>
+                    <div className="flex-shrink-0 flex items-center border-b border-border px-2 bg-surface overflow-x-auto">
+                      {CONTENT_TABS.map(t => (
+                        <button key={t.key} onClick={() => setActiveContentTab(t.key)}
+                          className={`px-3 py-2 text-[11px] font-medium border-b-2 whitespace-nowrap transition-colors ${
+                            t.key === (activeContent?.key ?? "") ? "border-accent text-accent" : "border-transparent text-text-muted hover:text-text-primary"
+                          }`}>
+                          {t.label}
+                        </button>
+                      ))}
+                      {formatted && (
+                        <button onClick={handleCopy}
+                          className="ml-auto flex items-center gap-1 px-3 py-1 text-[11px] rounded border border-border hover:bg-muted text-text-secondary my-1">
+                          {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />} Copy
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex-1 overflow-auto p-4">
+                      <pre className="text-xs font-mono text-text-primary whitespace-pre-wrap break-all bg-surface border border-border rounded-lg p-3">
+                        {formatted}
+                      </pre>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex-1 flex items-center justify-center text-sm text-text-muted italic">No content for this connector.</div>
+                )}
+              </div>
             )}
-          </td>
-        </tr>
-      )}
-    </>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MessageRow({
+  msg, index, onShowDetail,
+}: {
+  msg: MirthMessage; index: number;
+  onShowDetail: (msg: MirthMessage) => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(msg.rawContent ?? msg.processedContent ?? "").catch(() => {});
+    setCopied(true); setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <tr
+      className={`border-b border-border hover:bg-muted/40 cursor-pointer group ${index % 2 === 1 ? "bg-surface-alt/20" : ""}`}
+      onClick={() => onShowDetail(msg)}
+    >
+      <td className="px-3 py-1.5 text-[10px] text-text-muted font-mono whitespace-nowrap">{fmtTime(msg.receivedDate)}</td>
+      <td className="px-3 py-1.5">
+        <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold uppercase ${STATUS_BADGE[msg.status] ?? "border-border text-text-muted"}`}>
+          {msg.status}
+        </span>
+      </td>
+      <td className="px-3 py-1.5 text-xs text-text-secondary">{msg.connectorName || "\u2014"}</td>
+      <td className="px-3 py-1.5 text-[10px] text-text-muted font-mono">{msg.messageId}</td>
+      <td className="px-2 py-1.5 w-7">
+        <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+          {(msg.rawContent || msg.processedContent) && (
+            <button onClick={handleCopy} className="p-0.5 rounded hover:bg-muted text-text-muted">
+              {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+            </button>
+          )}
+        </div>
+      </td>
+    </tr>
   );
 }
 
@@ -603,6 +841,7 @@ function ChannelExplorer({ serverId, channel }: { serverId: string; channel: Mir
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [clientSearch, setClientSearch] = useState("");
   const [history, setHistory] = useState<HistoryPoint[]>([]);
+  const [detailMsg, setDetailMsg] = useState<MirthMessage | null>(null);
   const limit = 20;
 
   useEffect(() => {
@@ -699,16 +938,24 @@ function ChannelExplorer({ serverId, channel }: { serverId: string; channel: Mir
                 <th className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase">ID</th>
                 <th />
               </tr></thead>
-              <tbody>{display.map((m, i) => <MessageRow key={m.messageId} msg={m} index={i} serverId={serverId} channelId={channel.id} />)}</tbody>
+              <tbody>{display.map((m, i) => <MessageRow key={m.messageId} msg={m} index={i} onShowDetail={setDetailMsg} />)}</tbody>
             </table>
           </>
         )}
       </div>
+      {detailMsg && (
+        <MessageDetailModal
+          msg={detailMsg}
+          serverId={serverId}
+          channelId={channel.id}
+          onClose={() => setDetailMsg(null)}
+        />
+      )}
     </div>
   );
 }
 
-// ── Filter editor modal (form) ───────────────────────────────────────────────────
+// ── Filter editor modal (form) ──────────────────────────────────────────────────────────
 
 function FilterEditor({ filter: init, onSave, onCancel }: {
   filter: ChannelFilter; onSave: (f: ChannelFilter) => void; onCancel: () => void;
@@ -879,6 +1126,180 @@ function ChannelFilterModal({ activeFilter, onApply, onClose }: {
   );
 }
 
+// ── Server Logs ─────────────────────────────────────────────────────────────────────
+
+function ServerLogs({ serverId }: { serverId: string }) {
+  const limit = 50;
+  const [events, setEvents] = useState<MirthEvent[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [levelFilter, setLevelFilter] = useState("ALL");
+  const [search, setSearch] = useState("");
+  const [offset, setOffset] = useState(0);
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+  const [autoRefresh, setAutoRefresh] = useState(false);
+
+  const fetchEvents = useCallback(async (off = 0) => {
+    setLoading(true);
+    const params = new URLSearchParams({ limit: String(limit), offset: String(off), ...(levelFilter !== "ALL" ? { level: levelFilter } : {}) });
+    const r = await fetch(`/api/mirth/servers/${serverId}/events?${params}`).catch(() => null);
+    if (r?.ok) {
+      const d = await r.json();
+      setEvents(d.events ?? []);
+      setTotal(d.total ?? 0);
+      setOffset(off);
+    }
+    setLoading(false);
+  }, [serverId, levelFilter]);
+
+  useEffect(() => { fetchEvents(0); }, [fetchEvents]);
+
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const id = setInterval(() => fetchEvents(offset), 30_000);
+    return () => clearInterval(id);
+  }, [autoRefresh, fetchEvents, offset]);
+
+  const toggleExpanded = (id: number) => setExpandedIds(prev => {
+    const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;
+  });
+
+  const display = useMemo(() => {
+    if (!search.trim()) return events;
+    const t = search.toLowerCase();
+    return events.filter(ev =>
+      ev.name.toLowerCase().includes(t) ||
+      (ev.username ?? "").toLowerCase().includes(t) ||
+      ev.outcome.toLowerCase().includes(t) ||
+      ev.level.toLowerCase().includes(t)
+    );
+  }, [events, search]);
+
+  const exportCSV = () => {
+    const header = ["Time", "Level", "Event", "Outcome", "User", "IP"];
+    const rows = display.map(ev => [ev.dateTime, ev.level, ev.name, ev.outcome, ev.username ?? "", ev.ipAddress ?? ""]);
+    const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+    downloadBlob(`mirth-events-${serverId}-${new Date().toISOString().slice(0, 10)}.csv`, csv, "text/csv;charset=utf-8;");
+  };
+
+  const LEVEL_BADGE: Record<string, string> = {
+    ERROR:       "bg-red-50 text-red-700 border-red-200",
+    WARNING:     "bg-amber-50 text-amber-700 border-amber-200",
+    INFORMATION: "bg-blue-50 text-blue-700 border-blue-200",
+  };
+
+  return (
+    <div className="px-6 pb-6">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-sm font-semibold text-text-primary">Server Events</span>
+        {total > 0 && <span className="text-xs text-text-muted">({total})</span>}
+        <div className="ml-auto flex items-center gap-2">
+          {/* Level filter */}
+          <select value={levelFilter} onChange={e => { setLevelFilter(e.target.value); }}
+            className="text-xs px-2 py-1 border border-border rounded-lg bg-surface text-text-secondary">
+            {["ALL","INFORMATION","WARNING","ERROR"].map(l => <option key={l}>{l}</option>)}
+          </select>
+          {/* Search */}
+          <div className="relative flex items-center">
+            <Search className="w-3 h-3 text-text-muted absolute left-1.5 pointer-events-none" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…"
+              className="pl-6 pr-6 py-1 text-xs border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent w-32" />
+            {search && <button onClick={() => setSearch("")} className="absolute right-1.5 text-text-muted hover:text-text-primary"><X className="w-3 h-3" /></button>}
+          </div>
+          {/* Auto-refresh toggle */}
+          <button onClick={() => setAutoRefresh(v => !v)}
+            className={`flex items-center gap-1 px-2 py-1 text-xs rounded border font-medium transition-colors ${
+              autoRefresh ? "border-accent text-accent bg-accent/10" : "border-border text-text-secondary hover:bg-muted"
+            }`}>
+            <RefreshCw className={`w-3 h-3 ${autoRefresh ? "animate-spin" : ""}`} /> Auto
+          </button>
+          <button onClick={() => fetchEvents(offset)} disabled={loading} className="p-1 rounded hover:bg-muted text-text-muted disabled:opacity-40">
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+          </button>
+          {display.length > 0 && (
+            <button onClick={exportCSV}
+              className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-border hover:bg-muted text-text-secondary">
+              <Download className="w-3 h-3" /> CSV
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="border border-border rounded-lg overflow-hidden">
+        {loading && events.length === 0 ? (
+          <div className="flex items-center justify-center py-8"><RefreshCw className="w-5 h-5 animate-spin text-text-muted" /></div>
+        ) : display.length === 0 ? (
+          <p className="text-sm text-text-muted p-4 text-center">No events</p>
+        ) : (
+          <>
+            <table className="w-full text-xs" style={{ tableLayout: "fixed" }}>
+              <colgroup><col style={{ width: 160 }} /><col style={{ width: 110 }} /><col /><col style={{ width: 96 }} /><col style={{ width: 100 }} /><col style={{ width: 24 }} /></colgroup>
+              <thead><tr className="border-b border-border bg-surface-alt">
+                <th className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase">Time</th>
+                <th className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase">Level</th>
+                <th className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase">Event</th>
+                <th className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase">Outcome</th>
+                <th className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase">User</th>
+                <th />
+              </tr></thead>
+              <tbody>
+                {display.map((ev) => (
+                  <Fragment key={ev.id}>
+                    <tr
+                      className={`border-b border-border hover:bg-muted/40 cursor-pointer ${
+                        expandedIds.has(ev.id) ? "bg-accent/5" : ""
+                      }`}
+                      onClick={() => toggleExpanded(ev.id)}>
+                      <td className="px-3 py-1.5 text-[10px] font-mono text-text-muted whitespace-nowrap">{fmtTime(ev.dateTime)}</td>
+                      <td className="px-3 py-1.5">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold uppercase ${LEVEL_BADGE[ev.level] ?? "bg-gray-50 text-gray-500 border-gray-200"}`}>
+                          {ev.level}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5 text-text-secondary truncate" title={ev.name}>{ev.name}</td>
+                      <td className="px-3 py-1.5 text-text-muted truncate">{ev.outcome}</td>
+                      <td className="px-3 py-1.5 text-text-muted truncate">{ev.username || "—"}</td>
+                      <td className="px-2 py-1.5 text-text-muted">
+                        {ev.attributes && Object.keys(ev.attributes).length > 0 && (
+                          <ChevronDown className={`w-3 h-3 transition-transform ${expandedIds.has(ev.id) ? "" : "-rotate-90"}`} />
+                        )}
+                      </td>
+                    </tr>
+                    {expandedIds.has(ev.id) && ev.attributes && Object.keys(ev.attributes).length > 0 && (
+                      <tr className="border-b border-border bg-surface-alt/40">
+                        <td colSpan={6} className="px-4 py-2">
+                          <div className="flex flex-wrap gap-x-4 gap-y-1">
+                            {Object.entries(ev.attributes).map(([k, v]) => (
+                              <span key={k} className="text-[10px] text-text-muted">
+                                <span className="font-semibold text-text-secondary">{k}:</span> {v}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+            {/* Pagination */}
+            {total > limit && (
+              <div className="flex items-center justify-between px-3 py-2 border-t border-border bg-surface-alt/30">
+                <span className="text-[10px] text-text-muted">{offset + 1}–{Math.min(offset + limit, total)} of {total}</span>
+                <div className="flex items-center gap-1">
+                  <button disabled={offset === 0} onClick={() => fetchEvents(Math.max(0, offset - limit))}
+                    className="px-2 py-0.5 text-[11px] rounded border border-border hover:bg-muted disabled:opacity-40">← Prev</button>
+                  <button disabled={offset + limit >= total} onClick={() => fetchEvents(offset + limit)}
+                    className="px-2 py-0.5 text-[11px] rounded border border-border hover:bg-muted disabled:opacity-40">Next →</button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Server Detail ──────────────────────────────────────────────────────────────────
 
 function ServerDetail({
@@ -892,9 +1313,6 @@ function ServerDetail({
 }) {
   const [actioning, setActioning] = useState<string | null>(null);
   const [channels, setChannels] = useState<MirthChannel[]>(server.channels);
-  const [eventsOpen, setEventsOpen] = useState(false);
-  const [events, setEvents] = useState<MirthEvent[]>([]);
-  const [eventsLoading, setEventsLoading] = useState(false);
   const [clientSearch, setClientSearch] = useState("");
   // Batch selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -941,13 +1359,6 @@ function ServerDetail({
     setSelectedIds(new Set());
     const r = await fetch(`/api/mirth/servers/${server.serverId}/channels`).catch(() => null);
     if (r?.ok) { const d = await r.json(); setChannels(d.channels ?? channels); }
-  };
-
-  const loadEvents = async () => {
-    setEventsLoading(true);
-    const r = await fetch(`/api/mirth/servers/${server.serverId}/events?limit=50`).catch(() => null);
-    if (r?.ok) { const d = await r.json(); setEvents(d.events ?? []); }
-    setEventsLoading(false);
   };
 
   const handleSort = (col: FilterField) => {
@@ -1144,45 +1555,7 @@ function ServerDetail({
         )}
       </div>
 
-      {/* Events section */}
-      <div className="px-6 pb-6">
-        <button className="flex items-center gap-2 text-sm font-medium text-text-secondary hover:text-text-primary mb-2"
-          onClick={() => { setEventsOpen(v => !v); if (!eventsOpen) loadEvents(); }}>
-          {eventsOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-          Server Events
-        </button>
-        {eventsOpen && (
-          <div className="border border-border rounded-lg overflow-hidden">
-            {eventsLoading ? (
-              <div className="flex items-center justify-center py-8"><RefreshCw className="w-5 h-5 animate-spin text-text-muted" /></div>
-            ) : events.length === 0 ? (
-              <p className="text-sm text-text-muted p-4 text-center">No events</p>
-            ) : (
-              <table className="w-full text-xs">
-                <thead><tr className="border-b border-border bg-surface-alt">
-                  <th className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase">Time</th>
-                  <th className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase">Level</th>
-                  <th className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase">Event</th>
-                  <th className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase">User</th>
-                </tr></thead>
-                <tbody>{events.map((ev, i) => (
-                  <tr key={ev.id} className={`border-b border-border ${i % 2 === 1 ? "bg-surface-alt/20" : ""}`}>
-                    <td className="px-3 py-1.5 text-[10px] font-mono text-text-muted whitespace-nowrap">{fmtTime(ev.dateTime)}</td>
-                    <td className="px-3 py-1.5">
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold uppercase ${
-                        ev.level === "ERROR" ? "bg-red-50 text-red-700 border-red-200"
-                        : ev.level === "WARNING" ? "bg-amber-50 text-amber-700 border-amber-200"
-                        : "bg-blue-50 text-blue-700 border-blue-200"}`}>{ev.level}</span>
-                    </td>
-                    <td className="px-3 py-1.5 text-text-secondary">{ev.name}</td>
-                    <td className="px-3 py-1.5 text-text-muted">{ev.username || "\u2014"}</td>
-                  </tr>
-                ))}</tbody>
-              </table>
-            )}
-          </div>
-        )}
-      </div>
+      <ServerLogs serverId={server.serverId} />
 
       {/* Channel settings modal — rendered outside any nested div */}
       {settingsChannel && (

@@ -147,6 +147,7 @@ export async function notifyAdminsOfMirthAlert(
   channelName: string,
   health: string,
   meta?: Record<string, string>,
+  overrideEmailRecipients?: string[],
 ): Promise<void> {
   try {
     const users = await getUsers();
@@ -179,9 +180,14 @@ export async function notifyAdminsOfMirthAlert(
     // Email (best-effort)
     const cfg = await getSmtpConfig();
     if (!cfg.host || !cfg.from) return;
-    const recipients = new Set<string>();
-    for (const admin of admins) { if (admin.email) recipients.add(admin.email); }
-    if (cfg.adminEmail) recipients.add(cfg.adminEmail);
+    let recipients: Set<string>;
+    if (overrideEmailRecipients && overrideEmailRecipients.length > 0) {
+      recipients = new Set(overrideEmailRecipients);
+    } else {
+      recipients = new Set<string>();
+      for (const admin of admins) { if (admin.email) recipients.add(admin.email); }
+      if (cfg.adminEmail) recipients.add(cfg.adminEmail);
+    }
     if (recipients.size === 0) return;
 
     const healthColor = health === "down" ? "#dc2626" : health === "error" ? "#ef4444" : "#f59e0b";
