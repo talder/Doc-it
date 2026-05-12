@@ -630,17 +630,13 @@ function Handle-DhcpDeleteReservation {
     $scope = $Query["scope"]
 
     try {
-        if ($scope) {
-            # Direct delete from known scope
-            Remove-DhcpServerv4Reservation -ScopeId $scope -IPAddress $Ip -ErrorAction Stop
-        } else {
-            # Look up reservation by IP (separate parameter set from -ScopeId)
-            $res = Get-DhcpServerv4Reservation -IPAddress $Ip -ErrorAction SilentlyContinue
-            if (-not $res) {
-                Send-Json $Response 404 @{ error = "No DHCP reservation found for IP $Ip" }; return
-            }
-            Remove-DhcpServerv4Reservation -ScopeId $res.ScopeId -IPAddress $Ip -ErrorAction Stop
+        # Look up reservation first — needed to get ScopeId and for pipeline delete
+        $res = Get-DhcpServerv4Reservation -IPAddress $Ip -ErrorAction SilentlyContinue
+        if (-not $res) {
+            Send-Json $Response 404 @{ error = "No DHCP reservation found for IP $Ip" }; return
         }
+        # Pipe reservation object to Remove — avoids parameter-set ambiguity across module versions
+        $res | Remove-DhcpServerv4Reservation -ErrorAction Stop
         Write-Log "INFO" "DHCP: Deleted reservation for $Ip"
         Send-Json $Response 200 @{ success = $true }
     } catch {
