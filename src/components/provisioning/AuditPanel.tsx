@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Download, Loader2, RefreshCw, Shield,
+  ChevronRight, Download, Loader2, RefreshCw, Shield,
 } from "lucide-react";
 import type { InfraAuditEntry, InfraAuditTab } from "@/lib/provisioning-shared";
 
@@ -12,6 +12,7 @@ export default function AuditPanel() {
   const [entries, setEntries] = useState<InfraAuditEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Filters
@@ -122,27 +123,57 @@ export default function AuditPanel() {
               </td></tr>
             ) : entries.length === 0 ? (
               <tr><td colSpan={6} className="px-4 py-10 text-center text-text-muted">No audit entries</td></tr>
-            ) : entries.map(e => (
-              <tr key={e.id} className="hover:bg-muted/30">
-                <td className="px-4 py-2 text-xs text-text-muted whitespace-nowrap">{fmtTime(e.timestamp)}</td>
-                <td className="px-4 py-2 text-text-primary font-mono">{e.user}</td>
-                <td className="px-4 py-2">
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
-                    e.tab === "dns" ? "bg-blue-50 text-blue-700" :
-                    e.tab === "dhcp" ? "bg-purple-50 text-purple-700" :
-                    e.tab === "ad" ? "bg-amber-50 text-amber-700" :
-                    "bg-gray-50 text-gray-600"
-                  }`}>{TAB_LABELS[e.tab] ?? e.tab}</span>
-                </td>
-                <td className="px-4 py-2 text-text-secondary">{e.action}</td>
-                <td className="px-4 py-2 font-mono text-text-primary text-xs truncate max-w-[300px]">{e.target}</td>
-                <td className="px-4 py-2">
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
-                    e.status === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
-                  }`}>{e.status}</span>
-                </td>
-              </tr>
-            ))}
+            ) : entries.map(e => {
+              const hasDetails = e.details && Object.keys(e.details).length > 0;
+              const isExpanded = expandedId === e.id;
+              return (
+                <tr key={e.id} className={`hover:bg-muted/30 ${hasDetails ? "cursor-pointer" : ""}`}
+                  onClick={() => hasDetails && setExpandedId(isExpanded ? null : e.id)}>
+                  <td className="px-4 py-2 text-xs text-text-muted whitespace-nowrap">
+                    <span className="flex items-center gap-1">
+                      {hasDetails && <ChevronRight className={`w-3 h-3 transition-transform ${isExpanded ? "rotate-90" : ""}`} />}
+                      {fmtTime(e.timestamp)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 text-text-primary font-mono">{e.user}</td>
+                  <td className="px-4 py-2">
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
+                      e.tab === "dns" ? "bg-blue-50 text-blue-700" :
+                      e.tab === "dhcp" ? "bg-purple-50 text-purple-700" :
+                      e.tab === "ad" ? "bg-amber-50 text-amber-700" :
+                      "bg-gray-50 text-gray-600"
+                    }`}>{TAB_LABELS[e.tab] ?? e.tab}</span>
+                  </td>
+                  <td className="px-4 py-2 text-text-secondary">{e.action}</td>
+                  <td className="px-4 py-2 font-mono text-text-primary text-xs truncate max-w-[300px]">{e.target}</td>
+                  <td className="px-4 py-2">
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
+                      e.status === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+                    }`}>{e.status}</span>
+                  </td>
+                </tr>
+              );
+            }).flatMap(row => {
+              const e = entries.find(x => x.id === row.key);
+              if (!e || expandedId !== e.id || !e.details) return [row];
+              return [row, (
+                <tr key={`${e.id}-details`} className="bg-muted/20">
+                  <td colSpan={6} className="px-4 py-3">
+                    <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs max-w-2xl">
+                      {Object.entries(e.details).filter(([, v]) => v !== undefined && v !== null).map(([k, v]) => (
+                        <div key={k} className="contents">
+                          <span className="text-text-muted font-medium">{k}</span>
+                          <span className={`font-mono text-text-primary break-all ${
+                            k === "previousDescription" ? "text-red-600 line-through" :
+                            k === "verifiedDescription" ? "text-green-600 font-semibold" : ""
+                          }`}>{typeof v === "object" ? JSON.stringify(v) : String(v)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+              )];
+            })}
           </tbody>
         </table>
       </div>
