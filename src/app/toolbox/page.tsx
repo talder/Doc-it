@@ -6,13 +6,14 @@ import {
   ArrowLeft, Wrench, Copy, Check, RefreshCw, Key, FileCode,
   Hash, Link2, Fingerprint, Clock, KeyRound, Trash2,
 } from "lucide-react";
+import { copyToClipboard } from "@/lib/clipboard";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function useCopy() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const copy = useCallback((text: string, id: string) => {
-    navigator.clipboard.writeText(text).catch(() => {});
+    copyToClipboard(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 1500);
   }, []);
