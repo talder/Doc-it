@@ -519,7 +519,7 @@ function AdminContent() {
     setNbVlans(vlans);
     setNbPrefixes(prefixes);
     setNbManufacturers(manufacturers);
-    setNbRefLoaded(true);
+    if (roles.length || vlans.length || prefixes.length || manufacturers.length) setNbRefLoaded(true);
   }, []);
 
   const fetchCrashLogs = useCallback(async (filters: typeof crashFilters, page: number) => {

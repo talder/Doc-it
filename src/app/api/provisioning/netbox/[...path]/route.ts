@@ -28,7 +28,9 @@ export async function GET(
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { path: segments } = await params;
-  const apiPath = "/" + segments.join("/");
+  // Ensure trailing slash — Netbox API requires it and ALLOWED_PREFIXES expect it
+  let apiPath = "/" + segments.join("/");
+  if (!apiPath.endsWith("/")) apiPath += "/";
 
   // Security: only allow known Netbox API paths
   if (!ALLOWED_PREFIXES.some(p => apiPath.startsWith(p))) {
