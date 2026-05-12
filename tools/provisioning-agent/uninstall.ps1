@@ -3,19 +3,19 @@
     Uninstalls the Doc-it Provisioning Agent.
 
 .DESCRIPTION
-    Removes the Windows Service (and any legacy scheduled task), firewall rule,
+    Removes the Scheduled Task (and any legacy Windows Service), firewall rule,
     and HTTP URL reservation. Does NOT delete the agent files or logs.
 
 .NOTES
-    Must be run as Administrator.
+    Must be run as Administrator. Works with both PowerShell 5.1 and 7+.
 #>
 
 #Requires -RunAsAdministrator
 
 $ErrorActionPreference = "Stop"
 
-$ServiceName = "DocitProvisioningAgent"
-$ConfigFile  = Join-Path $PSScriptRoot "config.json"
+$TaskName   = "DocitProvisioningAgent"
+$ConfigFile = Join-Path $PSScriptRoot "config.json"
 
 Write-Host ""
 Write-Host "Uninstalling Doc-it Provisioning Agent..." -ForegroundColor Yellow
@@ -28,27 +28,32 @@ if (Test-Path $ConfigFile) {
     if ($cfg.port) { $port = $cfg.port }
 }
 
-# Stop and remove Windows Service
-$svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-if ($svc) {
-    Write-Host "Stopping service '$ServiceName'..."
-    Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+# Stop and remove Scheduled Task
+$task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+if ($task) {
+    Write-Host "Stopping task '$TaskName'..."
+    Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 2
-    Write-Host "Removing service..."
-    sc.exe delete $ServiceName | Out-Null
-    Write-Host "Service removed." -ForegroundColor Green
+    Write-Host "Removing task..."
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+    Write-Host "Task removed." -ForegroundColor Green
 } else {
-    Write-Host "Service '$ServiceName' not found." -ForegroundColor Gray
+    Write-Host "Task '$TaskName' not found." -ForegroundColor Gray
 }
 
-# Also remove legacy scheduled task if it exists
-$legacyTask = Get-ScheduledTask -TaskName $ServiceName -ErrorAction SilentlyContinue
-if ($legacyTask) {
-    Write-Host "Removing legacy scheduled task '$ServiceName'..."
-    Stop-ScheduledTask -TaskName $ServiceName -ErrorAction SilentlyContinue
-    Unregister-ScheduledTask -TaskName $ServiceName -Confirm:$false
-    Write-Host "Legacy task removed." -ForegroundColor Green
+# Also remove legacy Windows Service if it exists
+$svc = Get-Service -Name $TaskName -ErrorAction SilentlyContinue
+if ($svc) {
+    Write-Host "Removing legacy Windows Service '$TaskName'..."
+    Stop-Service -Name $TaskName -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+    sc.exe delete $TaskName | Out-Null
+    Write-Host "Legacy service removed." -ForegroundColor Green
 }
+
+# Clean up compiled service wrapper from previous installs
+$oldExe = Join-Path $PSScriptRoot "docit-service.exe"
+if (Test-Path $oldExe) { Remove-Item $oldExe -Force -ErrorAction SilentlyContinue }
 
 # Remove URL reservation
 $urlPrefix = "http://+:${port}/"

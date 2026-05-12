@@ -1,24 +1,24 @@
 <#
 .SYNOPSIS
-    Installs the Doc-it Provisioning Agent as a Windows Service.
+    Installs the Doc-it Provisioning Agent as a Scheduled Task.
 
 .DESCRIPTION
-    Creates a Windows Service "DocitProvisioningAgent" that:
+    Creates a Scheduled Task "DocitProvisioningAgent" that:
       - Starts automatically at system boot
       - Runs as SYSTEM (has access to DNS/DHCP cmdlets)
-      - Restarts on failure (every 60 seconds)
+      - Runs whether or not a user is logged on
+      - Restarts automatically if the process exits
       - Registers the HTTP URL reservation so no manual netsh is needed
 
 .NOTES
-    Must be run as Administrator.
+    Must be run as Administrator. Works with both PowerShell 5.1 and 7+.
 #>
 
 #Requires -RunAsAdministrator
 
 $ErrorActionPreference = "Stop"
 
-$ServiceName = "DocitProvisioningAgent"
-$ServiceDisplay = "Doc-it Provisioning Agent"
+$TaskName    = "DocitProvisioningAgent"
 $AgentDir    = $PSScriptRoot
 $AgentScript = Join-Path $AgentDir "docit-agent.ps1"
 $ConfigFile  = Join-Path $AgentDir "config.json"
@@ -55,36 +55,39 @@ if ($cfg.token -eq "CHANGE-ME-generate-a-strong-random-token") {
     exit 1
 }
 
-# ── Remove existing service or legacy task ────────────────────────────────────
+# ── Remove existing task or legacy service ───────────────────────────────────────
 
-# Remove legacy scheduled task if it exists (upgrade path)
-$legacyTask = Get-ScheduledTask -TaskName $ServiceName -ErrorAction SilentlyContinue
-if ($legacyTask) {
-    Write-Host "Removing legacy scheduled task '$ServiceName'..." -ForegroundColor Yellow
-    Stop-ScheduledTask -TaskName $ServiceName -ErrorAction SilentlyContinue
-    Unregister-ScheduledTask -TaskName $ServiceName -Confirm:$false
-    Start-Sleep -Seconds 1
-}
-
-# Remove existing service if present
-$existingSvc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+# Remove legacy Windows Service if it exists (upgrade path)
+$existingSvc = Get-Service -Name $TaskName -ErrorAction SilentlyContinue
 if ($existingSvc) {
-    Write-Host "Stopping existing service '$ServiceName'..." -ForegroundColor Yellow
-    Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+    Write-Host "Removing legacy Windows Service '$TaskName'..." -ForegroundColor Yellow
+    Stop-Service -Name $TaskName -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 2
-    Write-Host "Removing existing service..."
-    sc.exe delete $ServiceName | Out-Null
+    sc.exe delete $TaskName | Out-Null
     Start-Sleep -Seconds 1
 }
 
-# ── Register HTTP URL reservation ─────────────────────────────────────────────
+# Remove existing scheduled task if present
+$existingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+if ($existingTask) {
+    Write-Host "Removing existing task '$TaskName'..." -ForegroundColor Yellow
+    Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+    Start-Sleep -Seconds 1
+}
+
+# Clean up compiled service wrapper from previous installs
+$oldExe = Join-Path $AgentDir "docit-service.exe"
+if (Test-Path $oldExe) { Remove-Item $oldExe -Force -ErrorAction SilentlyContinue }
+
+# ── Register HTTP URL reservation ───────────────────────────────────────────────
 
 $urlPrefix = "http://+:${port}/"
 Write-Host "Registering URL reservation: $urlPrefix"
 netsh http delete urlacl url=$urlPrefix 2>$null | Out-Null
 netsh http add urlacl url=$urlPrefix user="NT AUTHORITY\SYSTEM" | Out-Null
 
-# ── Open firewall port ────────────────────────────────────────────────────────
+# ── Open firewall port ──────────────────────────────────────────────────────
 
 $fwRuleName = "DocitProvisioningAgent-TCP-$port"
 $existingRule = Get-NetFirewallRule -DisplayName $fwRuleName -ErrorAction SilentlyContinue
@@ -95,94 +98,48 @@ if (-not $existingRule) {
     Write-Host "Firewall rule already exists: $fwRuleName"
 }
 
-# ── Compile service wrapper ────────────────────────────────────────────────────
-# Windows SCM requires a proper ServiceBase executable — powershell.exe alone
-# cannot respond to SCM control messages. We compile a tiny C# wrapper that
-# starts the PowerShell agent script and handles Start/Stop lifecycle.
+# ── Create Scheduled Task ─────────────────────────────────────────────────────
 
-$wrapperExe = Join-Path $AgentDir "docit-service.exe"
-Write-Host "Compiling service wrapper: $wrapperExe"
+Write-Host "Creating scheduled task: $TaskName"
 
-$csharpSource = @"
-using System;
-using System.Diagnostics;
-using System.IO;
-using System.ServiceProcess;
+$action = New-ScheduledTaskAction `
+    -Execute "powershell.exe" `
+    -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$AgentScript`"" `
+    -WorkingDirectory $AgentDir
 
-public class DocitAgentService : ServiceBase
-{
-    private Process _proc;
+$trigger = New-ScheduledTaskTrigger -AtStartup
 
-    public DocitAgentService()
-    {
-        ServiceName = "DocitProvisioningAgent";
-        CanStop = true;
-        CanShutdown = true;
-    }
+$principal = New-ScheduledTaskPrincipal `
+    -UserId "NT AUTHORITY\SYSTEM" `
+    -LogonType ServiceAccount `
+    -RunLevel Highest
 
-    protected override void OnStart(string[] args)
-    {
-        string dir = Path.GetDirectoryName(
-            System.Reflection.Assembly.GetExecutingAssembly().Location);
-        string script = Path.Combine(dir, "docit-agent.ps1");
+$settings = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -StartWhenAvailable `
+    -RestartInterval (New-TimeSpan -Minutes 1) `
+    -RestartCount 999 `
+    -ExecutionTimeLimit (New-TimeSpan -Days 0)
 
-        _proc = new Process();
-        _proc.StartInfo.FileName = "powershell.exe";
-        _proc.StartInfo.Arguments =
-            "-NoProfile -ExecutionPolicy Bypass -File \"" + script + "\"";
-        _proc.StartInfo.UseShellExecute = false;
-        _proc.StartInfo.CreateNoWindow = true;
-        _proc.StartInfo.WorkingDirectory = dir;
-        _proc.Start();
-    }
+Register-ScheduledTask `
+    -TaskName $TaskName `
+    -Action $action `
+    -Trigger $trigger `
+    -Principal $principal `
+    -Settings $settings `
+    -Description "Doc-it Provisioning Agent - REST API for DNS/DHCP management" `
+    -Force | Out-Null
 
-    protected override void OnStop()
-    {
-        try { if (_proc != null && !_proc.HasExited) _proc.Kill(); }
-        catch { }
-    }
+Write-Host "Task '$TaskName' created successfully." -ForegroundColor Green
 
-    protected override void OnShutdown() { OnStop(); }
+# ── Start the task ──────────────────────────────────────────────────────────
 
-    public static void Main() { ServiceBase.Run(new DocitAgentService()); }
-}
-"@
-
-Add-Type -TypeDefinition $csharpSource `
-    -ReferencedAssemblies "System.ServiceProcess" `
-    -OutputType WindowsApplication `
-    -OutputAssembly $wrapperExe
-
-if (-not (Test-Path $wrapperExe)) {
-    Write-Host "ERROR: Failed to compile service wrapper." -ForegroundColor Red
-    exit 1
-}
-Write-Host "Service wrapper compiled." -ForegroundColor Green
-
-# ── Create Windows Service ────────────────────────────────────────────────────
-
-Write-Host "Creating Windows Service: $ServiceName"
-sc.exe create $ServiceName `
-    binPath= "`"$wrapperExe`"" `
-    start= delayed-auto `
-    DisplayName= $ServiceDisplay `
-    obj= "LocalSystem" | Out-Null
-
-# Set description
-sc.exe description $ServiceName "Doc-it Provisioning Agent - REST API for DNS/DHCP management" | Out-Null
-
-# Configure failure recovery: restart after 60s on 1st, 2nd, 3rd failure
-sc.exe failure $ServiceName reset= 86400 actions= restart/60000/restart/60000/restart/60000 | Out-Null
-
-Write-Host "Service '$ServiceName' created successfully." -ForegroundColor Green
-
-# ── Start the service ─────────────────────────────────────────────────────────
-
-Write-Host "Starting service..."
-Start-Service -Name $ServiceName
+Write-Host "Starting task..."
+Start-ScheduledTask -TaskName $TaskName
 Start-Sleep -Seconds 3
 
-# ── Verify ────────────────────────────────────────────────────────────────────
+# ── Verify ────────────────────────────────────────────────────────────────
 
 try {
     $health = Invoke-RestMethod -Uri "http://localhost:${port}/api/health" -TimeoutSec 5
@@ -194,16 +151,16 @@ try {
     Write-Host "  DHCP:    $($health.dhcp)" -ForegroundColor Gray
     Write-Host "  Version: $($health.version)" -ForegroundColor Gray
 } catch {
-    Write-Host "WARNING: Service started but health check failed. Check logs in: $(Join-Path $AgentDir 'logs')" -ForegroundColor Yellow
+    Write-Host "WARNING: Task started but health check failed. Check logs in: $(Join-Path $AgentDir 'logs')" -ForegroundColor Yellow
 }
 
 Write-Host ""
 Write-Host "Installation complete." -ForegroundColor Green
 Write-Host ""
 Write-Host "Manage with:" -ForegroundColor Cyan
-Write-Host "  Get-Service $ServiceName          # Check status" -ForegroundColor Gray
-Write-Host "  Restart-Service $ServiceName       # Restart" -ForegroundColor Gray
-Write-Host "  Stop-Service $ServiceName          # Stop" -ForegroundColor Gray
+Write-Host "  Get-ScheduledTask -TaskName $TaskName     # Check status" -ForegroundColor Gray
+Write-Host "  Start-ScheduledTask -TaskName $TaskName    # Start" -ForegroundColor Gray
+Write-Host "  Stop-ScheduledTask -TaskName $TaskName     # Stop" -ForegroundColor Gray
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Cyan
 Write-Host "  1. In Doc-it Admin > Provisioning, set the endpoint URL to:" -ForegroundColor White
