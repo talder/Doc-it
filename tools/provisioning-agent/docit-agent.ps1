@@ -540,13 +540,19 @@ function Handle-DhcpUpdateReservation {
     if (-not $DhcpAvailable) { Send-Json $Response 503 @{ error = "DhcpServer module not available" }; return }
 
     if (-not $Ip) {
+        Write-Log "WARN" "DHCP Update: No IP in URL"
         Send-Json $Response 400 @{ error = "IP address is required in URL" }; return
     }
+
+    Write-Log "INFO" "DHCP Update: IP=$Ip Body=$($Body | ConvertTo-Json -Compress -Depth 3)"
 
     $scope = $Body.scope
     $desc  = $Body.description
 
+    Write-Log "INFO" "DHCP Update: scope=$scope description='$desc' (type=$($desc.GetType().Name))"
+
     if ($null -eq $desc) {
+        Write-Log "WARN" "DHCP Update: description is null, returning 400"
         Send-Json $Response 400 @{ error = "'description' field is required" }; return
     }
 
@@ -554,21 +560,41 @@ function Handle-DhcpUpdateReservation {
         # Set-DhcpServerv4Reservation identifies by -IPAddress only (no -ScopeId)
         # Verify the reservation exists first
         $found = $false
+        $foundScope = $null
+        $beforeDesc = $null
         $scopes = @(Get-DhcpServerv4Scope -ErrorAction SilentlyContinue)
+        Write-Log "INFO" "DHCP Update: Searching $($scopes.Count) scopes for IP $Ip"
         foreach ($s in $scopes) {
             try {
                 $res = Get-DhcpServerv4Reservation -ScopeId $s.ScopeId -IPAddress $Ip -ErrorAction SilentlyContinue
-                if ($res) { $found = $true; break }
-            } catch { }
+                if ($res) {
+                    $found = $true
+                    $foundScope = $s.ScopeId.IPAddressToString
+                    $beforeDesc = $res.Description
+                    Write-Log "INFO" "DHCP Update: Found reservation in scope $foundScope, current description='$beforeDesc'"
+                    break
+                }
+            } catch {
+                Write-Log "WARN" "DHCP Update: Error checking scope $($s.ScopeId): $_"
+            }
         }
         if (-not $found) {
+            Write-Log "WARN" "DHCP Update: No reservation found for IP $Ip in any scope"
             Send-Json $Response 404 @{ error = "No DHCP reservation found for IP $Ip" }; return
         }
+
+        Write-Log "INFO" "DHCP Update: Calling Set-DhcpServerv4Reservation -IPAddress $Ip -Description '$desc'"
         Set-DhcpServerv4Reservation -IPAddress $Ip -Description $desc -ErrorAction Stop
-        Write-Log "INFO" "DHCP: Updated description for $Ip"
-        Send-Json $Response 200 @{ success = $true; ipAddress = $Ip; description = $desc }
+
+        # Verify the update actually took effect
+        $after = Get-DhcpServerv4Reservation -ScopeId $foundScope -IPAddress $Ip -ErrorAction SilentlyContinue
+        $afterDesc = if ($after) { $after.Description } else { "(lookup failed)" }
+        Write-Log "INFO" "DHCP Update: Done. Before='$beforeDesc' After='$afterDesc'"
+
+        Send-Json $Response 200 @{ success = $true; ipAddress = $Ip; description = $desc; previousDescription = $beforeDesc; verifiedDescription = $afterDesc }
     } catch {
-        Write-Log "ERROR" "DHCP: Failed to update reservation: $_"
+        Write-Log "ERROR" "DHCP Update: Failed for IP $Ip : $($_.Exception.Message)"
+        Write-Log "ERROR" "DHCP Update: Full error: $_"
         Send-Json $Response 500 @{ error = $_.Exception.Message }
     }
 }
