@@ -248,6 +248,10 @@ function AdminContent() {
   const [nbManufacturers, setNbManufacturers] = useState<{ id: number; name: string }[]>([]);
   const [nbRefLoaded, setNbRefLoaded] = useState(false);
 
+  // DHCP scopes + DNS zones for profile form dropdowns
+  const [profileDhcpScopes, setProfileDhcpScopes] = useState<{ scopeId: string; name: string }[]>([]);
+  const [profileDnsZones, setProfileDnsZones] = useState<{ name: string }[]>([]);
+
   // Mirth servers state (admin)
   interface MirthServerAdmin { id: string; name: string; url: string; username: string; passwordSet: boolean; ignoreSslErrors: boolean; enabled: boolean; sortOrder: number; createdAt: string; }
   const [mirthServers, setMirthServers] = useState<MirthServerAdmin[]>([]);
@@ -522,6 +526,9 @@ function AdminContent() {
     setNbPrefixes(prefixes);
     setNbManufacturers(manufacturers);
     if (roles.length || vlans.length || prefixes.length || manufacturers.length) setNbRefLoaded(true);
+    // Also fetch DHCP scopes and DNS zones from agents
+    fetch("/api/provisioning/agent/dhcp/scopes").then(r => r.ok ? r.json() : null).then(d => { if (d?.scopes) setProfileDhcpScopes(d.scopes); }).catch(() => {});
+    fetch("/api/provisioning/agent/dns/zones").then(r => r.ok ? r.json() : null).then(d => { if (d?.zones) setProfileDnsZones(d.zones); }).catch(() => {});
   }, []);
 
   const fetchCrashLogs = useCallback(async (filters: typeof crashFilters, page: number) => {
@@ -4000,11 +4007,25 @@ function AdminContent() {
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Default DNS Zone</label>
-                      <input type="text" value={profileForm.defaultDnsZone} onChange={(e) => setProfileForm({ ...profileForm, defaultDnsZone: e.target.value })} placeholder="example.com" className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      {profileDnsZones.length > 0 ? (
+                        <select value={profileForm.defaultDnsZone} onChange={(e) => setProfileForm({ ...profileForm, defaultDnsZone: e.target.value })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                          <option value="">— None —</option>
+                          {profileDnsZones.map(z => <option key={z.name} value={z.name}>{z.name}</option>)}
+                        </select>
+                      ) : (
+                        <input type="text" value={profileForm.defaultDnsZone} onChange={(e) => setProfileForm({ ...profileForm, defaultDnsZone: e.target.value })} placeholder="example.com" className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Default DHCP Scope</label>
-                      <input type="text" value={profileForm.defaultDhcpScope} onChange={(e) => setProfileForm({ ...profileForm, defaultDhcpScope: e.target.value })} placeholder="10.0.0.0" className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      {profileDhcpScopes.length > 0 ? (
+                        <select value={profileForm.defaultDhcpScope} onChange={(e) => setProfileForm({ ...profileForm, defaultDhcpScope: e.target.value })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                          <option value="">— None —</option>
+                          {profileDhcpScopes.map(s => <option key={s.scopeId} value={s.scopeId}>{s.scopeId} — {s.name}</option>)}
+                        </select>
+                      ) : (
+                        <input type="text" value={profileForm.defaultDhcpScope} onChange={(e) => setProfileForm({ ...profileForm, defaultDhcpScope: e.target.value })} placeholder="10.0.0.0" className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Sort Order</label>
