@@ -287,7 +287,7 @@ export async function testDnsAgentConnection(): Promise<{ ok: boolean; message?:
   try {
     const cfg = await readProvisioningConfig();
     if (!cfg.dns.endpoint) return { ok: false, error: "DNS agent endpoint not configured" };
-    const res = await providerFetch(cfg.dns.endpoint, "/health", cfg.dns.tokenEncrypted, cfg.dns.ignoreSslErrors);
+    const res = await providerFetch(cfg.dns.endpoint, "/api/health", cfg.dns.tokenEncrypted, cfg.dns.ignoreSslErrors);
     if (res.ok) {
       const data = await res.json().catch(() => ({})) as Record<string, unknown>;
       return { ok: true, message: `Connected${data.version ? ` — v${data.version}` : ""}` };
@@ -304,7 +304,7 @@ export async function testDhcpAgentConnection(): Promise<{ ok: boolean; message?
   try {
     const cfg = await readProvisioningConfig();
     if (!cfg.dhcp.endpoint) return { ok: false, error: "DHCP agent endpoint not configured" };
-    const res = await providerFetch(cfg.dhcp.endpoint, "/health", cfg.dhcp.tokenEncrypted, cfg.dhcp.ignoreSslErrors);
+    const res = await providerFetch(cfg.dhcp.endpoint, "/api/health", cfg.dhcp.tokenEncrypted, cfg.dhcp.ignoreSslErrors);
     if (res.ok) {
       const data = await res.json().catch(() => ({})) as Record<string, unknown>;
       return { ok: true, message: `Connected${data.version ? ` — v${data.version}` : ""}` };

@@ -49,7 +49,7 @@ if ($cfg.token -eq "CHANGE-ME-generate-a-strong-random-token") {
     Write-Host "ERROR: You must change the 'token' in config.json before installing." -ForegroundColor Red
     Write-Host ""
     Write-Host "Generate a token with this PowerShell command:" -ForegroundColor Yellow
-    Write-Host '  [System.Convert]::ToBase64String([byte[]]::new(32) | % { [System.Security.Cryptography.RandomNumberGenerator]::Fill($_); $_ })' -ForegroundColor Gray
+    Write-Host '  $b=[byte[]]::new(32); [Security.Cryptography.RandomNumberGenerator]::Fill($b); [Convert]::ToBase64String($b)' -ForegroundColor Gray
     Write-Host "Or simply make up a long random string (32+ characters)." -ForegroundColor Yellow
     exit 1
 }

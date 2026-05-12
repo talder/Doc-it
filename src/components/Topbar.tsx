@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Search, LogOut, Settings, Sun, Moon, Archive, User, Bell, X, FileText, BookOpen, Check, HardDriveDownload, Home, Trophy, Share2, Trash2, Lock, Clock, ClipboardList, Monitor, Headset, ShieldCheck, Star, Info, Phone, Server, Activity, GitBranch, Network } from "lucide-react";
+import { ChevronDown, Search, LogOut, Settings, Sun, Moon, Archive, User, Bell, X, FileText, BookOpen, Check, HardDriveDownload, Home, Trophy, Share2, Trash2, Lock, Clock, ClipboardList, Monitor, Headset, ShieldCheck, Star, Info, Phone, Server, Activity, GitBranch, Network, Wrench } from "lucide-react";
 import OfflineBundleModal from "@/components/OfflineBundleModal";
 import ChangelogModal from "@/components/modals/ChangelogModal";
 import { useTheme, isLightTheme, type Theme } from "@/components/ThemeProvider";
@@ -303,6 +303,15 @@ export default function Topbar({ currentSpace, spaces, user, onSwitchSpace, onLo
             <Network className="w-4 h-4" />
           </button>
         )}
+
+        {/* Toolbox */}
+        <button
+          onClick={() => router.push("/toolbox")}
+          className="p-2 rounded-lg hover:bg-muted text-text-muted transition-colors"
+          data-tip="Toolbox"
+        >
+          <Wrench className="w-4 h-4" />
+        </button>
 
         {/* VictoriaLogs */}
         <button
