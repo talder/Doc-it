@@ -3,8 +3,8 @@
     Uninstalls the Doc-it Provisioning Agent.
 
 .DESCRIPTION
-    Removes the scheduled task, firewall rule, and HTTP URL reservation.
-    Does NOT delete the agent files or logs.
+    Removes the Windows Service (and any legacy scheduled task), firewall rule,
+    and HTTP URL reservation. Does NOT delete the agent files or logs.
 
 .NOTES
     Must be run as Administrator.
@@ -14,8 +14,8 @@
 
 $ErrorActionPreference = "Stop"
 
-$TaskName  = "DocitProvisioningAgent"
-$ConfigFile = Join-Path $PSScriptRoot "config.json"
+$ServiceName = "DocitProvisioningAgent"
+$ConfigFile  = Join-Path $PSScriptRoot "config.json"
 
 Write-Host ""
 Write-Host "Uninstalling Doc-it Provisioning Agent..." -ForegroundColor Yellow
@@ -28,17 +28,26 @@ if (Test-Path $ConfigFile) {
     if ($cfg.port) { $port = $cfg.port }
 }
 
-# Stop and remove task
-$existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-if ($existing) {
-    Write-Host "Stopping task '$TaskName'..."
-    Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+# Stop and remove Windows Service
+$svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+if ($svc) {
+    Write-Host "Stopping service '$ServiceName'..."
+    Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 2
-    Write-Host "Removing task..."
-    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-    Write-Host "Task removed." -ForegroundColor Green
+    Write-Host "Removing service..."
+    sc.exe delete $ServiceName | Out-Null
+    Write-Host "Service removed." -ForegroundColor Green
 } else {
-    Write-Host "Task '$TaskName' not found (already removed)." -ForegroundColor Gray
+    Write-Host "Service '$ServiceName' not found." -ForegroundColor Gray
+}
+
+# Also remove legacy scheduled task if it exists
+$legacyTask = Get-ScheduledTask -TaskName $ServiceName -ErrorAction SilentlyContinue
+if ($legacyTask) {
+    Write-Host "Removing legacy scheduled task '$ServiceName'..."
+    Stop-ScheduledTask -TaskName $ServiceName -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $ServiceName -Confirm:$false
+    Write-Host "Legacy task removed." -ForegroundColor Green
 }
 
 # Remove URL reservation

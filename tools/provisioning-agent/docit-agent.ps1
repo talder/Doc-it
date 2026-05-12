@@ -551,26 +551,20 @@ function Handle-DhcpUpdateReservation {
     }
 
     try {
-        if ($scope) {
-            Set-DhcpServerv4Reservation -ScopeId $scope -IPAddress $Ip -Description $desc -ErrorAction Stop
-        } else {
-            # Search all scopes for this IP
-            $found = $false
-            $scopes = @(Get-DhcpServerv4Scope -ErrorAction SilentlyContinue)
-            foreach ($s in $scopes) {
-                try {
-                    $res = Get-DhcpServerv4Reservation -ScopeId $s.ScopeId -IPAddress $Ip -ErrorAction SilentlyContinue
-                    if ($res) {
-                        Set-DhcpServerv4Reservation -ScopeId $s.ScopeId -IPAddress $Ip -Description $desc -ErrorAction Stop
-                        $found = $true
-                        break
-                    }
-                } catch { }
-            }
-            if (-not $found) {
-                Send-Json $Response 404 @{ error = "No DHCP reservation found for IP $Ip" }; return
-            }
+        # Set-DhcpServerv4Reservation identifies by -IPAddress only (no -ScopeId)
+        # Verify the reservation exists first
+        $found = $false
+        $scopes = @(Get-DhcpServerv4Scope -ErrorAction SilentlyContinue)
+        foreach ($s in $scopes) {
+            try {
+                $res = Get-DhcpServerv4Reservation -ScopeId $s.ScopeId -IPAddress $Ip -ErrorAction SilentlyContinue
+                if ($res) { $found = $true; break }
+            } catch { }
         }
+        if (-not $found) {
+            Send-Json $Response 404 @{ error = "No DHCP reservation found for IP $Ip" }; return
+        }
+        Set-DhcpServerv4Reservation -IPAddress $Ip -Description $desc -ErrorAction Stop
         Write-Log "INFO" "DHCP: Updated description for $Ip"
         Send-Json $Response 200 @{ success = $true; ipAddress = $Ip; description = $desc }
     } catch {
