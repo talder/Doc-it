@@ -815,137 +815,76 @@ function AdminContent() {
   if (!currentUser) return null;
 
   return (
-    <div className="min-h-screen bg-surface-alt">
-      <div className="max-w-5xl mx-auto py-8 px-4">
-        {/* Header */}
-        <div className="flex items-center gap-4 mb-8">
-          <button
-            onClick={() => router.push("/")}
-            className="p-2 rounded-lg hover:bg-muted-hover text-gray-500 transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5" />
+    <div className="min-h-screen bg-surface-alt flex">
+      {/* Sidebar Navigation */}
+      <aside className="w-60 shrink-0 bg-surface border-r border-border sticky top-0 h-screen overflow-y-auto">
+        <div className="p-5">
+          <button onClick={() => router.push("/")} className="flex items-center gap-2 text-sm text-text-muted hover:text-text-primary transition-colors">
+            <ArrowLeft className="w-4 h-4" /> Back
           </button>
-          <h1 className="text-2xl font-bold text-text-primary">Administration</h1>
+          <h1 className="text-lg font-bold text-text-primary mt-5 mb-6">Administration</h1>
+
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted px-3 mb-1.5">General</p>
+          <nav className="space-y-0.5 mb-5">
+            <button onClick={() => setTab("users")} className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-colors text-left ${tab === "users" ? "bg-accent/10 text-accent font-medium" : "text-text-secondary hover:bg-muted hover:text-text-primary"}`}>
+              <Users className="w-4 h-4 shrink-0" /> Users
+            </button>
+            <button onClick={() => setTab("spaces")} className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-colors text-left ${tab === "spaces" ? "bg-accent/10 text-accent font-medium" : "text-text-secondary hover:bg-muted hover:text-text-primary"}`}>
+              <Layout className="w-4 h-4 shrink-0" /> Spaces
+            </button>
+            <button onClick={() => { setTab("groups"); if (!groupsLoaded) fetchUserGroups(); }} className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-colors text-left ${tab === "groups" ? "bg-accent/10 text-accent font-medium" : "text-text-secondary hover:bg-muted hover:text-text-primary"}`}>
+              <UsersRound className="w-4 h-4 shrink-0" /> Groups
+            </button>
+          </nav>
+
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted px-3 mb-1.5">Security</p>
+          <nav className="space-y-0.5 mb-5">
+            <button onClick={() => { setTab("service-keys"); if (!svcKeysLoaded) fetchServiceKeys(); }} className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-colors text-left ${tab === "service-keys" ? "bg-accent/10 text-accent font-medium" : "text-text-secondary hover:bg-muted hover:text-text-primary"}`}>
+              <Key className="w-4 h-4 shrink-0" /> Service Keys
+            </button>
+            <button onClick={() => { setTab("audit"); if (auditConfirmed) { if (!auditConfigLoaded) fetchAuditConfig(); fetchCalendar(calYear, calMonth); fetchAuditLogs(explorerFilters, 1); } }} className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-colors text-left ${tab === "audit" ? "bg-accent/10 text-accent font-medium" : "text-text-secondary hover:bg-muted hover:text-text-primary"}`}>
+              <ClipboardList className="w-4 h-4 shrink-0" /> Audit
+            </button>
+          </nav>
+
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted px-3 mb-1.5">System</p>
+          <nav className="space-y-0.5 mb-5">
+            <button onClick={() => { setTab("settings"); if (!smtpLoaded) fetchSmtp(); fetchKeyInfo(); if (!storageLoaded) fetchStorageConfig(); if (!changelogSettingsLoaded) fetchChangelogSettings(); if (!adLoaded) fetchAdConfig(); if (!dashAccessLoaded) fetchDashboardAccess(); if (!onCallSettingsLoaded) fetchOnCallSettings(); }} className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-colors text-left ${tab === "settings" ? "bg-accent/10 text-accent font-medium" : "text-text-secondary hover:bg-muted hover:text-text-primary"}`}>
+              <Settings className="w-4 h-4 shrink-0" /> Settings
+            </button>
+            <button onClick={() => { setTab("backup"); if (!backupLoaded) fetchBackup(); fetchSnapshots(); }} className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-colors text-left ${tab === "backup" ? "bg-accent/10 text-accent font-medium" : "text-text-secondary hover:bg-muted hover:text-text-primary"}`}>
+              <HardDrive className="w-4 h-4 shrink-0" /> Backup
+            </button>
+            <button onClick={() => { setTab("crash-logs"); if (!crashLoaded) fetchCrashLogs(crashFilters, 1); }} className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-colors text-left ${tab === "crash-logs" ? "bg-accent/10 text-accent font-medium" : "text-text-secondary hover:bg-muted hover:text-text-primary"}`}>
+              <AlertTriangle className="w-4 h-4 shrink-0" /> Crash Logs
+            </button>
+          </nav>
+
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted px-3 mb-1.5">Integrations</p>
+          <nav className="space-y-0.5">
+            <button onClick={() => { setTab("vmware"); if (!vmwareCfgLoaded) fetchVmwareConfig(); }} className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-colors text-left ${tab === "vmware" ? "bg-accent/10 text-accent font-medium" : "text-text-secondary hover:bg-muted hover:text-text-primary"}`}>
+              <Network className="w-4 h-4 shrink-0" /> VMware
+            </button>
+            <button onClick={() => { setTab("mirth"); fetchMirthServers(); }} className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-colors text-left ${tab === "mirth" ? "bg-accent/10 text-accent font-medium" : "text-text-secondary hover:bg-muted hover:text-text-primary"}`}>
+              <GitBranch className="w-4 h-4 shrink-0" /> Mirth
+            </button>
+            <button onClick={() => { setTab("provisioning"); if (!provCfgLoaded) { fetchProvisioningConfig(); fetchDeviceProfiles(); } if (!nbRefLoaded) fetchNetboxRefData(); }} className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-colors text-left ${tab === "provisioning" ? "bg-accent/10 text-accent font-medium" : "text-text-secondary hover:bg-muted hover:text-text-primary"}`}>
+              <Server className="w-4 h-4 shrink-0" /> Provisioning
+            </button>
+          </nav>
         </div>
+      </aside>
 
-        {/* Toast notifications — fixed bottom-right */}
-        {(error || success) && (
-          <div className="fixed bottom-6 right-6 z-50 max-w-sm animate-[slideUp_0.2s_ease-out]">
-            {error && <div className="px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg shadow-lg">{error}</div>}
-            {success && <div className="px-4 py-3 bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg shadow-lg">{success}</div>}
-          </div>
-        )}
-
-        {/* Tabs */}
-        <div className="flex gap-1 mb-6 bg-gray-100 p-1 rounded-lg overflow-x-auto">
-          <button
-            onClick={() => setTab("users")}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
-              tab === "users" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
-            }`}
-          >
-            <Users className="w-4 h-4" />
-            Users
-          </button>
-          <button
-            onClick={() => setTab("spaces")}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
-              tab === "spaces" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
-            }`}
-          >
-            <Layout className="w-4 h-4" />
-            Spaces
-          </button>
-          <button
-            onClick={() => { setTab("service-keys"); if (!svcKeysLoaded) fetchServiceKeys(); }}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
-              tab === "service-keys" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
-            }`}
-          >
-            <Key className="w-4 h-4" />
-            Service Keys
-          </button>
-          <button
-            onClick={() => { setTab("groups"); if (!groupsLoaded) fetchUserGroups(); }}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
-              tab === "groups" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
-            }`}
-          >
-            <UsersRound className="w-4 h-4" />
-            Groups
-          </button>
-          <button
-            onClick={() => { setTab("settings"); if (!smtpLoaded) fetchSmtp(); fetchKeyInfo(); if (!storageLoaded) fetchStorageConfig(); if (!changelogSettingsLoaded) fetchChangelogSettings(); if (!adLoaded) fetchAdConfig(); if (!dashAccessLoaded) fetchDashboardAccess(); if (!onCallSettingsLoaded) fetchOnCallSettings(); }}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
-              tab === "settings" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
-            }`}
-          >
-            <Settings className="w-4 h-4" />
-            Settings
-          </button>
-          <button
-            onClick={() => {
-              setTab("audit");
-              if (auditConfirmed) {
-                if (!auditConfigLoaded) fetchAuditConfig();
-                fetchCalendar(calYear, calMonth);
-                fetchAuditLogs(explorerFilters, 1);
-              }
-            }}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
-              tab === "audit" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
-            }`}
-          >
-            <ClipboardList className="w-4 h-4" />
-            Audit
-          </button>
-          <button
-            onClick={() => { setTab("backup"); if (!backupLoaded) fetchBackup(); fetchSnapshots(); }}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
-              tab === "backup" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
-            }`}
-          >
-            <HardDrive className="w-4 h-4" />
-            Backup
-          </button>
-          <button
-            onClick={() => { setTab("crash-logs"); if (!crashLoaded) fetchCrashLogs(crashFilters, 1); }}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
-              tab === "crash-logs" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
-            }`}
-          >
-            <AlertTriangle className="w-4 h-4" />
-            Crash Logs
-          </button>
-          <button
-            onClick={() => { setTab("vmware"); if (!vmwareCfgLoaded) fetchVmwareConfig(); }}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
-              tab === "vmware" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
-            }`}
-          >
-            <Network className="w-4 h-4" />
-            VMware
-          </button>
-          <button
-            onClick={() => { setTab("mirth"); fetchMirthServers(); }}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
-              tab === "mirth" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
-            }`}
-          >
-            <GitBranch className="w-4 h-4" />
-            Mirth
-          </button>
-          <button
-            onClick={() => { setTab("provisioning"); if (!provCfgLoaded) { fetchProvisioningConfig(); fetchDeviceProfiles(); } if (!nbRefLoaded) fetchNetboxRefData(); }}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
-              tab === "provisioning" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
-            }`}
-          >
-            <Server className="w-4 h-4" />
-            Provisioning
-          </button>
-        </div>
-
+      {/* Main Content */}
+      <main className="flex-1 min-w-0 py-8 px-8 overflow-y-auto">
+        <div className="max-w-4xl mx-auto">
+          {/* Toast notifications */}
+          {(error || success) && (
+            <div className="fixed bottom-6 right-6 z-50 max-w-sm animate-[slideUp_0.2s_ease-out]">
+              {error && <div className="px-4 py-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg shadow-lg">{error}</div>}
+              {success && <div className="px-4 py-3 bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg shadow-lg">{success}</div>}
+            </div>
+          )}
         {/* Users Tab */}
         {tab === "users" && (
           <div className="bg-surface rounded-xl shadow-sm border border-border">
@@ -4330,7 +4269,8 @@ function AdminContent() {
             )}
           </div>
         )}
-      </div>
+        </div>
+      </main>
     </div>
   );
 }
