@@ -5,8 +5,9 @@ import { decryptField } from "@/lib/crypto";
 
 /**
  * POST /api/provisioning/dns/flush-cache
- * Flushes DNS cache on the main DNS agent + each flush-target agent endpoint.
+ * Flushes DNS cache on each configured flush-target agent endpoint.
  * Each target runs its own agent instance and flushes locally — no WinRM.
+ * The main DNS agent (on the DC) is NOT flushed — only the forwarder/caching servers.
  */
 export async function POST() {
   const user = await getCurrentUser();
@@ -65,21 +66,19 @@ export async function POST() {
     }
   }
 
-  // 1) Flush the main DNS agent (on the DC)
-  await flushAgent(cfg.dns.endpoint, "Main DNS agent");
-
-  // 2) Flush each configured target agent in parallel
+  // Flush each configured target agent in parallel
   const flushTargets = cfg.dnsFlushTargets ?? [];
-  if (flushTargets.length > 0) {
-    await Promise.all(
-      flushTargets.map(target => {
-        // Derive a friendly label from the URL (hostname)
-        let label = target;
-        try { label = new URL(target).hostname; } catch { /* keep raw value */ }
-        return flushAgent(target, label);
-      }),
-    );
+  if (flushTargets.length === 0) {
+    return NextResponse.json({ error: "No DNS flush targets configured" }, { status: 400 });
   }
+
+  await Promise.all(
+    flushTargets.map(target => {
+      let label = target;
+      try { label = new URL(target).hostname; } catch { /* keep raw value */ }
+      return flushAgent(target, label);
+    }),
+  );
 
   const allOk = allResults.length > 0 && allResults.every(r => r.success);
   const hosts = allResults.map(r => r.host).join(", ");
