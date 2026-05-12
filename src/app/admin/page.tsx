@@ -214,13 +214,13 @@ function AdminContent() {
     netbox: { url: string; token: string; tokenSet: boolean; siteId: number | null; defaultRoleId: number | null; ignoreSslErrors: boolean };
     dns: { type: string; endpoint: string; token: string; tokenSet: boolean; defaultZone: string; ignoreSslErrors: boolean };
     dhcp: { type: string; endpoint: string; token: string; tokenSet: boolean; defaultScope: string; ignoreSslErrors: boolean };
-    allowedUsers: string[]; allowedDnsZones: string[]; dnsFlushTargets: string[]; adManagementEnabled: boolean; adManagementAdminOnly: boolean;
+    allowedUsers: string[]; allowedDnsZones: string[]; dnsFlushTargets: string[]; dnsFlushToken: string; dnsFlushTokenSet: boolean; adManagementEnabled: boolean; adManagementAdminOnly: boolean;
   }
   const emptyProvCfg = (): ProvCfgForm => ({
     netbox: { url: "", token: "", tokenSet: false, siteId: null, defaultRoleId: null, ignoreSslErrors: false },
     dns: { type: "microsoft", endpoint: "", token: "", tokenSet: false, defaultZone: "", ignoreSslErrors: false },
     dhcp: { type: "microsoft", endpoint: "", token: "", tokenSet: false, defaultScope: "", ignoreSslErrors: false },
-    allowedUsers: [], allowedDnsZones: [], dnsFlushTargets: [], adManagementEnabled: false, adManagementAdminOnly: true,
+    allowedUsers: [], allowedDnsZones: [], dnsFlushTargets: [], dnsFlushToken: "", dnsFlushTokenSet: false, adManagementEnabled: false, adManagementAdminOnly: true,
   });
   const [provCfg, setProvCfg] = useState<ProvCfgForm>(emptyProvCfg());
   const [provCfgLoaded, setProvCfgLoaded] = useState(false);
@@ -493,6 +493,7 @@ function AdminContent() {
         allowedUsers: Array.isArray(data.allowedUsers) ? data.allowedUsers : [],
         allowedDnsZones: Array.isArray(data.allowedDnsZones) ? data.allowedDnsZones : [],
         dnsFlushTargets: Array.isArray(data.dnsFlushTargets) ? data.dnsFlushTargets : [],
+        dnsFlushToken: "", dnsFlushTokenSet: !!data.dnsFlushTokenSet,
         adManagementEnabled: !!data.adManagementEnabled,
         adManagementAdminOnly: data.adManagementAdminOnly !== false,
       });
@@ -3834,6 +3835,11 @@ function AdminContent() {
                 <div className="border-t border-border pt-6">
                   <h3 className="text-sm font-semibold text-text-primary mb-1">DNS Cache Flush Targets</h3>
                   <p className="text-xs text-text-muted mb-3">Agent endpoint URLs of DNS forwarder/caching servers. Install the agent on each server and add its URL here. Each agent flushes its own local cache.</p>
+                  <div className="max-w-xs mb-3">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Flush Agent Token {provCfg.dnsFlushTokenSet && !provCfg.dnsFlushToken && <span className="text-green-600 font-normal">(set)</span>}</label>
+                    <input type="password" value={provCfg.dnsFlushToken} onChange={(e) => setProvCfg({ ...provCfg, dnsFlushToken: e.target.value })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder={provCfg.dnsFlushTokenSet ? "Leave blank to keep current" : "Shared token for flush agents"} />
+                    <p className="text-xs text-text-muted mt-1">Auth token used for all flush target agents. Set the same token in each agent&apos;s config.json.</p>
+                  </div>
                   <div className="flex flex-wrap gap-1.5 mb-2">
                     {provCfg.dnsFlushTargets.map((h, i) => (
                       <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 rounded-full">
@@ -3888,6 +3894,7 @@ function AdminContent() {
                         allowedUsers: provCfg.allowedUsers,
                         allowedDnsZones: provCfg.allowedDnsZones,
                         dnsFlushTargets: provCfg.dnsFlushTargets,
+                        ...(provCfg.dnsFlushToken ? { dnsFlushToken: provCfg.dnsFlushToken } : {}),
                         adManagementEnabled: provCfg.adManagementEnabled,
                         adManagementAdminOnly: provCfg.adManagementAdminOnly,
                       };

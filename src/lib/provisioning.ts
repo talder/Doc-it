@@ -67,6 +67,7 @@ export async function saveProvisioningConfig(
   if (patch.allowedUsers) cfg.allowedUsers = patch.allowedUsers;
   if ((patch as Record<string, unknown>).allowedDnsZones) cfg.allowedDnsZones = (patch as Record<string, unknown>).allowedDnsZones as string[];
   if ((patch as Record<string, unknown>).dnsFlushTargets) cfg.dnsFlushTargets = (patch as Record<string, unknown>).dnsFlushTargets as string[];
+  if ((patch as Record<string, unknown>).dnsFlushToken) cfg.dnsFlushTokenEncrypted = await encryptField((patch as Record<string, unknown>).dnsFlushToken as string);
   if ((patch as Record<string, unknown>).adManagementEnabled !== undefined) cfg.adManagementEnabled = !!(patch as Record<string, unknown>).adManagementEnabled;
   if ((patch as Record<string, unknown>).adManagementAdminOnly !== undefined) cfg.adManagementAdminOnly = !!(patch as Record<string, unknown>).adManagementAdminOnly;
 

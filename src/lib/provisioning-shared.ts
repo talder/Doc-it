@@ -41,6 +41,10 @@ export interface ProvisioningConfig {
   allowedDnsZones: string[];
   /** Agent endpoint URLs of DNS forwarder/caching servers whose cache can be flushed (e.g. https://vxdns01:5989) */
   dnsFlushTargets: string[];
+  /** Encrypted auth token shared by all DNS flush target agents */
+  dnsFlushTokenEncrypted?: string;
+  /** Client-side flag: true if dnsFlushTokenEncrypted is set */
+  dnsFlushTokenSet?: boolean;
   /** Master toggle for the AD management tab */
   adManagementEnabled: boolean;
   /** Restrict the AD tab to admin users only (default true) */

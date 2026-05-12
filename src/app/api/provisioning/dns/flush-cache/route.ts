@@ -18,7 +18,8 @@ export async function POST() {
     return NextResponse.json({ error: "DNS agent not configured" }, { status: 503 });
   }
 
-  const token = cfg.dns.tokenEncrypted ? await decryptField(cfg.dns.tokenEncrypted) : "";
+  // Use the dedicated flush token (separate from the main DNS agent token)
+  const token = cfg.dnsFlushTokenEncrypted ? await decryptField(cfg.dnsFlushTokenEncrypted) : "";
   const ignoreSsl = cfg.dns.ignoreSslErrors;
   const allResults: Array<{ host: string; success: boolean; detail: string }> = [];
 

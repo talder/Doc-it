@@ -218,7 +218,7 @@ function Handle-DnsCreateRecord {
     }
 
     $ip   = $Body.ipAddress
-    $createPtr = if ($null -ne $Body.createPtr) { $Body.createPtr } else { $true }
+    $createPtr = if ($Body.PSObject.Properties.Match('createPtr').Count -gt 0) { $Body.createPtr } else { $true }
     if (-not $name -or -not $zone -or -not $ip) {
         Send-Json $Response 400 @{ error = "Fields 'name', 'zone', and 'ipAddress' are required" }; return
     }
