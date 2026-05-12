@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  ArrowLeft, Globe, Network, Server, Shield, Users,
+  ArrowLeft, FileText, Globe, Network, Server, Shield, Users,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 
@@ -12,10 +12,11 @@ const DnsTab = dynamic(() => import("@/components/provisioning/DnsTab"), { ssr: 
 const DhcpTab = dynamic(() => import("@/components/provisioning/DhcpTab"), { ssr: false });
 const AdTab = dynamic(() => import("@/components/provisioning/AdTab"), { ssr: false });
 const AuditPanel = dynamic(() => import("@/components/provisioning/AuditPanel"), { ssr: false });
+const AgentLogsPanel = dynamic(() => import("@/components/provisioning/AgentLogsPanel"), { ssr: false });
 
 // ── Tab definitions ──────────────────────────────────────────────────────────
 
-type TabId = "provision" | "dns" | "dhcp" | "ad" | "audit";
+type TabId = "provision" | "dns" | "dhcp" | "ad" | "audit" | "logs";
 
 interface TabDef {
   id: TabId;
@@ -30,6 +31,7 @@ const TABS: TabDef[] = [
   { id: "dhcp",      label: "DHCP",              icon: <Network className="w-4 h-4" /> },
   { id: "ad",        label: "Active Directory",  icon: <Users className="w-4 h-4" />, adminOnly: true },
   { id: "audit",     label: "Audit Log",         icon: <Shield className="w-4 h-4" /> },
+  { id: "logs",      label: "Agent Logs",        icon: <FileText className="w-4 h-4" /> },
 ];
 
 // ── Main Page ────────────────────────────────────────────────────────────────
@@ -104,6 +106,7 @@ export default function ProvisioningPage() {
         {activeTab === "dhcp" && <DhcpTab />}
         {activeTab === "ad" && isAdmin && <AdTab />}
         {activeTab === "audit" && <AuditPanel />}
+        {activeTab === "logs" && <AgentLogsPanel />}
       </div>
     </div>
   );

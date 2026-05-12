@@ -14,6 +14,7 @@ const ALLOWED_PATHS = new Set([
   "dns/zones",
   "dhcp/scopes",
   "api/health",
+  "api/logs",
 ]);
 
 /** Patterns for dynamic paths (e.g. dns/zones/{zone}/records). */
@@ -61,8 +62,8 @@ export async function GET(
     endpoint = cfg.dhcp.endpoint;
     tokenEncrypted = cfg.dhcp.tokenEncrypted ?? "";
     ignoreSsl = cfg.dhcp.ignoreSslErrors;
-  } else if (agentPath === "api/health") {
-    // Could be either; try DNS first, then DHCP
+  } else if (agentPath.startsWith("api/")) {
+    // Agent-level paths (health, logs) — try DNS agent first, then DHCP
     endpoint = cfg.dns.endpoint || cfg.dhcp.endpoint;
     tokenEncrypted = cfg.dns.tokenEncrypted ?? cfg.dhcp.tokenEncrypted ?? "";
     ignoreSsl = cfg.dns.ignoreSslErrors || cfg.dhcp.ignoreSslErrors;
@@ -73,7 +74,8 @@ export async function GET(
   }
 
   const token = tokenEncrypted ? await decryptField(tokenEncrypted) : "";
-  const url = `${endpoint.replace(/\/$/, "")}/${agentPath}`;
+  const qs = request.nextUrl.search; // preserve ?lines=200&level=ERROR etc.
+  const url = `${endpoint.replace(/\/$/, "")}/${agentPath}${qs}`;
 
   try {
     const controller = new AbortController();

@@ -635,6 +635,53 @@ function Handle-DhcpGetScopes {
     }
 }
 
+# ── Log Reader Handler ─────────────────────────────────────────────────────────
+
+function Handle-GetLogs {
+    param($Response, $Query)
+    $maxLines = if ($Query["lines"]) { [int]$Query["lines"] } else { 200 }
+    $levelFilter = $Query["level"]  # e.g. "ERROR", "WARN"
+
+    try {
+        # Read today's and yesterday's log files
+        $logFiles = @(
+            Join-Path $LogDir "agent-$(Get-Date -Format 'yyyy-MM-dd').log"
+            Join-Path $LogDir "agent-$((Get-Date).AddDays(-1).ToString('yyyy-MM-dd')).log"
+        ) | Where-Object { Test-Path $_ }
+
+        $allLines = @()
+        foreach ($f in $logFiles) {
+            $allLines += @(Get-Content $f -Encoding UTF8 -ErrorAction SilentlyContinue)
+        }
+
+        # Parse lines: "2026-05-12 15:15:50 [INFO] message"
+        $entries = @($allLines | ForEach-Object {
+            if ($_ -match '^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \[(\w+)\] (.*)$') {
+                @{ timestamp = $Matches[1]; level = $Matches[2]; message = $Matches[3] }
+            }
+        } | Where-Object { $_ -ne $null })
+
+        # Apply level filter
+        if ($levelFilter) {
+            $entries = @($entries | Where-Object { $_.level -eq $levelFilter.ToUpper() })
+        }
+
+        # Return last N entries (most recent last)
+        if ($entries.Count -gt $maxLines) {
+            $entries = $entries[($entries.Count - $maxLines)..($entries.Count - 1)]
+        }
+
+        Send-Json $Response 200 @{
+            count   = $entries.Count
+            host    = $env:COMPUTERNAME
+            entries = $entries
+        }
+    } catch {
+        Write-Log "ERROR" "Failed to read logs: $_"
+        Send-Json $Response 500 @{ error = $_.Exception.Message }
+    }
+}
+
 # ── HTTP Listener ─────────────────────────────────────────────────────────────
 
 Write-Log "INFO" "Doc-it Provisioning Agent v$Version starting..."
@@ -703,6 +750,11 @@ try {
                     dhcp    = $DhcpAvailable
                     time    = (Get-Date -Format "o")
                 }
+            }
+
+            # ── Route: Logs ──────────────────────────────────────────────────
+            elseif ($path -eq "/api/logs") {
+                Handle-GetLogs $response $query
             }
 
             # ── Route: Status ─────────────────────────────────────────────────
