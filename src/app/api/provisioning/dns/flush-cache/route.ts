@@ -18,6 +18,7 @@ export async function POST() {
 
   const token = cfg.dns.tokenEncrypted ? await decryptField(cfg.dns.tokenEncrypted) : "";
   const url = `${cfg.dns.endpoint.replace(/\/$/, "")}/dns/flush-cache`;
+  const flushTargets = cfg.dnsFlushTargets ?? [];
 
   try {
     const controller = new AbortController();
@@ -34,7 +35,7 @@ export async function POST() {
         Accept: "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: "{}",
+      body: JSON.stringify({ targets: flushTargets }),
       signal: controller.signal,
     });
     clearTimeout(timer);

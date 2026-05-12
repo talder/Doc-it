@@ -334,7 +334,7 @@ function Handle-DnsGetZones {
 }
 
 function Handle-DnsFlushCache {
-    param($Response)
+    param($Response, $Body = $null)
     if (-not $DnsAvailable) { Send-Json $Response 503 @{ error = "DnsServer module not available" }; return }
 
     $results = @()
@@ -349,8 +349,14 @@ function Handle-DnsFlushCache {
         Write-Log "ERROR" "DNS: Failed to flush local cache: $_"
     }
 
+    # Determine flush targets: prefer targets from request body, fallback to local config
+    $targets = $DnsFlushTargets
+    if ($Body -and $Body.targets -and $Body.targets.Count -gt 0) {
+        $targets = $Body.targets
+    }
+
     # Flush remote targets
-    foreach ($target in $DnsFlushTargets) {
+    foreach ($target in $targets) {
         try {
             Invoke-Command -ComputerName $target -ScriptBlock { Clear-DnsServerCache -Force } -ErrorAction Stop
             $results += @{ host = $target; success = $true; detail = "Cache cleared" }
@@ -843,7 +849,8 @@ try {
                 Handle-DnsGetZoneStats $response $zoneName
             }
             elseif ($path -eq "/dns/flush-cache" -and $method -eq "POST") {
-                Handle-DnsFlushCache $response
+                $body = Read-RequestBody $request
+                Handle-DnsFlushCache $response $body
             }
 
             # ── DHCP Routes

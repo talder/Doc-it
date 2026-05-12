@@ -214,19 +214,20 @@ function AdminContent() {
     netbox: { url: string; token: string; tokenSet: boolean; siteId: number | null; defaultRoleId: number | null; ignoreSslErrors: boolean };
     dns: { type: string; endpoint: string; token: string; tokenSet: boolean; defaultZone: string; ignoreSslErrors: boolean };
     dhcp: { type: string; endpoint: string; token: string; tokenSet: boolean; defaultScope: string; ignoreSslErrors: boolean };
-    allowedUsers: string[]; allowedDnsZones: string[]; adManagementEnabled: boolean; adManagementAdminOnly: boolean;
+    allowedUsers: string[]; allowedDnsZones: string[]; dnsFlushTargets: string[]; adManagementEnabled: boolean; adManagementAdminOnly: boolean;
   }
   const emptyProvCfg = (): ProvCfgForm => ({
     netbox: { url: "", token: "", tokenSet: false, siteId: null, defaultRoleId: null, ignoreSslErrors: false },
     dns: { type: "microsoft", endpoint: "", token: "", tokenSet: false, defaultZone: "", ignoreSslErrors: false },
     dhcp: { type: "microsoft", endpoint: "", token: "", tokenSet: false, defaultScope: "", ignoreSslErrors: false },
-    allowedUsers: [], allowedDnsZones: [], adManagementEnabled: false, adManagementAdminOnly: true,
+    allowedUsers: [], allowedDnsZones: [], dnsFlushTargets: [], adManagementEnabled: false, adManagementAdminOnly: true,
   });
   const [provCfg, setProvCfg] = useState<ProvCfgForm>(emptyProvCfg());
   const [provCfgLoaded, setProvCfgLoaded] = useState(false);
   const [provSaving, setProvSaving] = useState(false);
   const [newProvUser, setNewProvUser] = useState("");
   const [newProvDnsZone, setNewProvDnsZone] = useState("");
+  const [newFlushTarget, setNewFlushTarget] = useState("");
   const [provTestResult, setProvTestResult] = useState<{ target: string; ok: boolean; message: string } | null>(null);
   const [provTesting, setProvTesting] = useState<string | null>(null);
 
@@ -487,6 +488,7 @@ function AdminContent() {
         dhcp: { type: data.dhcp?.type || "microsoft", endpoint: data.dhcp?.endpoint || "", token: "", tokenSet: !!data.dhcp?.tokenSet, defaultScope: data.dhcp?.defaultScope || "", ignoreSslErrors: !!data.dhcp?.ignoreSslErrors },
         allowedUsers: Array.isArray(data.allowedUsers) ? data.allowedUsers : [],
         allowedDnsZones: Array.isArray(data.allowedDnsZones) ? data.allowedDnsZones : [],
+        dnsFlushTargets: Array.isArray(data.dnsFlushTargets) ? data.dnsFlushTargets : [],
         adManagementEnabled: !!data.adManagementEnabled,
         adManagementAdminOnly: data.adManagementAdminOnly !== false,
       });
@@ -3821,6 +3823,25 @@ function AdminContent() {
                   </div>
                 </div>
 
+                {/* DNS Flush Targets */}
+                <div className="border-t border-border pt-6">
+                  <h3 className="text-sm font-semibold text-text-primary mb-1">DNS Cache Flush Targets</h3>
+                  <p className="text-xs text-text-muted mb-3">Remote DNS forwarder/caching servers whose cache can be flushed from the DNS tab. Uses WinRM via the agent.</p>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {provCfg.dnsFlushTargets.map((h, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 rounded-full">
+                        {h}
+                        <button onClick={() => setProvCfg({ ...provCfg, dnsFlushTargets: provCfg.dnsFlushTargets.filter((_, j) => j !== i) })} className="hover:text-red-600"><X className="w-3 h-3" /></button>
+                      </span>
+                    ))}
+                    {provCfg.dnsFlushTargets.length === 0 && <span className="text-xs text-text-muted">No targets configured (only local agent cache will be flushed)</span>}
+                  </div>
+                  <div className="flex gap-2 max-w-xs">
+                    <input type="text" value={newFlushTarget} onChange={(e) => setNewFlushTarget(e.target.value)} placeholder="VXDNS01" className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" onKeyDown={(e) => { if (e.key === "Enter" && newFlushTarget.trim()) { setProvCfg({ ...provCfg, dnsFlushTargets: [...provCfg.dnsFlushTargets, newFlushTarget.trim()] }); setNewFlushTarget(""); } }} />
+                    <button disabled={!newFlushTarget.trim()} onClick={() => { setProvCfg({ ...provCfg, dnsFlushTargets: [...provCfg.dnsFlushTargets, newFlushTarget.trim()] }); setNewFlushTarget(""); }} className="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50">Add</button>
+                  </div>
+                </div>
+
                 {/* AD Management */}
                 <div className="border-t border-border pt-6">
                   <h3 className="text-sm font-semibold text-text-primary mb-3">Active Directory Management</h3>
@@ -3859,6 +3880,7 @@ function AdminContent() {
                         dhcp: { type: provCfg.dhcp.type, endpoint: provCfg.dhcp.endpoint.trim(), defaultScope: provCfg.dhcp.defaultScope.trim(), ignoreSslErrors: provCfg.dhcp.ignoreSslErrors },
                         allowedUsers: provCfg.allowedUsers,
                         allowedDnsZones: provCfg.allowedDnsZones,
+                        dnsFlushTargets: provCfg.dnsFlushTargets,
                         adManagementEnabled: provCfg.adManagementEnabled,
                         adManagementAdminOnly: provCfg.adManagementAdminOnly,
                       };

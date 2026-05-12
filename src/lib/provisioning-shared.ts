@@ -39,6 +39,8 @@ export interface ProvisioningConfig {
   allowedUsers: string[];
   /** DNS zones where write operations are allowed (empty = all zones writable) */
   allowedDnsZones: string[];
+  /** Remote DNS forwarder/caching servers whose cache can be flushed (hostnames) */
+  dnsFlushTargets: string[];
   /** Master toggle for the AD management tab */
   adManagementEnabled: boolean;
   /** Restrict the AD tab to admin users only (default true) */

@@ -32,6 +32,7 @@ export async function GET() {
     },
     allowedUsers: cfg.allowedUsers,
     allowedDnsZones: cfg.allowedDnsZones,
+    dnsFlushTargets: cfg.dnsFlushTargets ?? [],
     adManagementEnabled: cfg.adManagementEnabled,
     adManagementAdminOnly: cfg.adManagementAdminOnly,
   });
