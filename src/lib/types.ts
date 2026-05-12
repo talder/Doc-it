@@ -491,6 +491,7 @@ export type AuditEventType =
   | "provisioning.dns.create"
   | "provisioning.dns.delete"
   | "provisioning.dhcp.create"
+  | "provisioning.dhcp.update"
   | "provisioning.dhcp.delete"
   | "provisioning.ad.password.reset"
   | "provisioning.ad.account.toggle"

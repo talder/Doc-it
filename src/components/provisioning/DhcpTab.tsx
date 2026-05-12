@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  AlertTriangle, Download, Loader2, Network, Plus, RefreshCw,
+  AlertTriangle, Check, Download, Loader2, Network, Pencil, Plus, RefreshCw,
   Search, Trash2, X,
 } from "lucide-react";
 
@@ -32,6 +32,17 @@ export default function DhcpTab() {
   const [stats, setStats] = useState<ScopeStats | null>(null);
   const [options, setOptions] = useState<ScopeOption[]>([]);
   const [exclusions, setExclusions] = useState<ExclusionRange[]>([]);
+
+  // Sort state
+  const [resSortCol, setResSortCol] = useState<"ipAddress" | "macAddress" | "name" | "description">("ipAddress");
+  const [resSortDir, setResSortDir] = useState<"asc" | "desc">("asc");
+  const [leaseSortCol, setLeaseSortCol] = useState<"ipAddress" | "macAddress" | "hostName" | "leaseStart" | "leaseExpiry" | "addressState">("ipAddress");
+  const [leaseSortDir, setLeaseSortDir] = useState<"asc" | "desc">("asc");
+
+  // Inline description edit
+  const [editingIp, setEditingIp] = useState<string | null>(null);
+  const [editDesc, setEditDesc] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
 
   // Add reservation modal
   const [showAdd, setShowAdd] = useState(false);
@@ -130,12 +141,50 @@ export default function DhcpTab() {
     setDeleteLoading(false);
   };
 
+  // Save description
+  const handleSaveDesc = async (ip: string) => {
+    setEditSaving(true);
+    try {
+      const res = await fetch(`/api/provisioning/dhcp/reservations/${encodeURIComponent(ip)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description: editDesc, scope: selectedScope }),
+      });
+      if (res.ok) {
+        setReservations(prev => prev.map(r => r.ipAddress === ip ? { ...r, description: editDesc } : r));
+      }
+    } catch { /* ignore */ }
+    setEditSaving(false);
+    setEditingIp(null);
+  };
+
   const fmtTime = (s?: string) => { if (!s) return "—"; try { return new Date(s).toLocaleString(); } catch { return s; } };
 
-  const filteredRes = reservations.filter(r =>
-    !search || r.ipAddress.includes(search) || r.macAddress.toLowerCase().includes(search.toLowerCase()) || r.name.toLowerCase().includes(search.toLowerCase()));
-  const filteredLeases = leases.filter(l =>
-    !search || l.ipAddress.includes(search) || l.macAddress.toLowerCase().includes(search.toLowerCase()) || (l.hostName ?? "").toLowerCase().includes(search.toLowerCase()));
+  // Sort helpers
+  const toggleResSort = (col: typeof resSortCol) => {
+    if (resSortCol === col) setResSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setResSortCol(col); setResSortDir("asc"); }
+  };
+  const toggleLeaseSort = (col: typeof leaseSortCol) => {
+    if (leaseSortCol === col) setLeaseSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setLeaseSortCol(col); setLeaseSortDir("asc"); }
+  };
+  const cmp = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true });
+
+  const filteredRes = reservations
+    .filter(r => !search || r.ipAddress.includes(search) || r.macAddress.toLowerCase().includes(search.toLowerCase()) || r.name.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => {
+      const va = (a[resSortCol] ?? "").toString();
+      const vb = (b[resSortCol] ?? "").toString();
+      return resSortDir === "asc" ? cmp(va, vb) : cmp(vb, va);
+    });
+  const filteredLeases = leases
+    .filter(l => !search || l.ipAddress.includes(search) || l.macAddress.toLowerCase().includes(search.toLowerCase()) || (l.hostName ?? "").toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => {
+      const va = ((a as unknown as Record<string, unknown>)[leaseSortCol] ?? "").toString();
+      const vb = ((b as unknown as Record<string, unknown>)[leaseSortCol] ?? "").toString();
+      return leaseSortDir === "asc" ? cmp(va, vb) : cmp(vb, va);
+    });
 
   return (
     <div className="flex-1 overflow-auto px-6 py-6">
@@ -198,11 +247,14 @@ export default function DhcpTab() {
           <table className="w-full text-sm">
             <thead className="bg-muted/50">
               <tr>
-                <th className="px-4 py-2.5 text-left text-xs font-semibold text-text-muted uppercase">IP Address</th>
-                <th className="px-4 py-2.5 text-left text-xs font-semibold text-text-muted uppercase">MAC Address</th>
-                <th className="px-4 py-2.5 text-left text-xs font-semibold text-text-muted uppercase">Hostname</th>
-                <th className="px-4 py-2.5 text-left text-xs font-semibold text-text-muted uppercase">Description</th>
-                <th className="px-4 py-2.5 w-16" />
+                {(["ipAddress", "macAddress", "name", "description"] as const).map(col => (
+                  <th key={col} onClick={() => toggleResSort(col)}
+                    className="px-4 py-2.5 text-left text-xs font-semibold text-text-muted uppercase cursor-pointer hover:text-text-primary select-none">
+                    {col === "ipAddress" ? "IP Address" : col === "macAddress" ? "MAC Address" : col === "name" ? "Hostname" : "Description"}
+                    {resSortCol === col && <span className="ml-1">{resSortDir === "asc" ? "↑" : "↓"}</span>}
+                  </th>
+                ))}
+                <th className="px-4 py-2.5 w-20" />
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -215,8 +267,25 @@ export default function DhcpTab() {
                   <td className="px-4 py-2 font-mono text-text-primary">{r.ipAddress}</td>
                   <td className="px-4 py-2 font-mono text-text-secondary">{r.macAddress}</td>
                   <td className="px-4 py-2 text-text-primary">{r.name}</td>
-                  <td className="px-4 py-2 text-text-muted text-xs">{r.description}</td>
-                  <td className="px-4 py-2">
+                  <td className="px-4 py-2 text-xs">
+                    {editingIp === r.ipAddress ? (
+                      <div className="flex items-center gap-1">
+                        <input value={editDesc} onChange={e => setEditDesc(e.target.value)}
+                          onKeyDown={e => { if (e.key === "Enter") handleSaveDesc(r.ipAddress); if (e.key === "Escape") setEditingIp(null); }}
+                          autoFocus className="flex-1 px-2 py-1 text-xs border border-accent rounded bg-surface text-text-primary outline-none" />
+                        <button onClick={() => handleSaveDesc(r.ipAddress)} disabled={editSaving}
+                          className="p-1 rounded hover:bg-green-50 text-green-600"><Check className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => setEditingIp(null)} className="p-1 rounded hover:bg-muted text-text-muted"><X className="w-3.5 h-3.5" /></button>
+                      </div>
+                    ) : (
+                      <span className="group flex items-center gap-1 cursor-pointer text-text-muted hover:text-text-primary"
+                        onClick={() => { setEditingIp(r.ipAddress); setEditDesc(r.description ?? ""); }}>
+                        {r.description || <span className="italic text-text-muted/50">Add description…</span>}
+                        <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-100 text-text-muted" />
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2 flex items-center gap-1">
                     <button onClick={() => { setDeleting(r); setDeleteConfirm(""); }} className="p-1 rounded hover:bg-red-50 text-text-muted hover:text-red-500">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -234,12 +303,13 @@ export default function DhcpTab() {
           <table className="w-full text-sm">
             <thead className="bg-muted/50">
               <tr>
-                <th className="px-4 py-2.5 text-left text-xs font-semibold text-text-muted uppercase">IP</th>
-                <th className="px-4 py-2.5 text-left text-xs font-semibold text-text-muted uppercase">MAC</th>
-                <th className="px-4 py-2.5 text-left text-xs font-semibold text-text-muted uppercase">Hostname</th>
-                <th className="px-4 py-2.5 text-left text-xs font-semibold text-text-muted uppercase">Start</th>
-                <th className="px-4 py-2.5 text-left text-xs font-semibold text-text-muted uppercase">Expiry</th>
-                <th className="px-4 py-2.5 text-left text-xs font-semibold text-text-muted uppercase">Status</th>
+                {(["ipAddress", "macAddress", "hostName", "leaseStart", "leaseExpiry", "addressState"] as const).map(col => (
+                  <th key={col} onClick={() => toggleLeaseSort(col)}
+                    className="px-4 py-2.5 text-left text-xs font-semibold text-text-muted uppercase cursor-pointer hover:text-text-primary select-none">
+                    {col === "ipAddress" ? "IP" : col === "macAddress" ? "MAC" : col === "hostName" ? "Hostname" : col === "leaseStart" ? "Start" : col === "leaseExpiry" ? "Expiry" : "Status"}
+                    {leaseSortCol === col && <span className="ml-1">{leaseSortDir === "asc" ? "↑" : "↓"}</span>}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">

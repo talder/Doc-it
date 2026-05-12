@@ -535,6 +535,50 @@ function Handle-DhcpCreateReservation {
     }
 }
 
+function Handle-DhcpUpdateReservation {
+    param($Response, $Ip, $Body)
+    if (-not $DhcpAvailable) { Send-Json $Response 503 @{ error = "DhcpServer module not available" }; return }
+
+    if (-not $Ip) {
+        Send-Json $Response 400 @{ error = "IP address is required in URL" }; return
+    }
+
+    $scope = $Body.scope
+    $desc  = $Body.description
+
+    if ($null -eq $desc) {
+        Send-Json $Response 400 @{ error = "'description' field is required" }; return
+    }
+
+    try {
+        if ($scope) {
+            Set-DhcpServerv4Reservation -ScopeId $scope -IPAddress $Ip -Description $desc -ErrorAction Stop
+        } else {
+            # Search all scopes for this IP
+            $found = $false
+            $scopes = @(Get-DhcpServerv4Scope -ErrorAction SilentlyContinue)
+            foreach ($s in $scopes) {
+                try {
+                    $res = Get-DhcpServerv4Reservation -ScopeId $s.ScopeId -IPAddress $Ip -ErrorAction SilentlyContinue
+                    if ($res) {
+                        Set-DhcpServerv4Reservation -ScopeId $s.ScopeId -IPAddress $Ip -Description $desc -ErrorAction Stop
+                        $found = $true
+                        break
+                    }
+                } catch { }
+            }
+            if (-not $found) {
+                Send-Json $Response 404 @{ error = "No DHCP reservation found for IP $Ip" }; return
+            }
+        }
+        Write-Log "INFO" "DHCP: Updated description for $Ip"
+        Send-Json $Response 200 @{ success = $true; ipAddress = $Ip; description = $desc }
+    } catch {
+        Write-Log "ERROR" "DHCP: Failed to update reservation: $_"
+        Send-Json $Response 500 @{ error = $_.Exception.Message }
+    }
+}
+
 function Handle-DhcpDeleteReservation {
     param($Response, $Ip, $Query)
     if (-not $DhcpAvailable) { Send-Json $Response 503 @{ error = "DhcpServer module not available" }; return }
@@ -631,7 +675,7 @@ try {
 
         # Add CORS headers
         $response.Headers.Add("Access-Control-Allow-Origin", "*")
-        $response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+        $response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
         $response.Headers.Add("Access-Control-Allow-Headers", "Authorization, Content-Type")
 
         # Handle CORS preflight
@@ -710,6 +754,11 @@ try {
             elseif ($path -eq "/dhcp/reservations" -and $method -eq "POST") {
                 $body = Read-RequestBody $request
                 Handle-DhcpCreateReservation $response $body
+            }
+            elseif ($path -match "^/dhcp/reservations/(.+)$" -and $method -eq "PATCH") {
+                $resIp = [System.Uri]::UnescapeDataString($Matches[1])
+                $body = Read-RequestBody $request
+                Handle-DhcpUpdateReservation $response $resIp $body
             }
             elseif ($path -match "^/dhcp/reservations/(.+)$" -and $method -eq "DELETE") {
                 $resIp = [System.Uri]::UnescapeDataString($Matches[1])
