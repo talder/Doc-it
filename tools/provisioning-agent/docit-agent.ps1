@@ -454,14 +454,11 @@ function Handle-DhcpGetReservations {
         $reservations = @()
 
         if ($ip) {
-            # Search all scopes for this IP
-            $scopes = @(Get-DhcpServerv4Scope -ErrorAction SilentlyContinue)
-            foreach ($scope in $scopes) {
-                try {
-                    $res = Get-DhcpServerv4Reservation -ScopeId $scope.ScopeId -IPAddress $ip -ErrorAction SilentlyContinue
-                    if ($res) { $reservations += $res }
-                } catch { }
-            }
+            # -IPAddress alone looks up across all scopes (separate parameter set from -ScopeId)
+            try {
+                $res = Get-DhcpServerv4Reservation -IPAddress $ip -ErrorAction SilentlyContinue
+                if ($res) { $reservations += @($res) }
+            } catch { }
         }
 
         if ($mac -and $reservations.Count -eq 0) {
@@ -512,9 +509,9 @@ function Handle-DhcpCreateReservation {
     try {
         # Check if reservation already exists
         try {
-            $existing = Get-DhcpServerv4Reservation -ScopeId $scope -IPAddress $ip -ErrorAction SilentlyContinue
+            $existing = Get-DhcpServerv4Reservation -IPAddress $ip -ErrorAction SilentlyContinue
             if ($existing) {
-                Send-Json $Response 409 @{ error = "DHCP reservation already exists for IP $ip in scope $scope" }; return
+                Send-Json $Response 409 @{ error = "DHCP reservation already exists for IP $ip" }; return
             }
         } catch { }
 
@@ -557,37 +554,23 @@ function Handle-DhcpUpdateReservation {
     }
 
     try {
-        # Set-DhcpServerv4Reservation identifies by -IPAddress only (no -ScopeId)
-        # Verify the reservation exists first
-        $found = $false
-        $foundScope = $null
-        $beforeDesc = $null
-        $scopes = @(Get-DhcpServerv4Scope -ErrorAction SilentlyContinue)
-        Write-Log "INFO" "DHCP Update: Searching $($scopes.Count) scopes for IP $Ip"
-        foreach ($s in $scopes) {
-            try {
-                $res = Get-DhcpServerv4Reservation -ScopeId $s.ScopeId -IPAddress $Ip -ErrorAction SilentlyContinue
-                if ($res) {
-                    $found = $true
-                    $foundScope = $s.ScopeId.IPAddressToString
-                    $beforeDesc = $res.Description
-                    Write-Log "INFO" "DHCP Update: Found reservation in scope $foundScope, current description='$beforeDesc'"
-                    break
-                }
-            } catch {
-                Write-Log "WARN" "DHCP Update: Error checking scope $($s.ScopeId): $_"
-            }
-        }
-        if (-not $found) {
-            Write-Log "WARN" "DHCP Update: No reservation found for IP $Ip in any scope"
+        # Get-DhcpServerv4Reservation: -ScopeId and -IPAddress are separate parameter sets
+        # Use -IPAddress alone to look up by IP (works across all scopes)
+        $res = Get-DhcpServerv4Reservation -IPAddress $Ip -ErrorAction SilentlyContinue
+        if (-not $res) {
+            Write-Log "WARN" "DHCP Update: No reservation found for IP $Ip"
             Send-Json $Response 404 @{ error = "No DHCP reservation found for IP $Ip" }; return
         }
+
+        $beforeDesc = $res.Description
+        $foundScope = $res.ScopeId.IPAddressToString
+        Write-Log "INFO" "DHCP Update: Found in scope $foundScope, current description='$beforeDesc'"
 
         Write-Log "INFO" "DHCP Update: Calling Set-DhcpServerv4Reservation -IPAddress $Ip -Description '$desc'"
         Set-DhcpServerv4Reservation -IPAddress $Ip -Description $desc -ErrorAction Stop
 
         # Verify the update actually took effect
-        $after = Get-DhcpServerv4Reservation -ScopeId $foundScope -IPAddress $Ip -ErrorAction SilentlyContinue
+        $after = Get-DhcpServerv4Reservation -IPAddress $Ip -ErrorAction SilentlyContinue
         $afterDesc = if ($after) { $after.Description } else { "(lookup failed)" }
         Write-Log "INFO" "DHCP Update: Done. Before='$beforeDesc' After='$afterDesc'"
 
@@ -614,22 +597,12 @@ function Handle-DhcpDeleteReservation {
             # Direct delete from known scope
             Remove-DhcpServerv4Reservation -ScopeId $scope -IPAddress $Ip -ErrorAction Stop
         } else {
-            # Search all scopes
-            $found = $false
-            $scopes = @(Get-DhcpServerv4Scope -ErrorAction SilentlyContinue)
-            foreach ($s in $scopes) {
-                try {
-                    $res = Get-DhcpServerv4Reservation -ScopeId $s.ScopeId -IPAddress $Ip -ErrorAction SilentlyContinue
-                    if ($res) {
-                        Remove-DhcpServerv4Reservation -ScopeId $s.ScopeId -IPAddress $Ip -ErrorAction Stop
-                        $found = $true
-                        break
-                    }
-                } catch { }
-            }
-            if (-not $found) {
+            # Look up reservation by IP (separate parameter set from -ScopeId)
+            $res = Get-DhcpServerv4Reservation -IPAddress $Ip -ErrorAction SilentlyContinue
+            if (-not $res) {
                 Send-Json $Response 404 @{ error = "No DHCP reservation found for IP $Ip" }; return
             }
+            Remove-DhcpServerv4Reservation -ScopeId $res.ScopeId -IPAddress $Ip -ErrorAction Stop
         }
         Write-Log "INFO" "DHCP: Deleted reservation for $Ip"
         Send-Json $Response 200 @{ success = $true }
