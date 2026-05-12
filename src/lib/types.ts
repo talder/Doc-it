@@ -490,6 +490,7 @@ export type AuditEventType =
   | "provisioning.device.created"
   | "provisioning.dns.create"
   | "provisioning.dns.delete"
+  | "provisioning.dns.flush"
   | "provisioning.dhcp.create"
   | "provisioning.dhcp.update"
   | "provisioning.dhcp.delete"
