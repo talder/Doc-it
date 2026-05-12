@@ -100,8 +100,18 @@ Each enhanced table is stored as a single JSON file (`docs/{space}/.databases/{i
 - **Saved filters** — save named filter presets (power state, host, OS, search) stored in browser `localStorage`
 - **Access control** — admin-configurable list of allowed users; admins always have access
 
+### Infrastructure Management
+- **Device provisioning wizard** — 5-step guided workflow to register new network devices: select profile → device details → network config → pre-flight checks → execute. Integrates Netbox (IPAM), DNS, DHCP, and optionally CMDB in a single pipeline with automatic rollback on failure
+- **Device profiles** — pre-configured templates for device types (printers, workstations, servers) with default VLAN, prefix, DNS zone, DHCP scope, and manufacturer filters
+- **DNS management tab** — browse all DNS zones and records, create A/CNAME/TXT/MX/SRV records, delete records (with type-back confirmation), zone statistics, CSV export, and configurable zone allowlist for write operations
+- **DHCP management tab** — browse scopes, manage reservations (create/delete), view active leases, scope utilization stats, scope options, exclusion ranges, CSV export
+- **Active Directory tab** — search and manage AD users (password reset, enable/disable, unlock), groups (browse members), and computers (enable/disable, delete stale); requires LDAPS; admin-only by default
+- **Infrastructure audit log** — all provisioning, DNS, DHCP, and AD actions logged to a dedicated SQLite table with user, timestamp, action, target, and status; filterable table with auto-refresh and CSV export
+- **Provisioning agent** — standalone PowerShell service (`tools/provisioning-agent/`) for Windows DNS/DHCP servers; installs as a scheduled task; Bearer token auth; no external dependencies
+- **Access control** — admin-configurable allowed users list; AD tab restricted to admins by default
+
 ### Journal
-- **Personal journals** — per-user private journals with entries encrypted at rest (AES-256-GCM)
+- **Personal journals**
 - **Space journals** — shared team journals within a space
 - **Calendar view** — day-by-day calendar with entry previews and quick navigation
 - **Templates** — reusable journal templates with default tags
@@ -521,8 +531,9 @@ src/
     changelog/       # Change log page
     helpdesk/        # Helpdesk agent UI + admin config
     journal/         # Personal & space journal
-    oncall/          # On-call reports
-    vmware/          # VMware Inventory page
+    oncall/           # On-call reports
+    provisioning/     # Infrastructure management (provision, DNS, DHCP, AD, audit)
+    vmware/           # VMware Inventory page
     portal/          # Self-service portal (login, register, tickets)
     portals/         # Public portal listing & pages
     login/           # Login page
@@ -536,6 +547,7 @@ src/
     enhanced-table/  # Enhanced table views (table, kanban, gallery, calendar)
     helpdesk/        # Helpdesk components (WidgetRenderer, PortalPageDesigner)
     modals/          # Modal dialogs
+    provisioning/    # Infrastructure management tab components (wizard, DNS, DHCP, AD, audit)
     sidebar/         # Sidebar with categories, docs, tags
     Editor.tsx       # Main editor component
     Topbar.tsx       # Top navigation bar
@@ -556,6 +568,9 @@ src/
     enhanced-table.ts # Enhanced table CRUD (JSON files per space)
     oncall.ts        # On-call reports module (server-side CRUD, filtering, email)
     oncall-shared.ts # Client-safe on-call types and pure helpers
+    provisioning.ts  # Device provisioning (profiles, history, Netbox/DNS/DHCP pipeline, audit)
+    provisioning-shared.ts # Client-safe provisioning types, config interfaces
+    ad-management.ts # Active Directory LDAP operations (users, groups, computers)
     vmware.ts        # VMware Inventory (REST+SOAP fetch, cache, power, snapshots, weekly report)
     journal.ts       # Journal module (encrypted user journals)
     audit.ts         # NIS2 audit logging (encrypted, syslog, write queue)

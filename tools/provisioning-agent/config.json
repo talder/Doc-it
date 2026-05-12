@@ -1,0 +1,12 @@
+{
+  "_comment": "Doc-it Provisioning Agent configuration. See README.md for details.",
+
+  "port": 8520,
+
+  "token": "CHANGE-ME-generate-a-strong-random-token",
+
+  "mode": "dns",
+
+  "logDir": "",
+  "logRetentionDays": 30
+}

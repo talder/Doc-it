@@ -486,7 +486,16 @@ export type AuditEventType =
   | "mirth.channel.note.set"
   | "mirth.channel.config.set"
   | "mirth.channel.state.changed"
-  | "mirth.channel.health.alert";
+  | "mirth.channel.health.alert"
+  | "provisioning.device.created"
+  | "provisioning.dns.create"
+  | "provisioning.dns.delete"
+  | "provisioning.dhcp.create"
+  | "provisioning.dhcp.delete"
+  | "provisioning.ad.password.reset"
+  | "provisioning.ad.account.toggle"
+  | "provisioning.ad.group.modify"
+  | "provisioning.ad.computer.delete";
 
 export interface AuditEntry {
   eventId: string;
