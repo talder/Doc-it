@@ -95,13 +95,75 @@ if (-not $existingRule) {
     Write-Host "Firewall rule already exists: $fwRuleName"
 }
 
-# ── Create Windows Service ────────────────────────────────────────────────────
+# ── Compile service wrapper ────────────────────────────────────────────────────
+# Windows SCM requires a proper ServiceBase executable — powershell.exe alone
+# cannot respond to SCM control messages. We compile a tiny C# wrapper that
+# starts the PowerShell agent script and handles Start/Stop lifecycle.
 
-$binPath = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$AgentScript`""
+$wrapperExe = Join-Path $AgentDir "docit-service.exe"
+Write-Host "Compiling service wrapper: $wrapperExe"
+
+$csharpSource = @"
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.ServiceProcess;
+
+public class DocitAgentService : ServiceBase
+{
+    private Process _proc;
+
+    public DocitAgentService()
+    {
+        ServiceName = "DocitProvisioningAgent";
+        CanStop = true;
+        CanShutdown = true;
+    }
+
+    protected override void OnStart(string[] args)
+    {
+        string dir = Path.GetDirectoryName(
+            System.Reflection.Assembly.GetExecutingAssembly().Location);
+        string script = Path.Combine(dir, "docit-agent.ps1");
+
+        _proc = new Process();
+        _proc.StartInfo.FileName = "powershell.exe";
+        _proc.StartInfo.Arguments =
+            "-NoProfile -ExecutionPolicy Bypass -File \"" + script + "\"";
+        _proc.StartInfo.UseShellExecute = false;
+        _proc.StartInfo.CreateNoWindow = true;
+        _proc.StartInfo.WorkingDirectory = dir;
+        _proc.Start();
+    }
+
+    protected override void OnStop()
+    {
+        try { if (_proc != null && !_proc.HasExited) _proc.Kill(); }
+        catch { }
+    }
+
+    protected override void OnShutdown() { OnStop(); }
+
+    public static void Main() { ServiceBase.Run(new DocitAgentService()); }
+}
+"@
+
+Add-Type -TypeDefinition $csharpSource `
+    -ReferencedAssemblies "System.ServiceProcess" `
+    -OutputType WindowsApplication `
+    -OutputAssembly $wrapperExe
+
+if (-not (Test-Path $wrapperExe)) {
+    Write-Host "ERROR: Failed to compile service wrapper." -ForegroundColor Red
+    exit 1
+}
+Write-Host "Service wrapper compiled." -ForegroundColor Green
+
+# ── Create Windows Service ────────────────────────────────────────────────────
 
 Write-Host "Creating Windows Service: $ServiceName"
 sc.exe create $ServiceName `
-    binPath= $binPath `
+    binPath= "`"$wrapperExe`"" `
     start= delayed-auto `
     DisplayName= $ServiceDisplay `
     obj= "LocalSystem" | Out-Null
