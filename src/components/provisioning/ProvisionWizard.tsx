@@ -5,6 +5,7 @@ import {
   AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle, ChevronRight,
   Clock, ExternalLink, History, Loader2, Monitor, RefreshCw,
   Server, Shield, X, XCircle, Printer, Laptop, Box,
+  HardDrive, Database, Network, Wifi, Cloud, Cpu, Smartphone, Globe,
 } from "lucide-react";
 import type {
   DeviceProfile, NetboxManufacturer, NetboxDeviceType, NetboxSite,
@@ -27,6 +28,20 @@ const PROFILE_ICONS: Record<string, React.ReactNode> = {
   "💻": <Laptop className="w-6 h-6" />,
   "🖧": <Server className="w-6 h-6" />,
   "📦": <Box className="w-6 h-6" />,
+  server: <Server className="w-6 h-6" />,
+  monitor: <Monitor className="w-6 h-6" />,
+  laptop: <Laptop className="w-6 h-6" />,
+  printer: <Printer className="w-6 h-6" />,
+  "hard-drive": <HardDrive className="w-6 h-6" />,
+  database: <Database className="w-6 h-6" />,
+  network: <Network className="w-6 h-6" />,
+  wifi: <Wifi className="w-6 h-6" />,
+  shield: <Shield className="w-6 h-6" />,
+  cloud: <Cloud className="w-6 h-6" />,
+  cpu: <Cpu className="w-6 h-6" />,
+  smartphone: <Smartphone className="w-6 h-6" />,
+  box: <Box className="w-6 h-6" />,
+  globe: <Globe className="w-6 h-6" />,
 };
 
 function ProfileIcon({ icon }: { icon: string }) {

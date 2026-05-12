@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Plus, Trash2, Shield, ShieldCheck, Users, Layout, Settings, Key, Copy, Check, ClipboardList, ChevronLeft, ChevronRight, Download, Lock, LockOpen, ChevronDown, ChevronUp, ShieldOff, HardDrive, RefreshCw, PlayCircle, RotateCcw, Eye, EyeOff, UsersRound, X, Network, AlertTriangle, GitBranch, Wifi, Mail, Server } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Shield, ShieldCheck, Users, Layout, Settings, Key, Copy, Check, ClipboardList, ChevronLeft, ChevronRight, Download, Lock, LockOpen, ChevronDown, ChevronUp, ShieldOff, HardDrive, RefreshCw, PlayCircle, RotateCcw, Eye, EyeOff, UsersRound, X, Network, AlertTriangle, GitBranch, Wifi, Mail, Server, Monitor, Laptop, Printer, Box, Database, Cpu, Smartphone, Cloud, Globe } from "lucide-react";
 import PasswordStrengthMeter from "@/components/PasswordStrengthMeter";
 import { isPasswordValid } from "@/lib/password-policy";
 import type { SanitizedUser, Space, SpaceRole, AuditConfig, AuditEntry, UserGroup, AdConfig, AdGroupMapping, DashboardAccessConfig, CrashEntry, SnapshotEntry } from "@/lib/types";
@@ -37,6 +37,23 @@ interface AdminUser {
   fullName?: string | null;
   email?: string | null;
 }
+
+const PROFILE_ICON_OPTIONS = [
+  { value: "server", label: "Server", icon: Server },
+  { value: "monitor", label: "Monitor", icon: Monitor },
+  { value: "laptop", label: "Laptop", icon: Laptop },
+  { value: "printer", label: "Printer", icon: Printer },
+  { value: "hard-drive", label: "Storage", icon: HardDrive },
+  { value: "database", label: "Database", icon: Database },
+  { value: "network", label: "Network", icon: Network },
+  { value: "wifi", label: "Wireless", icon: Wifi },
+  { value: "shield", label: "Security", icon: Shield },
+  { value: "cloud", label: "Cloud", icon: Cloud },
+  { value: "cpu", label: "Compute", icon: Cpu },
+  { value: "smartphone", label: "Mobile", icon: Smartphone },
+  { value: "box", label: "Appliance", icon: Box },
+  { value: "globe", label: "Web", icon: Globe },
+];
 
 export default function AdminPage() {
   return (
@@ -214,14 +231,21 @@ function AdminContent() {
   const [provTesting, setProvTesting] = useState<string | null>(null);
 
   // Device profiles state
-  interface DeviceProfileItem { id: string; name: string; icon: string; netboxRoleId: number | null; defaultVlanId: number | null; defaultPrefixId: number | null; defaultDnsZone: string; defaultDhcpScope: string; manufacturerFilter: string; requiresAssetTag: boolean; autoCreateCmdb: boolean; sortOrder: number; }
-  const emptyProfile = (): DeviceProfileItem => ({ id: "", name: "", icon: "server", netboxRoleId: null, defaultVlanId: null, defaultPrefixId: null, defaultDnsZone: "", defaultDhcpScope: "", manufacturerFilter: "", requiresAssetTag: false, autoCreateCmdb: true, sortOrder: 0 });
+  interface DeviceProfileItem { id: string; name: string; icon: string; netboxRoleId: number | null; defaultVlanId: number | null; defaultPrefixId: number | null; defaultDnsZone: string; defaultDhcpScope: string; manufacturerFilter: number[]; requiresAssetTag: boolean; autoCreateCmdb: boolean; sortOrder: number; }
+  const emptyProfile = (): DeviceProfileItem => ({ id: "", name: "", icon: "server", netboxRoleId: null, defaultVlanId: null, defaultPrefixId: null, defaultDnsZone: "", defaultDhcpScope: "", manufacturerFilter: [], requiresAssetTag: false, autoCreateCmdb: true, sortOrder: 0 });
   const [deviceProfiles, setDeviceProfiles] = useState<DeviceProfileItem[]>([]);
   const [deviceProfilesLoaded, setDeviceProfilesLoaded] = useState(false);
   const [showProfileForm, setShowProfileForm] = useState(false);
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [profileForm, setProfileForm] = useState<DeviceProfileItem>(emptyProfile());
   const [profileSaving, setProfileSaving] = useState(false);
+
+  // Netbox reference data for profile form dropdowns
+  const [nbRoles, setNbRoles] = useState<{ id: number; name: string }[]>([]);
+  const [nbVlans, setNbVlans] = useState<{ id: number; vid: number; name: string }[]>([]);
+  const [nbPrefixes, setNbPrefixes] = useState<{ id: number; prefix: string; description: string }[]>([]);
+  const [nbManufacturers, setNbManufacturers] = useState<{ id: number; name: string }[]>([]);
+  const [nbRefLoaded, setNbRefLoaded] = useState(false);
 
   // Mirth servers state (admin)
   interface MirthServerAdmin { id: string; name: string; url: string; username: string; passwordSet: boolean; ignoreSslErrors: boolean; enabled: boolean; sortOrder: number; createdAt: string; }
@@ -477,6 +501,25 @@ function AdminContent() {
       setDeviceProfiles(data.profiles ?? []);
       setDeviceProfilesLoaded(true);
     }
+  }, []);
+
+  const fetchNetboxRefData = useCallback(async () => {
+    const fetcher = (path: string) =>
+      fetch(`/api/provisioning/netbox${path}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(d => d?.results ?? [])
+        .catch(() => []);
+    const [roles, vlans, prefixes, manufacturers] = await Promise.all([
+      fetcher("/dcim/device-roles/?limit=1000"),
+      fetcher("/ipam/vlans/?limit=1000"),
+      fetcher("/ipam/prefixes/?limit=1000"),
+      fetcher("/dcim/manufacturers/?limit=1000"),
+    ]);
+    setNbRoles(roles);
+    setNbVlans(vlans);
+    setNbPrefixes(prefixes);
+    setNbManufacturers(manufacturers);
+    setNbRefLoaded(true);
   }, []);
 
   const fetchCrashLogs = useCallback(async (filters: typeof crashFilters, page: number) => {
@@ -893,7 +936,7 @@ function AdminContent() {
             Mirth
           </button>
           <button
-            onClick={() => { setTab("provisioning"); if (!provCfgLoaded) { fetchProvisioningConfig(); fetchDeviceProfiles(); } }}
+            onClick={() => { setTab("provisioning"); if (!provCfgLoaded) { fetchProvisioningConfig(); fetchDeviceProfiles(); } if (!nbRefLoaded) fetchNetboxRefData(); }}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
               tab === "provisioning" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
             }`}
@@ -3938,7 +3981,7 @@ function AdminContent() {
                   <p className="text-xs text-text-muted mt-0.5">Templates for device provisioning with pre-configured defaults.</p>
                 </div>
                 <button
-                  onClick={() => { setEditingProfileId(null); setProfileForm(emptyProfile()); setShowProfileForm(true); }}
+                  onClick={() => { setEditingProfileId(null); setProfileForm(emptyProfile()); setShowProfileForm(true); if (!nbRefLoaded) fetchNetboxRefData(); }}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors"
                 >
                   <Plus className="w-4 h-4" /> Add Profile
@@ -3956,19 +3999,43 @@ function AdminContent() {
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Icon</label>
-                      <input type="text" value={profileForm.icon} onChange={(e) => setProfileForm({ ...profileForm, icon: e.target.value })} placeholder="server" className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      <div className="flex flex-wrap gap-1">
+                        {PROFILE_ICON_OPTIONS.map((opt) => {
+                          const Ic = opt.icon;
+                          return (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => setProfileForm({ ...profileForm, icon: opt.value })}
+                              className={`flex items-center justify-center w-8 h-8 rounded-lg border transition-colors ${profileForm.icon === opt.value ? "border-accent bg-accent/10 text-accent" : "border-border hover:border-gray-400 text-gray-500"}`}
+                              title={opt.label}
+                            >
+                              <Ic className="w-4 h-4" />
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Netbox Role ID</label>
-                      <input type="number" value={profileForm.netboxRoleId ?? ""} onChange={(e) => setProfileForm({ ...profileForm, netboxRoleId: e.target.value ? parseInt(e.target.value) : null })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Netbox Role</label>
+                      <select value={profileForm.netboxRoleId ?? ""} onChange={(e) => setProfileForm({ ...profileForm, netboxRoleId: e.target.value ? parseInt(e.target.value) : null })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                        <option value="">— None —</option>
+                        {nbRoles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                      </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Default VLAN ID</label>
-                      <input type="number" value={profileForm.defaultVlanId ?? ""} onChange={(e) => setProfileForm({ ...profileForm, defaultVlanId: e.target.value ? parseInt(e.target.value) : null })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Default VLAN</label>
+                      <select value={profileForm.defaultVlanId ?? ""} onChange={(e) => setProfileForm({ ...profileForm, defaultVlanId: e.target.value ? parseInt(e.target.value) : null })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                        <option value="">— None —</option>
+                        {nbVlans.map(v => <option key={v.id} value={v.id}>{v.name} (VLAN {v.vid})</option>)}
+                      </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Default Prefix ID</label>
-                      <input type="number" value={profileForm.defaultPrefixId ?? ""} onChange={(e) => setProfileForm({ ...profileForm, defaultPrefixId: e.target.value ? parseInt(e.target.value) : null })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Default Prefix</label>
+                      <select value={profileForm.defaultPrefixId ?? ""} onChange={(e) => setProfileForm({ ...profileForm, defaultPrefixId: e.target.value ? parseInt(e.target.value) : null })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                        <option value="">— None —</option>
+                        {nbPrefixes.map(p => <option key={p.id} value={p.id}>{p.prefix}{p.description ? ` — ${p.description}` : ""}</option>)}
+                      </select>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Default DNS Zone</label>
@@ -3977,10 +4044,6 @@ function AdminContent() {
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Default DHCP Scope</label>
                       <input type="text" value={profileForm.defaultDhcpScope} onChange={(e) => setProfileForm({ ...profileForm, defaultDhcpScope: e.target.value })} placeholder="10.0.0.0" className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Manufacturer Filter</label>
-                      <input type="text" value={profileForm.manufacturerFilter} onChange={(e) => setProfileForm({ ...profileForm, manufacturerFilter: e.target.value })} placeholder="Dell, HP" className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Sort Order</label>
@@ -3995,6 +4058,31 @@ function AdminContent() {
                         <input type="checkbox" checked={profileForm.autoCreateCmdb} onChange={(e) => setProfileForm({ ...profileForm, autoCreateCmdb: e.target.checked })} className="rounded" />
                         Auto-create CMDB entry
                       </label>
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Manufacturer Filter</label>
+                      {nbManufacturers.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5 p-2 border border-border rounded-lg bg-white max-h-28 overflow-y-auto">
+                          {nbManufacturers.map(m => (
+                            <label key={m.id} className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs cursor-pointer transition-colors ${profileForm.manufacturerFilter.includes(m.id) ? "bg-accent/10 text-accent border border-accent/30" : "bg-gray-50 text-gray-600 border border-transparent hover:bg-gray-100"}`}>
+                              <input
+                                type="checkbox"
+                                checked={profileForm.manufacturerFilter.includes(m.id)}
+                                onChange={(e) => {
+                                  const ids = e.target.checked
+                                    ? [...profileForm.manufacturerFilter, m.id]
+                                    : profileForm.manufacturerFilter.filter((x: number) => x !== m.id);
+                                  setProfileForm({ ...profileForm, manufacturerFilter: ids });
+                                }}
+                                className="sr-only"
+                              />
+                              {m.name}
+                            </label>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-text-muted italic py-1">Connect Netbox to load manufacturers</p>
+                      )}
                     </div>
                   </div>
                   <div className="flex gap-2">
@@ -4039,21 +4127,22 @@ function AdminContent() {
                     <div key={p.id} className="flex items-center gap-4 px-6 py-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
+                          {(() => { const Ic = PROFILE_ICON_OPTIONS.find(o => o.value === p.icon)?.icon; return Ic ? <Ic className="w-4 h-4 text-text-muted" /> : null; })()}
                           <span className="text-sm font-medium text-text-primary">{p.name}</span>
-                          <span className="px-1.5 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-500 rounded">{p.icon}</span>
                           {p.requiresAssetTag && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-600 rounded">Asset tag required</span>}
                           {p.autoCreateCmdb && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-50 text-blue-600 rounded">Auto CMDB</span>}
                         </div>
                         <p className="text-xs text-text-muted">
-                          {[p.defaultDnsZone && `DNS: ${p.defaultDnsZone}`, p.defaultDhcpScope && `DHCP: ${p.defaultDhcpScope}`, p.netboxRoleId && `Role: ${p.netboxRoleId}`].filter(Boolean).join(" · ") || "No defaults set"}
+                          {[p.defaultDnsZone && `DNS: ${p.defaultDnsZone}`, p.defaultDhcpScope && `DHCP: ${p.defaultDhcpScope}`, p.netboxRoleId && `Role: ${nbRoles.find(r => r.id === p.netboxRoleId)?.name ?? p.netboxRoleId}`].filter(Boolean).join(" · ") || "No defaults set"}
                         </p>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
                         <button
                           onClick={() => {
                             setEditingProfileId(p.id);
-                            setProfileForm({ ...p });
+                            setProfileForm({ ...p, manufacturerFilter: Array.isArray(p.manufacturerFilter) ? p.manufacturerFilter : [] });
                             setShowProfileForm(true);
+                            if (!nbRefLoaded) fetchNetboxRefData();
                           }}
                           className="p-1.5 rounded-lg hover:bg-muted text-gray-400 hover:text-gray-600 transition-colors"
                           title="Edit"
