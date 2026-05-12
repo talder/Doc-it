@@ -363,10 +363,27 @@ async function providerFetch(
 
 export async function runPreflightChecks(
   req: ProvisioningRequest,
-): Promise<PreflightResult[]> {
+): Promise<{ results: PreflightResult[]; allocatedIp?: string }> {
   const cfg = await readProvisioningConfig();
-  const ip = req.ipAllocation === "manual" ? req.manualIp ?? "" : "";
+  let ip = req.ipAllocation === "manual" ? req.manualIp ?? "" : "";
+  let allocatedIp: string | undefined;
   const fqdn = `${req.deviceName}.${req.dnsZone}`;
+
+  // For auto-allocation, peek at the next available IP from Netbox
+  if (req.ipAllocation === "auto" && req.prefixId) {
+    try {
+      const peek = await netboxFetch(
+        `/ipam/prefixes/${req.prefixId}/available-ips/?limit=1`,
+        {},
+        false,
+      ) as Array<{ address: string }> | { address: string };
+      const entry = Array.isArray(peek) ? peek[0] : peek;
+      if (entry?.address) {
+        ip = entry.address.split("/")[0]; // strip CIDR
+        allocatedIp = ip;
+      }
+    } catch { /* Netbox unreachable — IP checks will still skip gracefully */ }
+  }
 
   const checks: Array<{ id: PreflightCheckId; label: string; fn: () => Promise<PreflightResult> }> = [
     {
@@ -456,7 +473,8 @@ export async function runPreflightChecks(
     },
   ];
 
-  return Promise.all(checks.map(c => c.fn()));
+  const results = await Promise.all(checks.map(c => c.fn()));
+  return { results, allocatedIp };
 }
 
 /** TCP connect probe — returns true if the port is open. */

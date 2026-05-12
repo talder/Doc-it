@@ -123,6 +123,7 @@ export default function ProvisionWizard() {
   // Preflight (step 4)
   const [preflightResults, setPreflightResults] = useState<PreflightResult[]>([]);
   const [preflightRunning, setPreflightRunning] = useState(false);
+  const [preflightIp, setPreflightIp] = useState<string | null>(null);
 
   // Execute (step 5)
   const [result, setResult] = useState<ProvisioningResult | null>(null);
@@ -215,6 +216,7 @@ export default function ProvisionWizard() {
   const runPreflight = async () => {
     setPreflightRunning(true);
     setPreflightResults([]);
+    setPreflightIp(null);
     try {
       const r = await fetch("/api/provisioning/preflight", {
         method: "POST",
@@ -223,6 +225,7 @@ export default function ProvisionWizard() {
       });
       const d = await r.json();
       setPreflightResults(d.results ?? []);
+      if (d.allocatedIp) setPreflightIp(d.allocatedIp);
     } catch { setPreflightResults([]); }
     setPreflightRunning(false);
   };
@@ -251,7 +254,7 @@ export default function ProvisionWizard() {
     setSiteId(null); setAssetTag(""); setMacAddress(""); setComment("");
     setVlanId(null); setPrefixId(null); setIpAllocation("auto"); setManualIp("");
     setDnsZone(""); setDhcpScope("");
-    setPreflightResults([]); setResult(null);
+    setPreflightResults([]); setPreflightIp(null); setResult(null);
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -486,6 +489,13 @@ export default function ProvisionWizard() {
         {step === 4 && (
           <div className="max-w-2xl">
             <h2 className="text-base font-semibold text-text-primary mb-4">Pre-flight Checks</h2>
+            {preflightIp && (
+              <div className="flex items-center gap-2 px-3 py-2 mb-3 bg-blue-50 text-blue-700 text-xs rounded-lg border border-blue-200">
+                <Network className="w-3.5 h-3.5 flex-shrink-0" />
+                Next available IP: <span className="font-mono font-semibold">{preflightIp}</span>
+                <span className="text-blue-500">(will be allocated on execution)</span>
+              </div>
+            )}
             <div className="border border-border rounded-xl overflow-hidden">
               {preflightRunning && preflightResults.length === 0 ? (
                 <div className="flex items-center justify-center py-10 gap-2 text-text-muted">
@@ -550,7 +560,7 @@ export default function ProvisionWizard() {
                     <span className="text-text-muted">Device:</span><span className="text-text-primary font-medium">{deviceName}</span>
                     <span className="text-text-muted">Profile:</span><span className="text-text-primary">{selectedProfile?.name}</span>
                     <span className="text-text-muted">MAC:</span><span className="text-text-primary font-mono">{normalizeMac(macAddress)}</span>
-                    <span className="text-text-muted">IP:</span><span className="text-text-primary">{ipAllocation === "auto" ? "Auto-allocated" : manualIp}</span>
+                    <span className="text-text-muted">IP:</span><span className="text-text-primary font-mono">{ipAllocation === "auto" ? (preflightIp ? `${preflightIp} (auto)` : "Auto-allocated") : manualIp}</span>
                     <span className="text-text-muted">DNS:</span><span className="text-text-primary">{deviceName}.{dnsZone || "sezz.local"}</span>
                   </div>
                 </div>

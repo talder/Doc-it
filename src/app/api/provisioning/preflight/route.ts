@@ -14,8 +14,8 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const results = await runPreflightChecks(body);
-    return NextResponse.json({ results });
+    const { results, allocatedIp } = await runPreflightChecks(body);
+    return NextResponse.json({ results, allocatedIp });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Preflight checks failed" },
