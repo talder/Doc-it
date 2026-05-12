@@ -38,6 +38,5 @@ npm-debug.log*
 next-env.d.ts
 logs/
 
-# provisioning agent compiled wrapper
-tools/provisioning-agent/docit-service.exe
+# provisioning agent runtime files
 tools/provisioning-agent/logs/
