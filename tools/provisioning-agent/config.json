@@ -8,5 +8,8 @@
   "mode": "dns",
 
   "logDir": "",
-  "logRetentionDays": 30
+  "logRetentionDays": 30,
+
+  "_comment_flush": "Remote DNS servers whose cache should be flushed (requires WinRM access)",
+  "dnsFlushTargets": []
 }

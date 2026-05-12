@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  AlertTriangle, Download, Globe, Loader2, Plus, RefreshCw, Search,
-  Trash2, X,
+  AlertTriangle, Check, Download, Globe, Loader2, Plus, RefreshCw, Search,
+  Trash2, Wind, X, XCircle,
 } from "lucide-react";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-interface DnsZone { name: string; type?: string }
+interface DnsZone { name: string; type?: string; isReverse?: boolean }
+interface FlushResult { host: string; success: boolean; detail?: string }
 interface DnsRecord { name: string; type: string; data: string; ttl: number }
 interface ZoneStats { total: number; byType: Record<string, number> }
 
@@ -24,9 +25,15 @@ export default function DnsTab() {
   const [sortCol, setSortCol] = useState<"name" | "type" | "data" | "ttl">("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
+  // Flush cache
+  const [showFlush, setShowFlush] = useState(false);
+  const [flushing, setFlushing] = useState(false);
+  const [flushResults, setFlushResults] = useState<FlushResult[] | null>(null);
+  const [flushError, setFlushError] = useState("");
+
   // Add record modal
   const [showAdd, setShowAdd] = useState(false);
-  const [addType, setAddType] = useState<"A" | "CNAME" | "TXT" | "MX" | "SRV">("A");
+  const [addType, setAddType] = useState<"A" | "CNAME" | "TXT" | "MX" | "SRV" | "PTR">("A");
   const [addName, setAddName] = useState("");
   const [addValue, setAddValue] = useState("");
   const [addTtl, setAddTtl] = useState("3600");
@@ -96,6 +103,26 @@ export default function DnsTab() {
     a.click(); URL.revokeObjectURL(url);
   };
 
+  // Flush DNS cache
+  const handleFlush = async () => {
+    setFlushing(true);
+    setFlushResults(null);
+    setFlushError("");
+    try {
+      const res = await fetch("/api/provisioning/dns/flush-cache", { method: "POST" });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setFlushError(d.error || `HTTP ${res.status}`);
+      } else {
+        const d = await res.json();
+        setFlushResults(d.results ?? []);
+      }
+    } catch (e) {
+      setFlushError(e instanceof Error ? e.message : "Failed");
+    }
+    setFlushing(false);
+  };
+
   // Add record
   const handleAdd = async () => {
     setAddSaving(true);
@@ -107,6 +134,7 @@ export default function DnsTab() {
       else if (addType === "TXT") body.text = addValue;
       else if (addType === "MX") { body.target = addValue; body.priority = Number(addPriority) || 10; }
       else if (addType === "SRV") { body.target = addValue; body.priority = Number(addPriority) || 0; }
+      else if (addType === "PTR") body.target = addValue;
 
       const res = await fetch("/api/provisioning/dns/records", {
         method: "POST",
@@ -152,7 +180,9 @@ export default function DnsTab() {
         <select value={selectedZone} onChange={e => setSelectedZone(e.target.value)}
           className="px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent min-w-[240px]">
           <option value="">Select DNS zone…</option>
-          {zones.map(z => <option key={z.name} value={z.name}>{z.name}</option>)}
+          {zones.filter(z => !z.isReverse).map(z => <option key={z.name} value={z.name}>{z.name}</option>)}
+          {zones.some(z => z.isReverse) && <option disabled>── Reverse Zones ──</option>}
+          {zones.filter(z => z.isReverse).map(z => <option key={z.name} value={z.name}>{z.name} (Reverse)</option>)}
         </select>
         {selectedZone && (
           <>
@@ -170,6 +200,10 @@ export default function DnsTab() {
             </button>
             <button onClick={exportCsv} className="flex items-center gap-1 px-3 py-2 text-sm border border-border rounded-lg hover:bg-muted text-text-secondary">
               <Download className="w-3.5 h-3.5" /> CSV
+            </button>
+            <button onClick={() => { setShowFlush(true); setFlushResults(null); setFlushError(""); }}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium border border-amber-300 text-amber-700 bg-amber-50 rounded-lg hover:bg-amber-100">
+              <Wind className="w-3.5 h-3.5" /> Flush Cache
             </button>
           </>
         )}
@@ -267,6 +301,7 @@ export default function DnsTab() {
                   <option value="TXT">TXT</option>
                   <option value="MX">MX</option>
                   <option value="SRV">SRV</option>
+                  <option value="PTR">PTR</option>
                 </select>
               </div>
               <div>
@@ -276,10 +311,10 @@ export default function DnsTab() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-text-secondary mb-1">
-                  {addType === "A" ? "IP Address" : addType === "TXT" ? "Text Value" : "Target"}
+                  {addType === "A" ? "IP Address" : addType === "TXT" ? "Text Value" : addType === "PTR" ? "Target FQDN" : "Target"}
                 </label>
                 <input value={addValue} onChange={e => setAddValue(e.target.value)}
-                  placeholder={addType === "A" ? "192.168.1.10" : addType === "TXT" ? "v=spf1 ..." : "target.example.com"}
+                  placeholder={addType === "A" ? "192.168.1.10" : addType === "TXT" ? "v=spf1 ..." : addType === "PTR" ? "server01.example.com" : "target.example.com"}
                   className="w-full px-3 py-2 text-sm font-mono border border-border rounded-lg bg-surface text-text-primary" />
               </div>
               {(addType === "MX" || addType === "SRV") && (
@@ -307,6 +342,60 @@ export default function DnsTab() {
                 {addSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Create"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Flush DNS cache modal */}
+      {showFlush && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowFlush(false)}>
+          <div className="bg-surface border border-border rounded-xl p-6 w-full max-w-md shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-text-primary">Flush DNS Cache</h3>
+              <button onClick={() => setShowFlush(false)} className="p-1 rounded hover:bg-muted text-text-muted"><X className="w-4 h-4" /></button>
+            </div>
+            {!flushResults && !flushError && !flushing && (
+              <>
+                <p className="text-sm text-text-secondary mb-4">
+                  This will clear the DNS server cache on the local agent host and any configured remote forwarders.
+                </p>
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => setShowFlush(false)} className="px-4 py-2 text-sm text-text-muted hover:bg-muted rounded-lg">Cancel</button>
+                  <button onClick={handleFlush}
+                    className="px-4 py-2 text-sm font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700">
+                    Flush Cache
+                  </button>
+                </div>
+              </>
+            )}
+            {flushing && (
+              <div className="flex items-center justify-center py-8 text-text-muted">
+                <Loader2 className="w-5 h-5 animate-spin mr-2" /> Flushing DNS cache…
+              </div>
+            )}
+            {flushError && (
+              <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-3">
+                <AlertTriangle className="w-4 h-4 inline mr-1.5" />{flushError}
+              </div>
+            )}
+            {flushResults && (
+              <>
+                <div className="space-y-2 mb-4">
+                  {flushResults.map((r, i) => (
+                    <div key={i} className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg border ${
+                      r.success ? "bg-green-50 border-green-200 text-green-800" : "bg-red-50 border-red-200 text-red-800"
+                    }`}>
+                      {r.success ? <Check className="w-4 h-4 text-green-600" /> : <XCircle className="w-4 h-4 text-red-500" />}
+                      <span className="font-medium">{r.host}</span>
+                      <span className="text-xs opacity-70">{r.detail}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-end">
+                  <button onClick={() => setShowFlush(false)} className="px-4 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent/90">Done</button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

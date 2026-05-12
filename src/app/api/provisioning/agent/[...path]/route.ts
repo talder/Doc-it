@@ -12,6 +12,7 @@ import { decryptField } from "@/lib/crypto";
 
 const ALLOWED_PATHS = new Set([
   "dns/zones",
+  "dns/flush-cache",
   "dhcp/scopes",
   "api/health",
   "api/logs",
@@ -91,6 +92,80 @@ export async function GET(
     }
 
     const res = await fetch(url, { headers, signal: controller.signal });
+    clearTimeout(timer);
+
+    if (ignoreSsl) {
+      delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+    }
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      return NextResponse.json({ error: `Agent returned ${res.status}: ${txt.slice(0, 200)}` }, { status: res.status });
+    }
+
+    const data = await res.json();
+    return NextResponse.json(data);
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Agent unreachable" },
+      { status: 502 },
+    );
+  }
+}
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ path: string[] }> },
+) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { path } = await params;
+  const agentPath = path.join("/");
+
+  if (!isPathAllowed(agentPath)) {
+    return NextResponse.json({ error: "Path not allowed" }, { status: 403 });
+  }
+
+  const cfg = await readProvisioningConfig();
+
+  let endpoint = "";
+  let tokenEncrypted = "";
+  let ignoreSsl = false;
+
+  if (agentPath.startsWith("dns/")) {
+    endpoint = cfg.dns.endpoint;
+    tokenEncrypted = cfg.dns.tokenEncrypted ?? "";
+    ignoreSsl = cfg.dns.ignoreSslErrors;
+  } else if (agentPath.startsWith("dhcp/")) {
+    endpoint = cfg.dhcp.endpoint;
+    tokenEncrypted = cfg.dhcp.tokenEncrypted ?? "";
+    ignoreSsl = cfg.dhcp.ignoreSslErrors;
+  }
+
+  if (!endpoint) {
+    return NextResponse.json({ error: "Agent endpoint not configured" }, { status: 503 });
+  }
+
+  const token = tokenEncrypted ? await decryptField(tokenEncrypted) : "";
+  const url = `${endpoint.replace(/\/$/, "")}/${agentPath}`;
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15_000);
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+
+    if (ignoreSsl) {
+      process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+    }
+
+    const body = await request.text();
+    const res = await fetch(url, { method: "POST", headers, body: body || "{}", signal: controller.signal });
     clearTimeout(timer);
 
     if (ignoreSsl) {

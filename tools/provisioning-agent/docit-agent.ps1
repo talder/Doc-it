@@ -38,6 +38,7 @@ $Token      = if ($Config.token) { $Config.token } else { Write-Error "Config: '
 $Mode       = if ($Config.mode)  { $Config.mode }  else { "both" }  # "dns", "dhcp", or "both"
 $LogDir     = if ($Config.logDir) { $Config.logDir } else { Join-Path $PSScriptRoot "logs" }
 $LogDays    = if ($Config.logRetentionDays) { $Config.logRetentionDays } else { 30 }
+$DnsFlushTargets = if ($Config.dnsFlushTargets) { @($Config.dnsFlushTargets) } else { @() }
 
 $Version    = "1.0.0"
 $Prefix     = "http://+:${Port}/"
@@ -195,8 +196,27 @@ function Handle-DnsCreateRecord {
     param($Response, $Body)
     if (-not $DnsAvailable) { Send-Json $Response 503 @{ error = "DnsServer module not available" }; return }
 
+    $type = if ($Body.type) { $Body.type } else { "A" }
     $name = $Body.name
     $zone = $Body.zone
+
+    # Handle PTR records
+    if ($type -eq "PTR") {
+        $target = $Body.target
+        if (-not $name -or -not $zone -or -not $target) {
+            Send-Json $Response 400 @{ error = "Fields 'name', 'zone', and 'target' are required for PTR" }; return
+        }
+        try {
+            Add-DnsServerResourceRecordPtr -ZoneName $zone -Name $name -PtrDomainName $target -ErrorAction Stop
+            Write-Log "INFO" "DNS: Created PTR record $name.$zone -> $target"
+            Send-Json $Response 201 @{ success = $true; name = $name; zone = $zone; type = "PTR"; target = $target }
+        } catch {
+            Write-Log "ERROR" "DNS: Failed to create PTR record: $_"
+            Send-Json $Response 500 @{ error = $_.Exception.Message }
+        }
+        return
+    }
+
     $ip   = $Body.ipAddress
     $createPtr = if ($null -ne $Body.createPtr) { $Body.createPtr } else { $true }
     if (-not $name -or -not $zone -or -not $ip) {
@@ -303,14 +323,45 @@ function Handle-DnsGetZones {
 
     try {
         $zones = @(Get-DnsServerZone -ErrorAction SilentlyContinue |
-            Where-Object { $_.ZoneType -in @("Primary", "Secondary") -and -not $_.IsReverseLookupZone } |
+            Where-Object { $_.ZoneType -in @("Primary", "Secondary") } |
             ForEach-Object {
-                @{ name = $_.ZoneName; type = $_.ZoneType.ToString(); isReverse = $_.IsReverseLookupZone }
+                @{ name = $_.ZoneName; type = $_.ZoneType.ToString(); isReverse = [bool]$_.IsReverseLookupZone }
             })
         Send-Json $Response 200 @{ zones = $zones }
     } catch {
         Send-Json $Response 500 @{ error = $_.Exception.Message }
     }
+}
+
+function Handle-DnsFlushCache {
+    param($Response)
+    if (-not $DnsAvailable) { Send-Json $Response 503 @{ error = "DnsServer module not available" }; return }
+
+    $results = @()
+
+    # Flush local DNS server cache
+    try {
+        Clear-DnsServerCache -Force -ErrorAction Stop
+        $results += @{ host = $env:COMPUTERNAME; success = $true; detail = "Local cache cleared" }
+        Write-Log "INFO" "DNS: Flushed local DNS server cache"
+    } catch {
+        $results += @{ host = $env:COMPUTERNAME; success = $false; detail = $_.Exception.Message }
+        Write-Log "ERROR" "DNS: Failed to flush local cache: $_"
+    }
+
+    # Flush remote targets
+    foreach ($target in $DnsFlushTargets) {
+        try {
+            Invoke-Command -ComputerName $target -ScriptBlock { Clear-DnsServerCache -Force } -ErrorAction Stop
+            $results += @{ host = $target; success = $true; detail = "Cache cleared" }
+            Write-Log "INFO" "DNS: Flushed cache on remote host $target"
+        } catch {
+            $results += @{ host = $target; success = $false; detail = $_.Exception.Message }
+            Write-Log "ERROR" "DNS: Failed to flush cache on $target : $_"
+        }
+    }
+
+    Send-Json $Response 200 @{ results = $results }
 }
 
 # ── Extended DNS Handlers ─────────────────────────────────────────────────────
@@ -791,8 +842,11 @@ try {
                 $zoneName = [System.Uri]::UnescapeDataString($Matches[1])
                 Handle-DnsGetZoneStats $response $zoneName
             }
+            elseif ($path -eq "/dns/flush-cache" -and $method -eq "POST") {
+                Handle-DnsFlushCache $response
+            }
 
-            # ── DHCP Routes ───────────────────────────────────────────────────
+            # ── DHCP Routes
             elseif ($path -eq "/dhcp/reservations" -and $method -eq "GET") {
                 Handle-DhcpGetReservations $response $query
             }

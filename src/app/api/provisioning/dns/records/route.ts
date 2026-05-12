@@ -43,6 +43,7 @@ export async function POST(request: NextRequest) {
   else if (type === "TXT") agentBody.text = text;
   else if (type === "MX") { agentBody.target = target; agentBody.priority = priority || 10; }
   else if (type === "SRV") { agentBody.target = target; agentBody.priority = priority || 0; }
+  else if (type === "PTR") agentBody.target = target;
 
   try {
     const res = await fetch(`${cfg.dns.endpoint.replace(/\/$/, "")}/dns/records`, {
