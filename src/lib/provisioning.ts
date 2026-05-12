@@ -591,10 +591,14 @@ export async function executeProvisioning(
     // Step 5: DHCP reservation
     markStep("dhcp-reservation", "running");
     if (cfg.dhcp.endpoint) {
+      const dhcpScope = req.dhcpScope || cfg.dhcp.defaultScope;
+      if (!dhcpScope) {
+        throw new Error("DHCP scope is required but none was selected and no default is configured in Admin → Provisioning → DHCP → Default Scope");
+      }
       const dhcpRes = await providerFetch(cfg.dhcp.endpoint, "/dhcp/reservations", cfg.dhcp.tokenEncrypted, cfg.dhcp.ignoreSslErrors, {
         method: "POST",
         body: JSON.stringify({
-          scope: req.dhcpScope || cfg.dhcp.defaultScope,
+          scope: dhcpScope,
           ipAddress: allocatedIp,
           hostName: fqdn,
           macAddress: req.macAddress,
@@ -605,7 +609,7 @@ export async function executeProvisioning(
         const txt = await dhcpRes.text().catch(() => "");
         throw new Error(`DHCP reservation failed: HTTP ${dhcpRes.status} ${txt.slice(0, 200)}`);
       }
-      markStep("dhcp-reservation", "done", "Reservation created");
+      markStep("dhcp-reservation", "done", `Reservation created in scope ${dhcpScope}`);
     } else {
       markStep("dhcp-reservation", "done", "Skipped — DHCP not configured");
     }
