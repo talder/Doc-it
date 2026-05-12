@@ -3826,7 +3826,7 @@ function AdminContent() {
                 {/* DNS Flush Targets */}
                 <div className="border-t border-border pt-6">
                   <h3 className="text-sm font-semibold text-text-primary mb-1">DNS Cache Flush Targets</h3>
-                  <p className="text-xs text-text-muted mb-3">Remote DNS forwarder/caching servers whose cache can be flushed from the DNS tab. Uses WinRM via the agent.</p>
+                  <p className="text-xs text-text-muted mb-3">Agent endpoint URLs of DNS forwarder/caching servers. Install the agent on each server and add its URL here. Each agent flushes its own local cache.</p>
                   <div className="flex flex-wrap gap-1.5 mb-2">
                     {provCfg.dnsFlushTargets.map((h, i) => (
                       <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 rounded-full">
@@ -3837,7 +3837,7 @@ function AdminContent() {
                     {provCfg.dnsFlushTargets.length === 0 && <span className="text-xs text-text-muted">No targets configured (only local agent cache will be flushed)</span>}
                   </div>
                   <div className="flex gap-2 max-w-xs">
-                    <input type="text" value={newFlushTarget} onChange={(e) => setNewFlushTarget(e.target.value)} placeholder="VXDNS01" className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" onKeyDown={(e) => { if (e.key === "Enter" && newFlushTarget.trim()) { setProvCfg({ ...provCfg, dnsFlushTargets: [...provCfg.dnsFlushTargets, newFlushTarget.trim()] }); setNewFlushTarget(""); } }} />
+                    <input type="text" value={newFlushTarget} onChange={(e) => setNewFlushTarget(e.target.value)} placeholder="https://vxdns01:5989" className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" onKeyDown={(e) => { if (e.key === "Enter" && newFlushTarget.trim()) { setProvCfg({ ...provCfg, dnsFlushTargets: [...provCfg.dnsFlushTargets, newFlushTarget.trim()] }); setNewFlushTarget(""); } }} />
                     <button disabled={!newFlushTarget.trim()} onClick={() => { setProvCfg({ ...provCfg, dnsFlushTargets: [...provCfg.dnsFlushTargets, newFlushTarget.trim()] }); setNewFlushTarget(""); }} className="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50">Add</button>
                   </div>
                 </div>

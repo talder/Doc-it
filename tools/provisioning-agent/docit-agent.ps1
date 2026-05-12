@@ -337,37 +337,17 @@ function Handle-DnsFlushCache {
     param($Response, $Body = $null)
     if (-not $DnsAvailable) { Send-Json $Response 503 @{ error = "DnsServer module not available" }; return }
 
-    $results = @()
-
-    # Flush local DNS server cache
+    # Flush this server's local DNS cache only
     try {
         Clear-DnsServerCache -Force -ErrorAction Stop
-        $results += @{ host = $env:COMPUTERNAME; success = $true; detail = "Local cache cleared" }
+        $result = @{ host = $env:COMPUTERNAME; success = $true; detail = "Local cache cleared" }
         Write-Log "INFO" "DNS: Flushed local DNS server cache"
     } catch {
-        $results += @{ host = $env:COMPUTERNAME; success = $false; detail = $_.Exception.Message }
+        $result = @{ host = $env:COMPUTERNAME; success = $false; detail = $_.Exception.Message }
         Write-Log "ERROR" "DNS: Failed to flush local cache: $_"
     }
 
-    # Determine flush targets: prefer targets from request body, fallback to local config
-    $targets = $DnsFlushTargets
-    if ($Body -and $Body.targets -and $Body.targets.Count -gt 0) {
-        $targets = $Body.targets
-    }
-
-    # Flush remote targets
-    foreach ($target in $targets) {
-        try {
-            Invoke-Command -ComputerName $target -ScriptBlock { Clear-DnsServerCache -Force } -ErrorAction Stop
-            $results += @{ host = $target; success = $true; detail = "Cache cleared" }
-            Write-Log "INFO" "DNS: Flushed cache on remote host $target"
-        } catch {
-            $results += @{ host = $target; success = $false; detail = $_.Exception.Message }
-            Write-Log "ERROR" "DNS: Failed to flush cache on $target : $_"
-        }
-    }
-
-    Send-Json $Response 200 @{ results = $results }
+    Send-Json $Response 200 @{ results = @($result) }
 }
 
 # ── Extended DNS Handlers ─────────────────────────────────────────────────────

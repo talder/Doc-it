@@ -39,7 +39,7 @@ export interface ProvisioningConfig {
   allowedUsers: string[];
   /** DNS zones where write operations are allowed (empty = all zones writable) */
   allowedDnsZones: string[];
-  /** Remote DNS forwarder/caching servers whose cache can be flushed (hostnames) */
+  /** Agent endpoint URLs of DNS forwarder/caching servers whose cache can be flushed (e.g. https://vxdns01:5989) */
   dnsFlushTargets: string[];
   /** Master toggle for the AD management tab */
   adManagementEnabled: boolean;
