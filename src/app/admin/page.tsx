@@ -2,12 +2,12 @@
 
 import { Suspense, useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Plus, Trash2, Shield, ShieldCheck, Users, Layout, Settings, Key, Copy, Check, ClipboardList, ChevronLeft, ChevronRight, Download, Lock, LockOpen, ChevronDown, ChevronUp, ShieldOff, HardDrive, RefreshCw, PlayCircle, RotateCcw, Eye, EyeOff, UsersRound, X, Network, AlertTriangle, GitBranch, Wifi, Mail } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Shield, ShieldCheck, Users, Layout, Settings, Key, Copy, Check, ClipboardList, ChevronLeft, ChevronRight, Download, Lock, LockOpen, ChevronDown, ChevronUp, ShieldOff, HardDrive, RefreshCw, PlayCircle, RotateCcw, Eye, EyeOff, UsersRound, X, Network, AlertTriangle, GitBranch, Wifi, Mail, Server } from "lucide-react";
 import PasswordStrengthMeter from "@/components/PasswordStrengthMeter";
 import { isPasswordValid } from "@/lib/password-policy";
 import type { SanitizedUser, Space, SpaceRole, AuditConfig, AuditEntry, UserGroup, AdConfig, AdGroupMapping, DashboardAccessConfig, CrashEntry, SnapshotEntry } from "@/lib/types";
 import { copyToClipboard } from "@/lib/clipboard";
-type Tab = "users" | "spaces" | "service-keys" | "groups" | "settings" | "audit" | "backup" | "crash-logs" | "vmware" | "mirth";
+type Tab = "users" | "spaces" | "service-keys" | "groups" | "settings" | "audit" | "backup" | "crash-logs" | "vmware" | "mirth" | "provisioning";
 
 interface BackupEntry { filename: string; sizeBytes: number; createdAt: string; }
 interface BackupTargetForm { id: string; type: "local" | "cifs" | "sftp"; label: string; path: string; host: string; port: number; share: string; remotePath: string; username: string; password: string; privateKey: string; }
@@ -191,6 +191,37 @@ function AdminContent() {
   const [onCallSettingsLoaded, setOnCallSettingsLoaded] = useState(false);
   const [newOnCallUser, setNewOnCallUser] = useState("");
   const [newOnCallRecipient, setNewOnCallRecipient] = useState("");
+
+  // Provisioning state
+  interface ProvCfgForm {
+    netbox: { url: string; token: string; tokenSet: boolean; siteId: number | null; defaultRoleId: number | null; ignoreSslErrors: boolean };
+    dns: { type: string; endpoint: string; token: string; tokenSet: boolean; defaultZone: string; ignoreSslErrors: boolean };
+    dhcp: { type: string; endpoint: string; token: string; tokenSet: boolean; defaultScope: string; ignoreSslErrors: boolean };
+    allowedUsers: string[]; allowedDnsZones: string[]; adManagementEnabled: boolean; adManagementAdminOnly: boolean;
+  }
+  const emptyProvCfg = (): ProvCfgForm => ({
+    netbox: { url: "", token: "", tokenSet: false, siteId: null, defaultRoleId: null, ignoreSslErrors: false },
+    dns: { type: "microsoft", endpoint: "", token: "", tokenSet: false, defaultZone: "", ignoreSslErrors: false },
+    dhcp: { type: "microsoft", endpoint: "", token: "", tokenSet: false, defaultScope: "", ignoreSslErrors: false },
+    allowedUsers: [], allowedDnsZones: [], adManagementEnabled: false, adManagementAdminOnly: true,
+  });
+  const [provCfg, setProvCfg] = useState<ProvCfgForm>(emptyProvCfg());
+  const [provCfgLoaded, setProvCfgLoaded] = useState(false);
+  const [provSaving, setProvSaving] = useState(false);
+  const [newProvUser, setNewProvUser] = useState("");
+  const [newProvDnsZone, setNewProvDnsZone] = useState("");
+  const [provTestResult, setProvTestResult] = useState<{ target: string; ok: boolean; message: string } | null>(null);
+  const [provTesting, setProvTesting] = useState<string | null>(null);
+
+  // Device profiles state
+  interface DeviceProfileItem { id: string; name: string; icon: string; netboxRoleId: number | null; defaultVlanId: number | null; defaultPrefixId: number | null; defaultDnsZone: string; defaultDhcpScope: string; manufacturerFilter: string; requiresAssetTag: boolean; autoCreateCmdb: boolean; sortOrder: number; }
+  const emptyProfile = (): DeviceProfileItem => ({ id: "", name: "", icon: "server", netboxRoleId: null, defaultVlanId: null, defaultPrefixId: null, defaultDnsZone: "", defaultDhcpScope: "", manufacturerFilter: "", requiresAssetTag: false, autoCreateCmdb: true, sortOrder: 0 });
+  const [deviceProfiles, setDeviceProfiles] = useState<DeviceProfileItem[]>([]);
+  const [deviceProfilesLoaded, setDeviceProfilesLoaded] = useState(false);
+  const [showProfileForm, setShowProfileForm] = useState(false);
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
+  const [profileForm, setProfileForm] = useState<DeviceProfileItem>(emptyProfile());
+  const [profileSaving, setProfileSaving] = useState(false);
 
   // Mirth servers state (admin)
   interface MirthServerAdmin { id: string; name: string; url: string; username: string; passwordSet: boolean; ignoreSslErrors: boolean; enabled: boolean; sortOrder: number; createdAt: string; }
@@ -419,6 +450,32 @@ function AdminContent() {
         weeklyReportTime: data.weeklyReportTime || "08:00",
       });
       setVmwareCfgLoaded(true);
+    }
+  }, []);
+
+  const fetchProvisioningConfig = useCallback(async () => {
+    const res = await fetch("/api/provisioning/config");
+    if (res.ok) {
+      const data = await res.json();
+      setProvCfg({
+        netbox: { url: data.netbox?.url || "", token: "", tokenSet: !!data.netbox?.tokenSet, siteId: data.netbox?.siteId ?? null, defaultRoleId: data.netbox?.defaultRoleId ?? null, ignoreSslErrors: !!data.netbox?.ignoreSslErrors },
+        dns: { type: data.dns?.type || "microsoft", endpoint: data.dns?.endpoint || "", token: "", tokenSet: !!data.dns?.tokenSet, defaultZone: data.dns?.defaultZone || "", ignoreSslErrors: !!data.dns?.ignoreSslErrors },
+        dhcp: { type: data.dhcp?.type || "microsoft", endpoint: data.dhcp?.endpoint || "", token: "", tokenSet: !!data.dhcp?.tokenSet, defaultScope: data.dhcp?.defaultScope || "", ignoreSslErrors: !!data.dhcp?.ignoreSslErrors },
+        allowedUsers: Array.isArray(data.allowedUsers) ? data.allowedUsers : [],
+        allowedDnsZones: Array.isArray(data.allowedDnsZones) ? data.allowedDnsZones : [],
+        adManagementEnabled: !!data.adManagementEnabled,
+        adManagementAdminOnly: data.adManagementAdminOnly !== false,
+      });
+      setProvCfgLoaded(true);
+    }
+  }, []);
+
+  const fetchDeviceProfiles = useCallback(async () => {
+    const res = await fetch("/api/provisioning/device-profiles");
+    if (res.ok) {
+      const data = await res.json();
+      setDeviceProfiles(data.profiles ?? []);
+      setDeviceProfilesLoaded(true);
     }
   }, []);
 
@@ -834,6 +891,15 @@ function AdminContent() {
           >
             <GitBranch className="w-4 h-4" />
             Mirth
+          </button>
+          <button
+            onClick={() => { setTab("provisioning"); if (!provCfgLoaded) { fetchProvisioningConfig(); fetchDeviceProfiles(); } }}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
+              tab === "provisioning" ? "bg-surface text-gray-900 shadow-sm" : "text-gray-500 hover:text-text-secondary"
+            }`}
+          >
+            <Server className="w-4 h-4" />
+            Provisioning
           </button>
         </div>
 
@@ -3643,6 +3709,371 @@ function AdminContent() {
                       </div>
                     );
                   })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Provisioning Tab */}
+        {tab === "provisioning" && (
+          <div className="space-y-6">
+            <div className="bg-surface rounded-xl shadow-sm border border-border">
+              <div className="px-6 py-4 border-b border-border flex items-center gap-2">
+                <Server className="w-4 h-4 text-accent" />
+                <h2 className="text-lg font-semibold text-text-primary">Provisioning Configuration</h2>
+                <p className="ml-2 text-xs text-text-muted">Netbox, DNS/DHCP agents, and access control.</p>
+              </div>
+              <div className="px-6 py-6 space-y-6">
+
+                {/* Netbox */}
+                <div>
+                  <h3 className="text-sm font-semibold text-text-primary mb-3">Netbox</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">URL</label>
+                      <input type="url" value={provCfg.netbox.url} onChange={(e) => setProvCfg({ ...provCfg, netbox: { ...provCfg.netbox, url: e.target.value } })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="https://netbox.example.com" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">API Token {provCfg.netbox.tokenSet && !provCfg.netbox.token && <span className="text-green-600 font-normal">(set)</span>}</label>
+                      <input type="password" value={provCfg.netbox.token} onChange={(e) => setProvCfg({ ...provCfg, netbox: { ...provCfg.netbox, token: e.target.value } })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder={provCfg.netbox.tokenSet ? "Leave blank to keep current" : "Enter API token"} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 mt-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Site ID</label>
+                      <input type="number" value={provCfg.netbox.siteId ?? ""} onChange={(e) => setProvCfg({ ...provCfg, netbox: { ...provCfg.netbox, siteId: e.target.value ? parseInt(e.target.value) : null } })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="1" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Default Role ID</label>
+                      <input type="number" value={provCfg.netbox.defaultRoleId ?? ""} onChange={(e) => setProvCfg({ ...provCfg, netbox: { ...provCfg.netbox, defaultRoleId: e.target.value ? parseInt(e.target.value) : null } })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="1" />
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-text-secondary mt-3 cursor-pointer">
+                    <input type="checkbox" checked={provCfg.netbox.ignoreSslErrors} onChange={(e) => setProvCfg({ ...provCfg, netbox: { ...provCfg.netbox, ignoreSslErrors: e.target.checked } })} className="rounded" />
+                    Ignore SSL certificate errors
+                  </label>
+                </div>
+
+                {/* DNS Agent */}
+                <div className="border-t border-border pt-6">
+                  <h3 className="text-sm font-semibold text-text-primary mb-3">DNS Agent</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Endpoint URL</label>
+                      <input type="url" value={provCfg.dns.endpoint} onChange={(e) => setProvCfg({ ...provCfg, dns: { ...provCfg.dns, endpoint: e.target.value } })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="https://dns-agent:5443" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Token {provCfg.dns.tokenSet && !provCfg.dns.token && <span className="text-green-600 font-normal">(set)</span>}</label>
+                      <input type="password" value={provCfg.dns.token} onChange={(e) => setProvCfg({ ...provCfg, dns: { ...provCfg.dns, token: e.target.value } })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder={provCfg.dns.tokenSet ? "Leave blank to keep current" : "Enter token"} />
+                    </div>
+                  </div>
+                  <div className="max-w-xs mt-3">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Default Zone</label>
+                    <input type="text" value={provCfg.dns.defaultZone} onChange={(e) => setProvCfg({ ...provCfg, dns: { ...provCfg.dns, defaultZone: e.target.value } })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="example.com" />
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-text-secondary mt-3 cursor-pointer">
+                    <input type="checkbox" checked={provCfg.dns.ignoreSslErrors} onChange={(e) => setProvCfg({ ...provCfg, dns: { ...provCfg.dns, ignoreSslErrors: e.target.checked } })} className="rounded" />
+                    Ignore SSL certificate errors
+                  </label>
+                </div>
+
+                {/* DHCP Agent */}
+                <div className="border-t border-border pt-6">
+                  <h3 className="text-sm font-semibold text-text-primary mb-3">DHCP Agent</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Endpoint URL</label>
+                      <input type="url" value={provCfg.dhcp.endpoint} onChange={(e) => setProvCfg({ ...provCfg, dhcp: { ...provCfg.dhcp, endpoint: e.target.value } })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="https://dhcp-agent:5443" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Token {provCfg.dhcp.tokenSet && !provCfg.dhcp.token && <span className="text-green-600 font-normal">(set)</span>}</label>
+                      <input type="password" value={provCfg.dhcp.token} onChange={(e) => setProvCfg({ ...provCfg, dhcp: { ...provCfg.dhcp, token: e.target.value } })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder={provCfg.dhcp.tokenSet ? "Leave blank to keep current" : "Enter token"} />
+                    </div>
+                  </div>
+                  <div className="max-w-xs mt-3">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Default Scope</label>
+                    <input type="text" value={provCfg.dhcp.defaultScope} onChange={(e) => setProvCfg({ ...provCfg, dhcp: { ...provCfg.dhcp, defaultScope: e.target.value } })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="10.0.0.0" />
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-text-secondary mt-3 cursor-pointer">
+                    <input type="checkbox" checked={provCfg.dhcp.ignoreSslErrors} onChange={(e) => setProvCfg({ ...provCfg, dhcp: { ...provCfg.dhcp, ignoreSslErrors: e.target.checked } })} className="rounded" />
+                    Ignore SSL certificate errors
+                  </label>
+                </div>
+
+                {/* Allowed Users */}
+                <div className="border-t border-border pt-6">
+                  <h3 className="text-sm font-semibold text-text-primary mb-1">Allowed Users</h3>
+                  <p className="text-xs text-text-muted mb-3">Users who can access the Provisioning module. Admins always have access.</p>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {provCfg.allowedUsers.map((u, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-accent/10 text-accent rounded-full">
+                        {u}
+                        <button onClick={() => setProvCfg({ ...provCfg, allowedUsers: provCfg.allowedUsers.filter((_, j) => j !== i) })} className="hover:text-red-600"><X className="w-3 h-3" /></button>
+                      </span>
+                    ))}
+                    {provCfg.allowedUsers.length === 0 && <span className="text-xs text-text-muted">No users configured (admins only)</span>}
+                  </div>
+                  <div className="flex gap-2 max-w-xs">
+                    <input type="text" value={newProvUser} onChange={(e) => setNewProvUser(e.target.value)} placeholder="username" className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" onKeyDown={(e) => { if (e.key === "Enter" && newProvUser.trim()) { setProvCfg({ ...provCfg, allowedUsers: [...provCfg.allowedUsers, newProvUser.trim()] }); setNewProvUser(""); } }} />
+                    <button disabled={!newProvUser.trim()} onClick={() => { setProvCfg({ ...provCfg, allowedUsers: [...provCfg.allowedUsers, newProvUser.trim()] }); setNewProvUser(""); }} className="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50">Add</button>
+                  </div>
+                </div>
+
+                {/* Allowed DNS Zones */}
+                <div className="border-t border-border pt-6">
+                  <h3 className="text-sm font-semibold text-text-primary mb-1">Allowed DNS Zones</h3>
+                  <p className="text-xs text-text-muted mb-3">DNS zones users may create records in. Leave empty to allow any zone.</p>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {provCfg.allowedDnsZones.map((z, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-full">
+                        {z}
+                        <button onClick={() => setProvCfg({ ...provCfg, allowedDnsZones: provCfg.allowedDnsZones.filter((_, j) => j !== i) })} className="hover:text-red-600"><X className="w-3 h-3" /></button>
+                      </span>
+                    ))}
+                    {provCfg.allowedDnsZones.length === 0 && <span className="text-xs text-text-muted">No restrictions (all zones allowed)</span>}
+                  </div>
+                  <div className="flex gap-2 max-w-xs">
+                    <input type="text" value={newProvDnsZone} onChange={(e) => setNewProvDnsZone(e.target.value)} placeholder="example.com" className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" onKeyDown={(e) => { if (e.key === "Enter" && newProvDnsZone.trim()) { setProvCfg({ ...provCfg, allowedDnsZones: [...provCfg.allowedDnsZones, newProvDnsZone.trim()] }); setNewProvDnsZone(""); } }} />
+                    <button disabled={!newProvDnsZone.trim()} onClick={() => { setProvCfg({ ...provCfg, allowedDnsZones: [...provCfg.allowedDnsZones, newProvDnsZone.trim()] }); setNewProvDnsZone(""); }} className="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50">Add</button>
+                  </div>
+                </div>
+
+                {/* AD Management */}
+                <div className="border-t border-border pt-6">
+                  <h3 className="text-sm font-semibold text-text-primary mb-3">Active Directory Management</h3>
+                  <div className="space-y-3">
+                    <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
+                      <input type="checkbox" checked={provCfg.adManagementEnabled} onChange={(e) => setProvCfg({ ...provCfg, adManagementEnabled: e.target.checked })} className="rounded" />
+                      Enable AD computer account management during provisioning
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
+                      <input type="checkbox" checked={provCfg.adManagementAdminOnly} onChange={(e) => setProvCfg({ ...provCfg, adManagementAdminOnly: e.target.checked })} className="rounded" />
+                      Restrict AD management to administrators only
+                    </label>
+                  </div>
+                </div>
+
+                {/* Test result */}
+                {provTestResult && (
+                  <div className={`text-sm px-4 py-3 rounded-lg border ${
+                    provTestResult.ok
+                      ? "bg-green-50 border-green-300 text-green-800"
+                      : "bg-red-50 border-red-300 text-red-800"
+                  }`}>
+                    <strong>{provTestResult.target}:</strong> {provTestResult.message}
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                <div className="flex items-center gap-3 border-t border-border pt-6">
+                  <button
+                    disabled={provSaving}
+                    onClick={async () => {
+                      setProvSaving(true);
+                      const body: Record<string, unknown> = {
+                        netbox: { url: provCfg.netbox.url.trim(), siteId: provCfg.netbox.siteId, defaultRoleId: provCfg.netbox.defaultRoleId, ignoreSslErrors: provCfg.netbox.ignoreSslErrors },
+                        dns: { type: provCfg.dns.type, endpoint: provCfg.dns.endpoint.trim(), defaultZone: provCfg.dns.defaultZone.trim(), ignoreSslErrors: provCfg.dns.ignoreSslErrors },
+                        dhcp: { type: provCfg.dhcp.type, endpoint: provCfg.dhcp.endpoint.trim(), defaultScope: provCfg.dhcp.defaultScope.trim(), ignoreSslErrors: provCfg.dhcp.ignoreSslErrors },
+                        allowedUsers: provCfg.allowedUsers,
+                        allowedDnsZones: provCfg.allowedDnsZones,
+                        adManagementEnabled: provCfg.adManagementEnabled,
+                        adManagementAdminOnly: provCfg.adManagementAdminOnly,
+                      };
+                      if (provCfg.netbox.token) (body.netbox as Record<string, unknown>).token = provCfg.netbox.token;
+                      if (provCfg.dns.token) (body.dns as Record<string, unknown>).token = provCfg.dns.token;
+                      if (provCfg.dhcp.token) (body.dhcp as Record<string, unknown>).token = provCfg.dhcp.token;
+                      const res = await fetch("/api/provisioning/config", {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(body),
+                      });
+                      setProvSaving(false);
+                      if (res.ok) {
+                        flash("Provisioning settings saved", "success");
+                        fetchProvisioningConfig();
+                      } else {
+                        const d = await res.json();
+                        flash(d.error || "Failed to save provisioning settings", "error");
+                      }
+                    }}
+                    className="px-4 py-2 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50 transition-colors"
+                  >
+                    {provSaving ? "Saving…" : "Save Provisioning Settings"}
+                  </button>
+                  {(["netbox", "dns", "dhcp"] as const).map((target) => (
+                    <button
+                      key={target}
+                      disabled={provTesting !== null}
+                      onClick={async () => {
+                        setProvTesting(target);
+                        setProvTestResult(null);
+                        try {
+                          const res = await fetch("/api/provisioning/config", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ target }),
+                          });
+                          const d = await res.json();
+                          setProvTestResult({ target, ok: !!d.ok, message: d.message || d.error || (d.ok ? "Connection successful" : "Connection failed") });
+                        } catch {
+                          setProvTestResult({ target, ok: false, message: "Network error" });
+                        }
+                        setProvTesting(null);
+                      }}
+                      className="px-3 py-2 text-sm font-medium border border-border text-text-muted rounded-lg hover:bg-muted disabled:opacity-50 transition-colors"
+                    >
+                      {provTesting === target ? "Testing…" : `Test ${target.toUpperCase()}`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Device Profiles */}
+            <div className="bg-surface rounded-xl shadow-sm border border-border">
+              <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-semibold text-text-primary">Device Profiles</h2>
+                  <p className="text-xs text-text-muted mt-0.5">Templates for device provisioning with pre-configured defaults.</p>
+                </div>
+                <button
+                  onClick={() => { setEditingProfileId(null); setProfileForm(emptyProfile()); setShowProfileForm(true); }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors"
+                >
+                  <Plus className="w-4 h-4" /> Add Profile
+                </button>
+              </div>
+
+              {/* Create / Edit form */}
+              {showProfileForm && (
+                <div className="px-6 py-4 bg-gray-50 border-b border-border">
+                  <p className="text-xs font-semibold text-gray-600 mb-3">{editingProfileId ? "Edit Profile" : "New Profile"}</p>
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
+                      <input type="text" value={profileForm.name} onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })} placeholder="e.g. Windows Server" className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Icon</label>
+                      <input type="text" value={profileForm.icon} onChange={(e) => setProfileForm({ ...profileForm, icon: e.target.value })} placeholder="server" className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Netbox Role ID</label>
+                      <input type="number" value={profileForm.netboxRoleId ?? ""} onChange={(e) => setProfileForm({ ...profileForm, netboxRoleId: e.target.value ? parseInt(e.target.value) : null })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Default VLAN ID</label>
+                      <input type="number" value={profileForm.defaultVlanId ?? ""} onChange={(e) => setProfileForm({ ...profileForm, defaultVlanId: e.target.value ? parseInt(e.target.value) : null })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Default Prefix ID</label>
+                      <input type="number" value={profileForm.defaultPrefixId ?? ""} onChange={(e) => setProfileForm({ ...profileForm, defaultPrefixId: e.target.value ? parseInt(e.target.value) : null })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Default DNS Zone</label>
+                      <input type="text" value={profileForm.defaultDnsZone} onChange={(e) => setProfileForm({ ...profileForm, defaultDnsZone: e.target.value })} placeholder="example.com" className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Default DHCP Scope</label>
+                      <input type="text" value={profileForm.defaultDhcpScope} onChange={(e) => setProfileForm({ ...profileForm, defaultDhcpScope: e.target.value })} placeholder="10.0.0.0" className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Manufacturer Filter</label>
+                      <input type="text" value={profileForm.manufacturerFilter} onChange={(e) => setProfileForm({ ...profileForm, manufacturerFilter: e.target.value })} placeholder="Dell, HP" className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Sort Order</label>
+                      <input type="number" value={profileForm.sortOrder} onChange={(e) => setProfileForm({ ...profileForm, sortOrder: parseInt(e.target.value) || 0 })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div className="flex items-end gap-4 pb-1">
+                      <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
+                        <input type="checkbox" checked={profileForm.requiresAssetTag} onChange={(e) => setProfileForm({ ...profileForm, requiresAssetTag: e.target.checked })} className="rounded" />
+                        Requires asset tag
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
+                        <input type="checkbox" checked={profileForm.autoCreateCmdb} onChange={(e) => setProfileForm({ ...profileForm, autoCreateCmdb: e.target.checked })} className="rounded" />
+                        Auto-create CMDB entry
+                      </label>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      disabled={profileSaving || !profileForm.name.trim()}
+                      onClick={async () => {
+                        setProfileSaving(true);
+                        const body = { ...profileForm };
+                        const res = editingProfileId
+                          ? await fetch("/api/provisioning/device-profiles", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, id: editingProfileId }) }).catch(() => null)
+                          : await fetch("/api/provisioning/device-profiles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
+                        setProfileSaving(false);
+                        if (res?.ok) {
+                          setShowProfileForm(false);
+                          setEditingProfileId(null);
+                          setProfileForm(emptyProfile());
+                          fetchDeviceProfiles();
+                        } else {
+                          const d = res ? await res.json().catch(() => ({})) : {};
+                          flash(d.error || "Failed to save profile", "error");
+                        }
+                      }}
+                      className="px-4 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50"
+                    >
+                      {profileSaving ? "Saving…" : editingProfileId ? "Update" : "Create"}
+                    </button>
+                    <button onClick={() => { setShowProfileForm(false); setEditingProfileId(null); setProfileForm(emptyProfile()); }} className="px-3 py-1.5 text-sm text-gray-500 hover:text-text-secondary">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Profile list */}
+              {!deviceProfilesLoaded ? (
+                <p className="px-6 py-6 text-sm text-text-muted text-center">Loading…</p>
+              ) : deviceProfiles.length === 0 ? (
+                <p className="px-6 py-6 text-sm text-text-muted text-center">No device profiles configured.</p>
+              ) : (
+                <div className="divide-y divide-border">
+                  {deviceProfiles.map((p) => (
+                    <div key={p.id} className="flex items-center gap-4 px-6 py-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-text-primary">{p.name}</span>
+                          <span className="px-1.5 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-500 rounded">{p.icon}</span>
+                          {p.requiresAssetTag && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-600 rounded">Asset tag required</span>}
+                          {p.autoCreateCmdb && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-50 text-blue-600 rounded">Auto CMDB</span>}
+                        </div>
+                        <p className="text-xs text-text-muted">
+                          {[p.defaultDnsZone && `DNS: ${p.defaultDnsZone}`, p.defaultDhcpScope && `DHCP: ${p.defaultDhcpScope}`, p.netboxRoleId && `Role: ${p.netboxRoleId}`].filter(Boolean).join(" · ") || "No defaults set"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => {
+                            setEditingProfileId(p.id);
+                            setProfileForm({ ...p });
+                            setShowProfileForm(true);
+                          }}
+                          className="p-1.5 rounded-lg hover:bg-muted text-gray-400 hover:text-gray-600 transition-colors"
+                          title="Edit"
+                        >
+                          <Settings className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`Delete profile "${p.name}"?`)) return;
+                            await fetch("/api/provisioning/device-profiles", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: p.id }) }).catch(() => {});
+                            fetchDeviceProfiles();
+                          }}
+                          className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

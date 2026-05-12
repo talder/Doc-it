@@ -31,6 +31,9 @@ export async function GET() {
       ignoreSslErrors: cfg.dhcp.ignoreSslErrors,
     },
     allowedUsers: cfg.allowedUsers,
+    allowedDnsZones: cfg.allowedDnsZones,
+    adManagementEnabled: cfg.adManagementEnabled,
+    adManagementAdminOnly: cfg.adManagementAdminOnly,
   });
 }
 
