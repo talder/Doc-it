@@ -488,6 +488,7 @@ export type AuditEventType =
   | "mirth.channel.state.changed"
   | "mirth.channel.health.alert"
   | "provisioning.device.created"
+  | "provisioning.device.decommissioned"
   | "provisioning.dns.create"
   | "provisioning.dns.delete"
   | "provisioning.dns.flush"

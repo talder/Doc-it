@@ -176,6 +176,30 @@ export type PipelineStepId =
   | "dns-record"
   | "cmdb-ci";
 
+// ── Decommission pipeline ────────────────────────────────────────────────────
+
+export type DecommissionStepId =
+  | "dns-record"
+  | "dhcp-reservation"
+  | "netbox-ip"
+  | "netbox-interface"
+  | "netbox-device";
+
+export interface DecommissionStep {
+  id: DecommissionStepId;
+  label: string;
+  status: PipelineStepStatus;
+  detail?: string;
+}
+
+export interface DecommissionResult {
+  success: boolean;
+  steps: DecommissionStep[];
+  error?: string;
+  deviceName: string;
+  ipAddress?: string;
+}
+
 export type PipelineStepStatus = "pending" | "running" | "done" | "failed" | "rolled-back";
 
 export interface PipelineStep {

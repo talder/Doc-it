@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  ArrowLeft, FileText, Globe, Network, Server, Shield, Users,
+  ArrowLeft, FileText, Globe, Network, Server, Shield, Trash2, Users,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 
 const ProvisionWizard = dynamic(() => import("@/components/provisioning/ProvisionWizard"), { ssr: false });
+const DecommissionTab = dynamic(() => import("@/components/provisioning/DecommissionTab"), { ssr: false });
 const DnsTab = dynamic(() => import("@/components/provisioning/DnsTab"), { ssr: false });
 const DhcpTab = dynamic(() => import("@/components/provisioning/DhcpTab"), { ssr: false });
 const AdTab = dynamic(() => import("@/components/provisioning/AdTab"), { ssr: false });
@@ -16,7 +17,7 @@ const AgentLogsPanel = dynamic(() => import("@/components/provisioning/AgentLogs
 
 // ── Tab definitions ──────────────────────────────────────────────────────────
 
-type TabId = "provision" | "dns" | "dhcp" | "ad" | "audit" | "logs";
+type TabId = "provision" | "decommission" | "dns" | "dhcp" | "ad" | "audit" | "logs";
 
 interface TabDef {
   id: TabId;
@@ -26,8 +27,9 @@ interface TabDef {
 }
 
 const TABS: TabDef[] = [
-  { id: "provision", label: "Provision",         icon: <Server className="w-4 h-4" /> },
-  { id: "dns",       label: "DNS",               icon: <Globe className="w-4 h-4" /> },
+  { id: "provision",     label: "Provision",       icon: <Server className="w-4 h-4" /> },
+  { id: "decommission",  label: "Decommission",    icon: <Trash2 className="w-4 h-4" /> },
+  { id: "dns",           label: "DNS",             icon: <Globe className="w-4 h-4" /> },
   { id: "dhcp",      label: "DHCP",              icon: <Network className="w-4 h-4" /> },
   { id: "ad",        label: "Active Directory",  icon: <Users className="w-4 h-4" />, adminOnly: true },
   { id: "audit",     label: "Audit Log",         icon: <Shield className="w-4 h-4" /> },
@@ -102,6 +104,7 @@ export default function ProvisioningPage() {
       {/* Tab content */}
       <div className="jp-main flex-1 overflow-hidden">
         {activeTab === "provision" && <ProvisionWizard />}
+        {activeTab === "decommission" && <DecommissionTab />}
         {activeTab === "dns" && <DnsTab />}
         {activeTab === "dhcp" && <DhcpTab />}
         {activeTab === "ad" && isAdmin && <AdTab />}

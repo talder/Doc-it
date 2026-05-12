@@ -18,6 +18,7 @@ import type {
   PreflightResult, PreflightCheckId,
   PipelineStep, PipelineStepId, ProvisioningResult,
   ProvisioningHistoryEntry, InfraAuditTab, InfraAuditEntry,
+  DecommissionStep, DecommissionStepId, DecommissionResult,
 } from "./provisioning-shared";
 
 // ── Default config ───────────────────────────────────────────────────────────
@@ -647,6 +648,12 @@ export async function executeProvisioning(
     // Log success
     logHistory(actor, req.deviceName, profile?.name ?? "", allocatedIp, req.macAddress, "success", deviceId, { steps });
     auditLog(actor, req.deviceName, "success", { deviceId, ip: allocatedIp });
+    writeInfraAudit({
+      user: actor, tab: "provision", action: "provision-device",
+      target: req.deviceName, status: "success",
+      details: { deviceId, ip: allocatedIp, mac: req.macAddress, profile: profile?.name },
+      auditEvent: "provisioning.device.created",
+    });
 
     return {
       success: true,
@@ -704,8 +711,175 @@ export async function executeProvisioning(
     const finalStatus = steps.some(s => s.status === "rolled-back") ? "rolled-back" : "failed";
     logHistory(actor, req.deviceName, profile?.name ?? "", allocatedIp, req.macAddress, finalStatus as "failed" | "rolled-back", deviceId ?? null, { steps, error: errMsg });
     auditLog(actor, req.deviceName, "failure", { error: errMsg });
+    writeInfraAudit({
+      user: actor, tab: "provision", action: "provision-device",
+      target: req.deviceName, status: "failure",
+      details: { error: errMsg, finalStatus },
+      auditEvent: "provisioning.device.created",
+    });
 
     return { success: false, steps, error: errMsg };
+  }
+}
+
+// ── Decommission pipeline ────────────────────────────────────────────────────
+
+export async function executeDecommission(
+  deviceName: string,
+  actor: string,
+): Promise<DecommissionResult> {
+  const cfg = await readProvisioningConfig();
+
+  const steps: DecommissionStep[] = [
+    { id: "dns-record",        label: "Delete DNS record",          status: "pending" },
+    { id: "dhcp-reservation",  label: "Delete DHCP reservation",   status: "pending" },
+    { id: "netbox-ip",         label: "Delete IP address",          status: "pending" },
+    { id: "netbox-interface",  label: "Delete network interface",   status: "pending" },
+    { id: "netbox-device",     label: "Delete device from Netbox",  status: "pending" },
+  ];
+
+  function markStep(id: DecommissionStepId, status: DecommissionStep["status"], detail?: string) {
+    const step = steps.find(s => s.id === id);
+    if (step) { step.status = status; step.detail = detail; }
+  }
+
+  let ipAddress = "";
+  let macAddress = "";
+
+  try {
+    // 1. Look up device in Netbox
+    const devSearch = await netboxFetch(`/dcim/devices/?name=${encodeURIComponent(deviceName)}`) as { count: number; results: Array<Record<string, unknown>> };
+    if (devSearch.count === 0) throw new Error(`Device "${deviceName}" not found in Netbox`);
+    const dev = devSearch.results[0];
+    const deviceId = Number(dev.id);
+    const primaryIp = dev.primary_ip4 as { id: number; address: string; dns_name?: string } | null;
+    if (primaryIp?.address) ipAddress = String(primaryIp.address).split("/")[0];
+    const dnsName = primaryIp?.dns_name ?? "";
+
+    // Look up interface to get MAC
+    const ifSearch = await netboxFetch(`/dcim/interfaces/?device_id=${deviceId}&limit=10`) as { results: Array<{ id: number; mac_address?: string }> };
+    const iface = ifSearch.results?.[0];
+    const interfaceId = iface?.id;
+    if (iface?.mac_address) macAddress = iface.mac_address;
+
+    // Parse hostname + zone from dns_name (e.g. "server01.example.com" → name="server01", zone="example.com")
+    let dnsHostname = "";
+    let dnsZone = "";
+    if (dnsName && dnsName.includes(".")) {
+      const dot = dnsName.indexOf(".");
+      dnsHostname = dnsName.slice(0, dot);
+      dnsZone = dnsName.slice(dot + 1);
+    }
+
+    // 2. Delete DNS record
+    markStep("dns-record", "running");
+    if (cfg.dns.endpoint && dnsHostname && dnsZone) {
+      try {
+        const dnsRes = await providerFetch(
+          cfg.dns.endpoint,
+          `/dns/records/${encodeURIComponent(dnsHostname)}?zone=${encodeURIComponent(dnsZone)}&type=A`,
+          cfg.dns.tokenEncrypted, cfg.dns.ignoreSslErrors,
+          { method: "DELETE" },
+        );
+        if (dnsRes.ok || dnsRes.status === 404) {
+          markStep("dns-record", "done", dnsRes.status === 404 ? "Not found (already removed)" : `Deleted ${dnsName}`);
+        } else {
+          const txt = await dnsRes.text().catch(() => "");
+          markStep("dns-record", "failed", `HTTP ${dnsRes.status}: ${txt.slice(0, 200)}`);
+        }
+      } catch (e) {
+        markStep("dns-record", "failed", e instanceof Error ? e.message : "DNS agent unreachable");
+      }
+    } else {
+      markStep("dns-record", "done", !cfg.dns.endpoint ? "Skipped — DNS not configured" : "Skipped — no DNS name on device");
+    }
+
+    // 3. Delete DHCP reservation
+    markStep("dhcp-reservation", "running");
+    if (cfg.dhcp.endpoint && ipAddress) {
+      try {
+        const dhcpRes = await providerFetch(
+          cfg.dhcp.endpoint,
+          `/dhcp/reservations/${encodeURIComponent(ipAddress)}`,
+          cfg.dhcp.tokenEncrypted, cfg.dhcp.ignoreSslErrors,
+          { method: "DELETE" },
+        );
+        if (dhcpRes.ok || dhcpRes.status === 404) {
+          markStep("dhcp-reservation", "done", dhcpRes.status === 404 ? "Not found (already removed)" : `Deleted reservation for ${ipAddress}`);
+        } else {
+          const txt = await dhcpRes.text().catch(() => "");
+          markStep("dhcp-reservation", "failed", `HTTP ${dhcpRes.status}: ${txt.slice(0, 200)}`);
+        }
+      } catch (e) {
+        markStep("dhcp-reservation", "failed", e instanceof Error ? e.message : "DHCP agent unreachable");
+      }
+    } else {
+      markStep("dhcp-reservation", "done", !cfg.dhcp.endpoint ? "Skipped — DHCP not configured" : "Skipped — no IP address");
+    }
+
+    // 4. Delete Netbox IP address
+    markStep("netbox-ip", "running");
+    if (primaryIp?.id) {
+      try {
+        await netboxFetch(`/ipam/ip-addresses/${primaryIp.id}/`, { method: "DELETE" });
+        markStep("netbox-ip", "done", `Deleted IP ${ipAddress} (ID ${primaryIp.id})`);
+      } catch (e) {
+        markStep("netbox-ip", "failed", e instanceof Error ? e.message : "Failed");
+      }
+    } else {
+      markStep("netbox-ip", "done", "Skipped — no primary IP");
+    }
+
+    // 5. Delete Netbox interface
+    markStep("netbox-interface", "running");
+    if (interfaceId) {
+      try {
+        await netboxFetch(`/dcim/interfaces/${interfaceId}/`, { method: "DELETE" });
+        markStep("netbox-interface", "done", `Deleted interface ID ${interfaceId}`);
+      } catch (e) {
+        markStep("netbox-interface", "failed", e instanceof Error ? e.message : "Failed");
+      }
+    } else {
+      markStep("netbox-interface", "done", "Skipped — no interface found");
+    }
+
+    // 6. Delete Netbox device
+    markStep("netbox-device", "running");
+    try {
+      await netboxFetch(`/dcim/devices/${deviceId}/`, { method: "DELETE" });
+      markStep("netbox-device", "done", `Deleted device ID ${deviceId}`);
+    } catch (e) {
+      markStep("netbox-device", "failed", e instanceof Error ? e.message : "Failed");
+    }
+
+    const allDone = steps.every(s => s.status === "done");
+    const anyFailed = steps.some(s => s.status === "failed");
+
+    logHistory(actor, deviceName, "decommission", ipAddress, macAddress, anyFailed ? "failed" : "success", deviceId, { steps });
+    writeInfraAudit({
+      user: actor, tab: "provision", action: "decommission-device",
+      target: deviceName, status: anyFailed ? "failure" : "success",
+      details: { ip: ipAddress, mac: macAddress, steps: steps.map(s => ({ id: s.id, status: s.status })) },
+      auditEvent: "provisioning.device.decommissioned",
+    });
+
+    return { success: allDone, steps, deviceName, ipAddress, ...(!allDone && anyFailed ? { error: "Some steps failed — see details" } : {}) };
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : "Unknown error";
+    // Mark first pending step as failed
+    for (const s of steps) {
+      if (s.status === "pending" || s.status === "running") { s.status = "failed"; s.detail = errMsg; break; }
+    }
+
+    logHistory(actor, deviceName, "decommission", ipAddress, macAddress, "failed", null, { steps, error: errMsg });
+    writeInfraAudit({
+      user: actor, tab: "provision", action: "decommission-device",
+      target: deviceName, status: "failure",
+      details: { error: errMsg },
+      auditEvent: "provisioning.device.decommissioned",
+    });
+
+    return { success: false, steps, error: errMsg, deviceName, ipAddress };
   }
 }
 
