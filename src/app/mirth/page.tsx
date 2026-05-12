@@ -54,6 +54,7 @@ interface Dashboard {
   servers: DashboardServer[]; totalServers: number; reachableServers: number;
   totalChannels: number; issueChannels: IssueChannel[];
   summaryCounts: Record<ChannelHealth, number>;
+  lastPolledAt?: string;
 }
 
 interface MirthMessage {
@@ -1496,7 +1497,7 @@ function ServerDetail({
                       <HealthBadge health={ch.health} />
                       {ch.stateChangedAt && (
                         <div className="text-[9px] text-text-muted mt-0.5 flex items-center gap-0.5">
-                          <Clock className="w-2 h-2" />{timeSince(ch.stateChangedAt)} ago
+                          <Clock className="w-2 h-2" />for {timeSince(ch.stateChangedAt)}
                         </div>
                       )}
                     </div>
@@ -2004,6 +2005,11 @@ export default function MirthPage() {
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
             {loading ? "Loading…" : "Refresh"}
           </button>
+          {dashboard?.lastPolledAt && (
+            <span className="text-[10px] text-text-muted flex items-center gap-1" title={`Last polled: ${new Date(dashboard.lastPolledAt).toLocaleString()}`}>
+              <Wifi className="w-3 h-3" /> {timeSince(dashboard.lastPolledAt) || "just now"} ago
+            </span>
+          )}
           <button
             className={`jp-action-btn ${showHistory ? "jp-action-btn--primary" : ""}`}
             onClick={() => setShowHistory(v => !v)}

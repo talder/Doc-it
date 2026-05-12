@@ -164,6 +164,7 @@ export interface MirthDashboard {
   totalChannels: number;
   issueChannels: Array<MirthChannel & { serverId: string; serverName: string }>;
   summaryCounts: Record<ChannelHealth, number>;
+  lastPolledAt: string;
 }
 
 // ── SQLite table ───────────────────────────────────────────────────────────────
@@ -1445,5 +1446,6 @@ export async function getMirthDashboard(): Promise<MirthDashboard> {
     totalChannels: serverResults.reduce((n, s) => n + s.totalChannels, 0),
     issueChannels,
     summaryCounts,
+    lastPolledAt: new Date().toISOString(),
   };
 }
