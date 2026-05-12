@@ -102,7 +102,7 @@ $binPath = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidde
 Write-Host "Creating Windows Service: $ServiceName"
 sc.exe create $ServiceName `
     binPath= $binPath `
-    start= auto `
+    start= delayed-auto `
     DisplayName= $ServiceDisplay `
     obj= "LocalSystem" | Out-Null
 
