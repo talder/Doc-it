@@ -272,10 +272,45 @@ export async function netboxFetch(
 }
 
 /** Test Netbox connectivity by fetching /api/status/. */
-export async function testNetboxConnection(): Promise<{ ok: boolean; version?: string; error?: string }> {
+export async function testNetboxConnection(): Promise<{ ok: boolean; message?: string; error?: string }> {
   try {
     const data = await netboxFetch("/status/") as Record<string, unknown>;
-    return { ok: true, version: String(data["netbox-version"] ?? data["django-version"] ?? "OK") };
+    const version = String(data["netbox-version"] ?? data["django-version"] ?? "unknown");
+    return { ok: true, message: `Connected — Netbox ${version}` };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Connection failed" };
+  }
+}
+
+/** Test DNS agent connectivity by hitting its health endpoint. */
+export async function testDnsAgentConnection(): Promise<{ ok: boolean; message?: string; error?: string }> {
+  try {
+    const cfg = await readProvisioningConfig();
+    if (!cfg.dns.endpoint) return { ok: false, error: "DNS agent endpoint not configured" };
+    const res = await providerFetch(cfg.dns.endpoint, "/health", cfg.dns.tokenEncrypted, cfg.dns.ignoreSslErrors);
+    if (res.ok) {
+      const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+      return { ok: true, message: `Connected${data.version ? ` — v${data.version}` : ""}` };
+    }
+    const txt = await res.text().catch(() => "");
+    return { ok: false, error: `HTTP ${res.status}${txt ? `: ${txt.slice(0, 200)}` : ""}` };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Connection failed" };
+  }
+}
+
+/** Test DHCP agent connectivity by hitting its health endpoint. */
+export async function testDhcpAgentConnection(): Promise<{ ok: boolean; message?: string; error?: string }> {
+  try {
+    const cfg = await readProvisioningConfig();
+    if (!cfg.dhcp.endpoint) return { ok: false, error: "DHCP agent endpoint not configured" };
+    const res = await providerFetch(cfg.dhcp.endpoint, "/health", cfg.dhcp.tokenEncrypted, cfg.dhcp.ignoreSslErrors);
+    if (res.ok) {
+      const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+      return { ok: true, message: `Connected${data.version ? ` — v${data.version}` : ""}` };
+    }
+    const txt = await res.text().catch(() => "");
+    return { ok: false, error: `HTTP ${res.status}${txt ? `: ${txt.slice(0, 200)}` : ""}` };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Connection failed" };
   }

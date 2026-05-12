@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { readProvisioningConfig, saveProvisioningConfig, testNetboxConnection } from "@/lib/provisioning";
+import { readProvisioningConfig, saveProvisioningConfig, testNetboxConnection, testDnsAgentConnection, testDhcpAgentConnection } from "@/lib/provisioning";
 
 /** GET /api/provisioning/config — returns config (tokens masked). Admin only. */
 export async function GET() {
@@ -52,10 +52,19 @@ export async function POST(request: NextRequest) {
   const user = await getCurrentUser();
   if (!user?.isAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const { test } = await request.json();
-  if (test === "netbox") {
+  const body = await request.json();
+  const target = body.target || body.test;
+  if (target === "netbox") {
     const result = await testNetboxConnection();
     return NextResponse.json(result);
   }
-  return NextResponse.json({ error: "Unknown test" }, { status: 400 });
+  if (target === "dns") {
+    const result = await testDnsAgentConnection();
+    return NextResponse.json(result);
+  }
+  if (target === "dhcp") {
+    const result = await testDhcpAgentConnection();
+    return NextResponse.json(result);
+  }
+  return NextResponse.json({ error: "Unknown test target" }, { status: 400 });
 }
