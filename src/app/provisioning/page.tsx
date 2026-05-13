@@ -12,12 +12,13 @@ const DecommissionTab = dynamic(() => import("@/components/provisioning/Decommis
 const DnsTab = dynamic(() => import("@/components/provisioning/DnsTab"), { ssr: false });
 const DhcpTab = dynamic(() => import("@/components/provisioning/DhcpTab"), { ssr: false });
 const AdTab = dynamic(() => import("@/components/provisioning/AdTab"), { ssr: false });
+const VmDeployTab = dynamic(() => import("@/components/provisioning/VmDeployTab"), { ssr: false });
 const AuditPanel = dynamic(() => import("@/components/provisioning/AuditPanel"), { ssr: false });
 const AgentLogsPanel = dynamic(() => import("@/components/provisioning/AgentLogsPanel"), { ssr: false });
 
 // ── Tab definitions ──────────────────────────────────────────────────────────
 
-type TabId = "provision" | "decommission" | "dns" | "dhcp" | "ad" | "audit" | "logs";
+type TabId = "provision" | "decommission" | "deploy-vm" | "dns" | "dhcp" | "ad" | "audit" | "logs";
 
 interface TabDef {
   id: TabId;
@@ -29,6 +30,7 @@ interface TabDef {
 const TABS: TabDef[] = [
   { id: "provision",     label: "Provision",       icon: <Server className="w-4 h-4" /> },
   { id: "decommission",  label: "Decommission",    icon: <Trash2 className="w-4 h-4" /> },
+  { id: "deploy-vm",     label: "Deploy VM",       icon: <Server className="w-4 h-4" /> },
   { id: "dns",           label: "DNS",             icon: <Globe className="w-4 h-4" /> },
   { id: "dhcp",      label: "DHCP",              icon: <Network className="w-4 h-4" /> },
   { id: "ad",        label: "Active Directory",  icon: <Users className="w-4 h-4" />, adminOnly: true },
@@ -105,6 +107,7 @@ export default function ProvisioningPage() {
       <div className="jp-main flex-1 overflow-hidden">
         {activeTab === "provision" && <ProvisionWizard />}
         {activeTab === "decommission" && <DecommissionTab />}
+        {activeTab === "deploy-vm" && <VmDeployTab />}
         {activeTab === "dns" && <DnsTab />}
         {activeTab === "dhcp" && <DhcpTab />}
         {activeTab === "ad" && isAdmin && <AdTab />}

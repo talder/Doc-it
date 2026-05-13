@@ -498,7 +498,8 @@ export type AuditEventType =
   | "provisioning.ad.password.reset"
   | "provisioning.ad.account.toggle"
   | "provisioning.ad.group.modify"
-  | "provisioning.ad.computer.delete";
+  | "provisioning.ad.computer.delete"
+  | "provisioning.vm.deployed";
 
 export interface AuditEntry {
   eventId: string;

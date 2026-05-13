@@ -28,6 +28,7 @@ export async function POST(request: NextRequest) {
     manufacturerFilter: Array.isArray(body.manufacturerFilter) ? body.manufacturerFilter : [],
     requiresAssetTag: !!body.requiresAssetTag,
     autoCreateCmdb: !!body.autoCreateCmdb,
+    vmDeployTemplateId: body.vmDeployTemplateId ?? null,
     sortOrder: Number(body.sortOrder ?? 0),
   });
   return NextResponse.json({ profile });

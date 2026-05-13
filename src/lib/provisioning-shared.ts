@@ -53,7 +53,7 @@ export interface ProvisioningConfig {
 
 // ── Infrastructure audit types (client-safe) ─────────────────────────────────
 
-export type InfraAuditTab = "provision" | "dns" | "dhcp" | "ad";
+export type InfraAuditTab = "provision" | "dns" | "dhcp" | "ad" | "vmware-deploy";
 
 export interface InfraAuditEntry {
   id: string;
@@ -81,6 +81,7 @@ export interface DeviceProfile {
   manufacturerFilter: number[];    // Netbox manufacturer IDs
   requiresAssetTag: boolean;
   autoCreateCmdb: boolean;
+  vmDeployTemplateId: string | null;
   sortOrder: number;
 }
 
@@ -174,7 +175,8 @@ export type PipelineStepId =
   | "netbox-primary-ip"
   | "dhcp-reservation"
   | "dns-record"
-  | "cmdb-ci";
+  | "cmdb-ci"
+  | "vmware-deploy";
 
 // ── Decommission pipeline ────────────────────────────────────────────────────
 

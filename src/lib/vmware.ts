@@ -6,6 +6,7 @@
  * The password is AES-256-GCM encrypted via crypto.ts.
  */
 
+import { randomUUID } from "crypto";
 import { readJsonConfig, writeJsonConfig, getDb } from "./config";
 import { encryptField, decryptField } from "./crypto";
 import { addChangeRequest } from "./cmdb";
@@ -78,6 +79,64 @@ export interface VmwareInventoryCache {
 }
 
 export type VmChangeType = "host" | "memory" | "vcpu" | "disk";
+
+// ── VM Deployment types ───────────────────────────────────────────────────────
+
+export interface VmDeployTemplate {
+  id: string;
+  name: string;
+  description: string;
+  vcenterTemplateId: string;
+  vcenterTemplateName: string;
+  customizationSpec: string;
+  defaultDatastoreId: string;
+  defaultClusterId: string;
+  defaultResourcePoolId: string;
+  defaultFolderId: string;
+  defaultNetworkId: string;
+  defaultCpuCount: number | null;
+  defaultMemoryMiB: number | null;
+  icon: string;
+  sortOrder: number;
+}
+
+export interface VmDeployRequest {
+  deployTemplateId: string;
+  vmName: string;
+  ip: string;
+  subnetMask: string;
+  gateway: string;
+  dns: string[];
+  datastoreId?: string;
+  clusterId?: string;
+  resourcePoolId?: string;
+  folderId?: string;
+  networkId?: string;
+  cpuCount?: number | null;
+  memoryMiB?: number | null;
+}
+
+export type VmDeployStatus = "pending" | "running" | "success" | "failed";
+
+export interface VmDeployHistoryEntry {
+  id: string;
+  timestamp: string;
+  user: string;
+  vmName: string;
+  templateName: string;
+  ipAddress: string;
+  status: VmDeployStatus;
+  taskId: string;
+  details: Record<string, unknown>;
+}
+
+export interface VcTemplate { vm: string; name: string; }
+export interface VcCustomizationSpec { name: string; description?: string; }
+export interface VcDatastore { datastore: string; name: string; type: string; capacity: number; free_space: number; }
+export interface VcCluster { cluster: string; name: string; }
+export interface VcResourcePool { resource_pool: string; name: string; }
+export interface VcFolder { folder: string; name: string; type: string; }
+export interface VcNetwork { network: string; name: string; type: string; }
 
 export interface VmChangeEntry {
   id: number;
@@ -1039,4 +1098,478 @@ ${off ? `<h3 style="color:#dc2626">⛔ Powered-Off VMs (first 30)</h3>
   <tbody>${offRows}</tbody>
 </table>` : ""}
 </div>`;
+}
+
+// ── VM Deploy Template tables ──────────────────────────────────────────────────
+
+function initVmwareDeployTables(): void {
+  const db = getDb();
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS vmware_deploy_templates (
+      id                        TEXT PRIMARY KEY,
+      name                      TEXT NOT NULL,
+      description               TEXT NOT NULL DEFAULT '',
+      vcenter_template_id       TEXT NOT NULL,
+      vcenter_template_name     TEXT NOT NULL DEFAULT '',
+      customization_spec        TEXT NOT NULL DEFAULT '',
+      default_datastore_id      TEXT NOT NULL DEFAULT '',
+      default_cluster_id        TEXT NOT NULL DEFAULT '',
+      default_resource_pool_id  TEXT NOT NULL DEFAULT '',
+      default_folder_id         TEXT NOT NULL DEFAULT '',
+      default_network_id        TEXT NOT NULL DEFAULT '',
+      default_cpu_count         INTEGER,
+      default_memory_mib        INTEGER,
+      icon                      TEXT NOT NULL DEFAULT '🖥',
+      sort_order                INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS vmware_deploy_history (
+      id            TEXT PRIMARY KEY,
+      timestamp     TEXT NOT NULL DEFAULT (datetime('now')),
+      user          TEXT NOT NULL,
+      vm_name       TEXT NOT NULL,
+      template_name TEXT NOT NULL DEFAULT '',
+      ip_address    TEXT NOT NULL DEFAULT '',
+      status        TEXT NOT NULL DEFAULT 'pending',
+      task_id       TEXT NOT NULL DEFAULT '',
+      details       TEXT NOT NULL DEFAULT '{}'
+    );
+    CREATE INDEX IF NOT EXISTS idx_vmware_deploy_hist_ts
+      ON vmware_deploy_history(timestamp DESC);
+  `);
+}
+
+// ── VM Deploy Template CRUD ──────────────────────────────────────────────────
+
+function rowToDeployTemplate(row: Record<string, unknown>): VmDeployTemplate {
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    description: String(row.description ?? ""),
+    vcenterTemplateId: String(row.vcenter_template_id),
+    vcenterTemplateName: String(row.vcenter_template_name ?? ""),
+    customizationSpec: String(row.customization_spec ?? ""),
+    defaultDatastoreId: String(row.default_datastore_id ?? ""),
+    defaultClusterId: String(row.default_cluster_id ?? ""),
+    defaultResourcePoolId: String(row.default_resource_pool_id ?? ""),
+    defaultFolderId: String(row.default_folder_id ?? ""),
+    defaultNetworkId: String(row.default_network_id ?? ""),
+    defaultCpuCount: row.default_cpu_count != null ? Number(row.default_cpu_count) : null,
+    defaultMemoryMiB: row.default_memory_mib != null ? Number(row.default_memory_mib) : null,
+    icon: String(row.icon ?? "🖥"),
+    sortOrder: Number(row.sort_order ?? 0),
+  };
+}
+
+export function listVmDeployTemplates(): VmDeployTemplate[] {
+  initVmwareDeployTables();
+  const rows = getDb().prepare(
+    "SELECT * FROM vmware_deploy_templates ORDER BY sort_order ASC, name ASC"
+  ).all() as Array<Record<string, unknown>>;
+  return rows.map(rowToDeployTemplate);
+}
+
+export function getVmDeployTemplate(id: string): VmDeployTemplate | null {
+  initVmwareDeployTables();
+  const row = getDb().prepare(
+    "SELECT * FROM vmware_deploy_templates WHERE id = ?"
+  ).get(id) as Record<string, unknown> | undefined;
+  return row ? rowToDeployTemplate(row) : null;
+}
+
+export function createVmDeployTemplate(data: Omit<VmDeployTemplate, "id">): VmDeployTemplate {
+  initVmwareDeployTables();
+  const id = randomUUID();
+  getDb().prepare(`
+    INSERT INTO vmware_deploy_templates
+      (id, name, description, vcenter_template_id, vcenter_template_name,
+       customization_spec, default_datastore_id, default_cluster_id,
+       default_resource_pool_id, default_folder_id, default_network_id,
+       default_cpu_count, default_memory_mib, icon, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id, data.name, data.description ?? "",
+    data.vcenterTemplateId, data.vcenterTemplateName ?? "",
+    data.customizationSpec ?? "",
+    data.defaultDatastoreId ?? "", data.defaultClusterId ?? "",
+    data.defaultResourcePoolId ?? "", data.defaultFolderId ?? "",
+    data.defaultNetworkId ?? "",
+    data.defaultCpuCount ?? null, data.defaultMemoryMiB ?? null,
+    data.icon ?? "🖥", data.sortOrder ?? 0,
+  );
+  return getVmDeployTemplate(id)!;
+}
+
+export function updateVmDeployTemplate(id: string, data: Partial<VmDeployTemplate>): VmDeployTemplate | null {
+  initVmwareDeployTables();
+  const existing = getVmDeployTemplate(id);
+  if (!existing) return null;
+  getDb().prepare(`
+    UPDATE vmware_deploy_templates SET
+      name = ?, description = ?, vcenter_template_id = ?, vcenter_template_name = ?,
+      customization_spec = ?, default_datastore_id = ?, default_cluster_id = ?,
+      default_resource_pool_id = ?, default_folder_id = ?, default_network_id = ?,
+      default_cpu_count = ?, default_memory_mib = ?, icon = ?, sort_order = ?
+    WHERE id = ?
+  `).run(
+    data.name ?? existing.name, data.description ?? existing.description,
+    data.vcenterTemplateId ?? existing.vcenterTemplateId,
+    data.vcenterTemplateName ?? existing.vcenterTemplateName,
+    data.customizationSpec ?? existing.customizationSpec,
+    data.defaultDatastoreId ?? existing.defaultDatastoreId,
+    data.defaultClusterId ?? existing.defaultClusterId,
+    data.defaultResourcePoolId ?? existing.defaultResourcePoolId,
+    data.defaultFolderId ?? existing.defaultFolderId,
+    data.defaultNetworkId ?? existing.defaultNetworkId,
+    data.defaultCpuCount !== undefined ? data.defaultCpuCount : existing.defaultCpuCount,
+    data.defaultMemoryMiB !== undefined ? data.defaultMemoryMiB : existing.defaultMemoryMiB,
+    data.icon ?? existing.icon, data.sortOrder ?? existing.sortOrder,
+    id,
+  );
+  return getVmDeployTemplate(id);
+}
+
+export function deleteVmDeployTemplate(id: string): boolean {
+  initVmwareDeployTables();
+  const r = getDb().prepare("DELETE FROM vmware_deploy_templates WHERE id = ?").run(id);
+  return r.changes > 0;
+}
+
+// ── Deploy history ─────────────────────────────────────────────────────────────
+
+export function logDeployHistory(
+  user: string, vmName: string, templateName: string, ip: string,
+  status: VmDeployStatus, taskId: string, details: Record<string, unknown>,
+): string {
+  initVmwareDeployTables();
+  const id = randomUUID();
+  getDb().prepare(`
+    INSERT INTO vmware_deploy_history (id, timestamp, user, vm_name, template_name, ip_address, status, task_id, details)
+    VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, user, vmName, templateName, ip, status, taskId, JSON.stringify(details));
+  return id;
+}
+
+export function updateDeployHistoryStatus(id: string, status: VmDeployStatus, details?: Record<string, unknown>): void {
+  initVmwareDeployTables();
+  if (details) {
+    getDb().prepare("UPDATE vmware_deploy_history SET status = ?, details = ? WHERE id = ?").run(status, JSON.stringify(details), id);
+  } else {
+    getDb().prepare("UPDATE vmware_deploy_history SET status = ? WHERE id = ?").run(status, id);
+  }
+}
+
+export function getDeployHistory(limit = 100): VmDeployHistoryEntry[] {
+  try {
+    initVmwareDeployTables();
+    const rows = getDb().prepare(
+      "SELECT * FROM vmware_deploy_history ORDER BY timestamp DESC LIMIT ?"
+    ).all(limit) as Array<Record<string, unknown>>;
+    return rows.map(r => ({
+      id: String(r.id),
+      timestamp: String(r.timestamp),
+      user: String(r.user),
+      vmName: String(r.vm_name),
+      templateName: String(r.template_name),
+      ipAddress: String(r.ip_address),
+      status: String(r.status) as VmDeployStatus,
+      taskId: String(r.task_id),
+      details: (() => { try { return JSON.parse(String(r.details)); } catch { return {}; } })(),
+    }));
+  } catch { return []; }
+}
+
+// ── vCenter resource listing (for deploy UI dropdowns) ─────────────────────────
+
+export async function listVmTemplates(config: VmwareConfig): Promise<VcTemplate[]> {
+  const base = config.vcenterUrl.replace(/\/$/, "");
+  const password = await decryptField(config.passwordEncrypted);
+  const token = await getSessionToken(base, config.username, password, config.ignoreSslErrors);
+  try {
+    // REST filter: is_template=true returns only templates
+    const list = await vcGet<VcTemplate[]>(base, "/api/vcenter/vm?filter.is_template=true", token, config.ignoreSslErrors);
+    return (list ?? []).sort((a, b) => a.name.localeCompare(b.name));
+  } finally {
+    await deleteSession(base, token, config.ignoreSslErrors);
+  }
+}
+
+export async function listCustomizationSpecs(config: VmwareConfig): Promise<VcCustomizationSpec[]> {
+  const base = config.vcenterUrl.replace(/\/$/, "");
+  const password = await decryptField(config.passwordEncrypted);
+  const token = await getSessionToken(base, config.username, password, config.ignoreSslErrors);
+  try {
+    const list = await vcGet<VcCustomizationSpec[]>(base, "/api/vcenter/guest/customization-specs", token, config.ignoreSslErrors);
+    return (list ?? []).sort((a, b) => a.name.localeCompare(b.name));
+  } finally {
+    await deleteSession(base, token, config.ignoreSslErrors);
+  }
+}
+
+export async function listDatastores(config: VmwareConfig): Promise<VcDatastore[]> {
+  const base = config.vcenterUrl.replace(/\/$/, "");
+  const password = await decryptField(config.passwordEncrypted);
+  const token = await getSessionToken(base, config.username, password, config.ignoreSslErrors);
+  try {
+    return await vcGet<VcDatastore[]>(base, "/api/vcenter/datastore", token, config.ignoreSslErrors) ?? [];
+  } finally {
+    await deleteSession(base, token, config.ignoreSslErrors);
+  }
+}
+
+export async function listClusters(config: VmwareConfig): Promise<VcCluster[]> {
+  const base = config.vcenterUrl.replace(/\/$/, "");
+  const password = await decryptField(config.passwordEncrypted);
+  const token = await getSessionToken(base, config.username, password, config.ignoreSslErrors);
+  try {
+    return await vcGet<VcCluster[]>(base, "/api/vcenter/cluster", token, config.ignoreSslErrors) ?? [];
+  } finally {
+    await deleteSession(base, token, config.ignoreSslErrors);
+  }
+}
+
+export async function listResourcePools(config: VmwareConfig): Promise<VcResourcePool[]> {
+  const base = config.vcenterUrl.replace(/\/$/, "");
+  const password = await decryptField(config.passwordEncrypted);
+  const token = await getSessionToken(base, config.username, password, config.ignoreSslErrors);
+  try {
+    return await vcGet<VcResourcePool[]>(base, "/api/vcenter/resource-pool", token, config.ignoreSslErrors) ?? [];
+  } finally {
+    await deleteSession(base, token, config.ignoreSslErrors);
+  }
+}
+
+export async function listFolders(config: VmwareConfig): Promise<VcFolder[]> {
+  const base = config.vcenterUrl.replace(/\/$/, "");
+  const password = await decryptField(config.passwordEncrypted);
+  const token = await getSessionToken(base, config.username, password, config.ignoreSslErrors);
+  try {
+    return await vcGet<VcFolder[]>(base, "/api/vcenter/folder?type=VIRTUAL_MACHINE", token, config.ignoreSslErrors) ?? [];
+  } finally {
+    await deleteSession(base, token, config.ignoreSslErrors);
+  }
+}
+
+export async function listNetworks(config: VmwareConfig): Promise<VcNetwork[]> {
+  const base = config.vcenterUrl.replace(/\/$/, "");
+  const password = await decryptField(config.passwordEncrypted);
+  const token = await getSessionToken(base, config.username, password, config.ignoreSslErrors);
+  try {
+    return await vcGet<VcNetwork[]>(base, "/api/vcenter/network", token, config.ignoreSslErrors) ?? [];
+  } finally {
+    await deleteSession(base, token, config.ignoreSslErrors);
+  }
+}
+
+// ── VM Clone via SOAP ──────────────────────────────────────────────────────────
+
+export interface VmCloneSpec {
+  templateId: string;
+  vmName: string;
+  customizationSpecName: string;
+  ip: string;
+  subnetMask: string;
+  gateway: string;
+  dns: string[];
+  datastoreId?: string;
+  clusterId?: string;
+  resourcePoolId?: string;
+  folderId?: string;
+  networkId?: string;
+  cpuCount?: number | null;
+  memoryMiB?: number | null;
+}
+
+/**
+ * Clone a VM from a template using SOAP CloneVM_Task with customization.
+ * Returns the vCenter Task MoRef to poll for completion.
+ */
+export async function cloneVmFromTemplate(
+  config: VmwareConfig,
+  spec: VmCloneSpec,
+): Promise<{ taskMoRef: string }> {
+  const base = config.vcenterUrl.replace(/\/$/, "");
+  const password = await decryptField(config.passwordEncrypted);
+  const { ignoreSslErrors } = config;
+
+  const cookie = await soapLogin(base, config.username, password, ignoreSslErrors);
+  try {
+    const { rootFolder } = await soapServiceContent(base, cookie, ignoreSslErrors);
+
+    // Resolve resource pool: use specified, or find default from cluster
+    let rpMor = spec.resourcePoolId ?? "";
+    if (!rpMor && spec.clusterId) {
+      // Get cluster's root resource pool
+      const rpXml = await soapPost(`${base}/sdk`, `<?xml version="1.0"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><RetrievePropertiesEx xmlns="urn:vim25" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><_this type="PropertyCollector">propertyCollector</_this><specSet><propSet><type>ClusterComputeResource</type><all>false</all><pathSet>resourcePool</pathSet></propSet><objectSet><obj type="ClusterComputeResource">${esc(spec.clusterId)}</obj><skip>false</skip></objectSet></specSet><options/></RetrievePropertiesEx></soapenv:Body></soapenv:Envelope>`, cookie, ignoreSslErrors);
+      rpMor = rpXml.match(/<val[^>]*type="ResourcePool"[^>]*>([^<]+)<\/val>/)?.[1] ?? "";
+    }
+    if (!rpMor) throw new Error("Resource pool could not be determined. Specify a cluster or resource pool.");
+
+    // Resolve target folder
+    let folderMor = spec.folderId ?? "";
+    if (!folderMor) folderMor = rootFolder; // default to root
+
+    // Build customization spec XML
+    const ipXml = spec.ip ? `
+      <ip xsi:type="CustomizationFixedIp" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+        <ipAddress>${esc(spec.ip)}</ipAddress>
+      </ip>
+      <subnetMask>${esc(spec.subnetMask)}</subnetMask>
+      <gateway>${spec.gateway ? `<gateway>${esc(spec.gateway)}</gateway>` : ""}</gateway>` : `
+      <ip xsi:type="CustomizationDhcpIpGenerator" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"/>`;
+
+    // DNS servers
+    const dnsXml = (spec.dns ?? []).filter(Boolean).map(d => `<dnsServerList>${esc(d)}</dnsServerList>`).join("");
+
+    // Build location spec
+    let locationXml = `<pool type="ResourcePool">${esc(rpMor)}</pool>`;
+    if (spec.datastoreId) locationXml += `<datastore type="Datastore">${esc(spec.datastoreId)}</datastore>`;
+
+    // Config spec for CPU/memory overrides
+    let configSpecXml = "";
+    if (spec.cpuCount || spec.memoryMiB) {
+      configSpecXml = "<config>";
+      if (spec.cpuCount) configSpecXml += `<numCPUs>${spec.cpuCount}</numCPUs>`;
+      if (spec.memoryMiB) configSpecXml += `<memoryMB>${spec.memoryMiB}</memoryMB>`;
+      configSpecXml += "</config>";
+    }
+
+    // Network backing change (if networkId specified)
+    let networkXml = "";
+    if (spec.networkId) {
+      networkXml = `<config><deviceChange><operation>edit</operation><device xsi:type="VirtualVmxnet3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><backing xsi:type="VirtualEthernetCardDistributedVirtualPortBackingInfo"><port><portgroupKey>${esc(spec.networkId)}</portgroupKey></port></backing></device></deviceChange></config>`;
+      configSpecXml = ""; // merged into networkXml config
+      if (spec.cpuCount || spec.memoryMiB) {
+        // Inject CPU/mem into the same config block
+        let inject = "";
+        if (spec.cpuCount) inject += `<numCPUs>${spec.cpuCount}</numCPUs>`;
+        if (spec.memoryMiB) inject += `<memoryMB>${spec.memoryMiB}</memoryMB>`;
+        networkXml = networkXml.replace("<deviceChange>", `${inject}<deviceChange>`);
+      }
+    }
+
+    // Customization: if a named spec is given, reference it; otherwise inline
+    let customizationXml = "";
+    if (spec.customizationSpecName) {
+      // Use named customization spec with IP override
+      customizationXml = `
+      <customization>
+        <globalIPSettings>${dnsXml}</globalIPSettings>
+        <nicSettingMap>
+          <adapter>
+            ${ipXml}
+            ${dnsXml}
+          </adapter>
+        </nicSettingMap>
+        <identity xsi:type="CustomizationSysprepText" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+          <value></value>
+        </identity>
+      </customization>`;
+    }
+
+    const cloneSoap = `<?xml version="1.0"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<soapenv:Body>
+<CloneVM_Task xmlns="urn:vim25">
+  <_this type="VirtualMachine">${esc(spec.templateId)}</_this>
+  <folder type="Folder">${esc(folderMor)}</folder>
+  <name>${esc(spec.vmName)}</name>
+  <spec>
+    <location>${locationXml}</location>
+    <powerOn>true</powerOn>
+    <template>false</template>
+    ${configSpecXml}
+    ${networkXml}
+    ${customizationXml}
+  </spec>
+</CloneVM_Task>
+</soapenv:Body></soapenv:Envelope>`;
+
+    const result = await soapPost(`${base}/sdk`, cloneSoap, cookie, ignoreSslErrors);
+
+    // Extract task MoRef
+    const taskMoRef = result.match(/<returnval[^>]*type="Task"[^>]*>([^<]+)<\/returnval>/)?.[1];
+    if (!taskMoRef) throw new Error("CloneVM_Task did not return a task reference");
+
+    console.log(`[vmware] CloneVM_Task started: ${taskMoRef} for ${spec.vmName}`);
+    return { taskMoRef };
+  } finally {
+    await soapLogout(base, cookie, ignoreSslErrors);
+  }
+}
+
+// ── Task polling ───────────────────────────────────────────────────────────────
+
+export interface VcTaskStatus {
+  state: "queued" | "running" | "success" | "error";
+  progress: number; // 0-100
+  error?: string;
+  result?: string; // MoRef of created VM on success
+}
+
+export async function getTaskStatus(config: VmwareConfig, taskMoRef: string): Promise<VcTaskStatus> {
+  const base = config.vcenterUrl.replace(/\/$/, "");
+  const password = await decryptField(config.passwordEncrypted);
+  const cookie = await soapLogin(base, config.username, password, config.ignoreSslErrors);
+  try {
+    const xml = await soapPost(`${base}/sdk`,
+      `<?xml version="1.0"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><RetrievePropertiesEx xmlns="urn:vim25" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><_this type="PropertyCollector">propertyCollector</_this><specSet><propSet><type>Task</type><all>false</all><pathSet>info.state</pathSet><pathSet>info.progress</pathSet><pathSet>info.error</pathSet><pathSet>info.result</pathSet></propSet><objectSet><obj type="Task">${esc(taskMoRef)}</obj><skip>false</skip></objectSet></specSet><options/></RetrievePropertiesEx></soapenv:Body></soapenv:Envelope>`,
+      cookie, config.ignoreSslErrors,
+    );
+
+    const state = (xml.match(/info\.state<\/name>\s*<val[^>]*>([^<]+)<\/val>/)?.[1] ?? "running") as VcTaskStatus["state"];
+    const progress = parseInt(xml.match(/info\.progress<\/name>\s*<val[^>]*>(\d+)<\/val>/)?.[1] ?? "0", 10);
+    const errorMsg = xml.match(/info\.error<\/name>[\s\S]*?<localizedMessage>([^<]+)<\/localizedMessage>/)?.[1]?.trim();
+    const resultMor = xml.match(/info\.result<\/name>\s*<val[^>]*type="VirtualMachine"[^>]*>([^<]+)<\/val>/)?.[1];
+
+    return {
+      state,
+      progress: state === "success" ? 100 : progress,
+      ...(errorMsg ? { error: errorMsg } : {}),
+      ...(resultMor ? { result: resultMor } : {}),
+    };
+  } finally {
+    await soapLogout(base, cookie, config.ignoreSslErrors);
+  }
+}
+
+/** Poll a task until it completes (success/error) or times out. */
+export async function pollTaskUntilDone(
+  config: VmwareConfig,
+  taskMoRef: string,
+  timeoutMs = 600_000, // 10 min
+  intervalMs = 5_000,
+): Promise<VcTaskStatus> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const status = await getTaskStatus(config, taskMoRef);
+    if (status.state === "success" || status.state === "error") return status;
+    await new Promise(r => setTimeout(r, intervalMs));
+  }
+  return { state: "error", progress: 0, error: `Task timed out after ${Math.round(timeoutMs / 1000)}s` };
+}
+
+/** Delete a VM by MoRef (for rollback on failed deployment). */
+export async function deleteVm(config: VmwareConfig, vmMoRef: string): Promise<void> {
+  const base = config.vcenterUrl.replace(/\/$/, "");
+  const password = await decryptField(config.passwordEncrypted);
+  const { ignoreSslErrors } = config;
+
+  // Power off first (best-effort)
+  const token = await getSessionToken(base, config.username, password, ignoreSslErrors);
+  try {
+    await vcFetch(`${base}/api/vcenter/vm/${encodeURIComponent(vmMoRef)}/power?action=stop`, {
+      method: "POST",
+      headers: { "vmware-api-session-id": token, "Content-Type": "application/json" },
+    }, ignoreSslErrors).catch(() => {});
+    // Delete
+    const res = await vcFetch(`${base}/api/vcenter/vm/${encodeURIComponent(vmMoRef)}`, {
+      method: "DELETE",
+      headers: { "vmware-api-session-id": token },
+    }, ignoreSslErrors);
+    if (!res.ok && res.status !== 404) {
+      throw new Error(`Failed to delete VM ${vmMoRef}: HTTP ${res.status}`);
+    }
+  } finally {
+    await deleteSession(base, token, ignoreSslErrors);
+  }
 }

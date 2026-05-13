@@ -98,6 +98,7 @@ function initProvisioningTables(): void {
       manufacturer_filter  TEXT NOT NULL DEFAULT '[]',
       requires_asset_tag   INTEGER NOT NULL DEFAULT 0,
       auto_create_cmdb     INTEGER NOT NULL DEFAULT 0,
+      vm_deploy_template_id TEXT,
       sort_order           INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS provisioning_history (
@@ -156,13 +157,14 @@ export function createDeviceProfile(data: Omit<DeviceProfile, "id">): DeviceProf
     INSERT INTO provisioning_device_profiles
       (id, name, icon, netbox_role_id, default_vlan_id, default_prefix_id,
        default_dns_zone, default_dhcp_scope,
-       manufacturer_filter, requires_asset_tag, auto_create_cmdb, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       manufacturer_filter, requires_asset_tag, auto_create_cmdb, vm_deploy_template_id, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, data.name, data.icon, data.netboxRoleId, data.defaultVlanId,
     data.defaultPrefixId, data.defaultDnsZone ?? "", data.defaultDhcpScope ?? "",
     JSON.stringify(data.manufacturerFilter ?? []),
     data.requiresAssetTag ? 1 : 0, data.autoCreateCmdb ? 1 : 0,
+    data.vmDeployTemplateId ?? null,
     data.sortOrder ?? 0,
   );
   return getDeviceProfile(id)!;
@@ -177,7 +179,7 @@ export function updateDeviceProfile(id: string, data: Partial<DeviceProfile>): D
       name = ?, icon = ?, netbox_role_id = ?, default_vlan_id = ?,
       default_prefix_id = ?, default_dns_zone = ?, default_dhcp_scope = ?,
       manufacturer_filter = ?,
-      requires_asset_tag = ?, auto_create_cmdb = ?, sort_order = ?
+      requires_asset_tag = ?, auto_create_cmdb = ?, vm_deploy_template_id = ?, sort_order = ?
     WHERE id = ?
   `).run(
     data.name ?? existing.name,
@@ -190,6 +192,7 @@ export function updateDeviceProfile(id: string, data: Partial<DeviceProfile>): D
     JSON.stringify(data.manufacturerFilter ?? existing.manufacturerFilter),
     (data.requiresAssetTag ?? existing.requiresAssetTag) ? 1 : 0,
     (data.autoCreateCmdb ?? existing.autoCreateCmdb) ? 1 : 0,
+    data.vmDeployTemplateId !== undefined ? data.vmDeployTemplateId : existing.vmDeployTemplateId,
     data.sortOrder ?? existing.sortOrder,
     id,
   );
@@ -215,6 +218,7 @@ function rowToProfile(row: Record<string, unknown>): DeviceProfile {
     manufacturerFilter: (() => { try { return JSON.parse(String(row.manufacturer_filter ?? "[]")); } catch { return []; } })(),
     requiresAssetTag: row.requires_asset_tag === 1,
     autoCreateCmdb: row.auto_create_cmdb === 1,
+    vmDeployTemplateId: row.vm_deploy_template_id ? String(row.vm_deploy_template_id) : null,
     sortOrder: Number(row.sort_order ?? 0),
   };
 }
