@@ -232,8 +232,8 @@ function AdminContent() {
   const [provTesting, setProvTesting] = useState<string | null>(null);
 
   // Device profiles state
-  interface DeviceProfileItem { id: string; name: string; icon: string; netboxRoleId: number | null; defaultVlanId: number | null; defaultPrefixId: number | null; defaultDnsZone: string; defaultDhcpScope: string; defaultGateway: string; manufacturerFilter: number[]; requiresAssetTag: boolean; autoCreateCmdb: boolean; vmDeployTemplateId: string | null; netboxClusterId: number | null; sortOrder: number; }
-  const emptyProfile = (): DeviceProfileItem => ({ id: "", name: "", icon: "server", netboxRoleId: null, defaultVlanId: null, defaultPrefixId: null, defaultDnsZone: "", defaultDhcpScope: "", defaultGateway: "", manufacturerFilter: [], requiresAssetTag: false, autoCreateCmdb: true, vmDeployTemplateId: null, netboxClusterId: null, sortOrder: 0 });
+  interface DeviceProfileItem { id: string; name: string; icon: string; netboxRoleId: number | null; defaultVlanId: number | null; defaultPrefixId: number | null; defaultDnsZone: string; defaultDhcpScope: string; defaultGateway: string; defaultTags: string[]; manufacturerFilter: number[]; requiresAssetTag: boolean; autoCreateCmdb: boolean; vmDeployTemplateId: string | null; netboxClusterId: number | null; sortOrder: number; }
+  const emptyProfile = (): DeviceProfileItem => ({ id: "", name: "", icon: "server", netboxRoleId: null, defaultVlanId: null, defaultPrefixId: null, defaultDnsZone: "", defaultDhcpScope: "", defaultGateway: "", defaultTags: [], manufacturerFilter: [], requiresAssetTag: false, autoCreateCmdb: true, vmDeployTemplateId: null, netboxClusterId: null, sortOrder: 0 });
   const [deviceProfiles, setDeviceProfiles] = useState<DeviceProfileItem[]>([]);
   const [deviceProfilesLoaded, setDeviceProfilesLoaded] = useState(false);
   const [showProfileForm, setShowProfileForm] = useState(false);
@@ -4292,6 +4292,18 @@ function AdminContent() {
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Sort Order</label>
                       <input type="number" value={profileForm.sortOrder} onChange={(e) => setProfileForm({ ...profileForm, sortOrder: parseInt(e.target.value) || 0 })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Default Tags</label>
+                      <div className="flex flex-wrap gap-1 mb-1">
+                        {profileForm.defaultTags.map((t, i) => (
+                          <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-accent/10 text-accent rounded-full">
+                            {t}
+                            <button type="button" onClick={() => setProfileForm({ ...profileForm, defaultTags: profileForm.defaultTags.filter((_, j) => j !== i) })} className="hover:text-red-600"><X className="w-3 h-3" /></button>
+                          </span>
+                        ))}
+                      </div>
+                      <input type="text" placeholder="Type tag + Enter" className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); const v = (e.target as HTMLInputElement).value.trim(); if (v && !profileForm.defaultTags.includes(v)) { setProfileForm({ ...profileForm, defaultTags: [...profileForm.defaultTags, v] }); (e.target as HTMLInputElement).value = ""; } } }} />
                     </div>
                     <div className="flex items-end gap-4 pb-1">
                       <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">

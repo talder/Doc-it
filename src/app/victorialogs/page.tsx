@@ -568,7 +568,15 @@ export default function VictoriaLogsPage() {
           <SourceList
             title="Hosts"
             icon={Server}
-            items={overview.hosts}
+            items={(() => {
+              // Merge admin-configured hosts with auto-discovered hosts so configured hosts always appear
+              const discovered = overview.hosts;
+              const discoveredSet = new Set(discovered.map(h => h.value));
+              const fromConfig = configuredHosts
+                .filter(h => !discoveredSet.has(h.hostname))
+                .map(h => ({ value: h.hostname, hits: 0 }));
+              return [...discovered, ...fromConfig];
+            })()}
             loading={overviewLoading}
             onSelect={(v) => applyFilter("hostname", v)}
           />

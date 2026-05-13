@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
     defaultDnsZone: String(body.defaultDnsZone ?? ""),
     defaultDhcpScope: String(body.defaultDhcpScope ?? ""),
     defaultGateway: String(body.defaultGateway ?? ""),
+    defaultTags: Array.isArray(body.defaultTags) ? body.defaultTags : [],
     manufacturerFilter: Array.isArray(body.manufacturerFilter) ? body.manufacturerFilter : [],
     requiresAssetTag: !!body.requiresAssetTag,
     autoCreateCmdb: !!body.autoCreateCmdb,

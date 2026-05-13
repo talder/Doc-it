@@ -107,6 +107,7 @@ export default function ProvisionWizard() {
   const [assetTag, setAssetTag] = useState("");
   const [macAddress, setMacAddress] = useState("");
   const [comment, setComment] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
 
   // Network (step 3)
   const [vlanId, setVlanId] = useState<number | null>(null);
@@ -190,6 +191,7 @@ export default function ProvisionWizard() {
       if (selectedProfile.defaultDnsZone) setDnsZone(selectedProfile.defaultDnsZone);
       if (selectedProfile.defaultDhcpScope) setDhcpScope(selectedProfile.defaultDhcpScope);
       if (selectedProfile.defaultGateway) setGateway(selectedProfile.defaultGateway);
+      if (selectedProfile.defaultTags?.length) setTags([...selectedProfile.defaultTags]);
     }
   }, [selectedProfile]);
 
@@ -214,7 +216,8 @@ export default function ProvisionWizard() {
     dnsZone: dnsZone || "sezz.local",
     dhcpScope,
     gateway: gateway.trim() || undefined,
-  }), [selectedProfile, deviceName, deviceTypeId, siteId, assetTag, macAddress, comment, vlanId, prefixId, ipAllocation, manualIp, dnsZone, dhcpScope, gateway]);
+    tags: tags.length ? tags : undefined,
+  }), [selectedProfile, deviceName, deviceTypeId, siteId, assetTag, macAddress, comment, vlanId, prefixId, ipAllocation, manualIp, dnsZone, dhcpScope, gateway, tags]);
 
   const runPreflight = async () => {
     setPreflightRunning(true);
@@ -254,7 +257,7 @@ export default function ProvisionWizard() {
     setStep(1);
     setSelectedProfile(null);
     setDeviceName(""); setVendorId(null); setDeviceTypeId(null);
-    setSiteId(null); setAssetTag(""); setMacAddress(""); setComment("");
+    setSiteId(null); setAssetTag(""); setMacAddress(""); setComment(""); setTags([]);
     setVlanId(null); setPrefixId(null); setIpAllocation("auto"); setManualIp("");
     setDnsZone(""); setDhcpScope(""); setGateway("");
     setPreflightResults([]); setPreflightIp(null); setResult(null);
@@ -386,6 +389,20 @@ export default function ProvisionWizard() {
                 <label className="block text-xs font-medium text-text-secondary mb-1">Comment / Description</label>
                 <textarea value={comment} onChange={e => setComment(e.target.value)} rows={2}
                   className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent resize-none" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-text-secondary mb-1">Tags (optional)</label>
+                <div className="flex flex-wrap gap-1 mb-1.5">
+                  {tags.map((t, i) => (
+                    <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-accent/10 text-accent rounded-full">
+                      {t}
+                      <button type="button" onClick={() => setTags(tags.filter((_, j) => j !== i))} className="hover:text-red-600"><X className="w-3 h-3" /></button>
+                    </span>
+                  ))}
+                </div>
+                <input type="text" placeholder="Type tag + Enter" className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent"
+                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); const v = (e.target as HTMLInputElement).value.trim(); if (v && !tags.includes(v)) { setTags([...tags, v]); (e.target as HTMLInputElement).value = ""; } } }} />
+                <p className="text-[10px] text-text-muted mt-0.5">Tags are pushed to Netbox, VMware, DHCP descriptions</p>
               </div>
             </div>
             <div className="flex justify-between mt-6">
@@ -580,6 +597,7 @@ export default function ProvisionWizard() {
                     <span className="text-text-muted">DNS:</span><span className="text-text-primary">{deviceName}.{dnsZone || "sezz.local"}</span>
                     {gateway && <><span className="text-text-muted">Gateway:</span><span className="text-text-primary font-mono">{gateway}</span></>}
                     {selectedProfile?.vmDeployTemplateId && <><span className="text-text-muted">Deploy:</span><span className="text-text-primary">VMware deploy (from template)</span></>}
+                    {tags.length > 0 && <><span className="text-text-muted">Tags:</span><span className="text-text-primary">{tags.join(", ")}</span></>}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-700 text-xs rounded-lg border border-amber-200 mb-4">

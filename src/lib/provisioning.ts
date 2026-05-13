@@ -142,6 +142,7 @@ function initProvisioningTables(): void {
   const colNames = new Set(cols.map(c => c.name));
   if (!colNames.has("default_gateway"))    db.exec("ALTER TABLE provisioning_device_profiles ADD COLUMN default_gateway TEXT NOT NULL DEFAULT ''");
   if (!colNames.has("netbox_cluster_id"))  db.exec("ALTER TABLE provisioning_device_profiles ADD COLUMN netbox_cluster_id INTEGER");
+  if (!colNames.has("default_tags"))       db.exec("ALTER TABLE provisioning_device_profiles ADD COLUMN default_tags TEXT NOT NULL DEFAULT '[]'");
 }
 
 // ── Device Profile CRUD ──────────────────────────────────────────────────────
@@ -170,8 +171,8 @@ export function createDeviceProfile(data: Omit<DeviceProfile, "id">): DeviceProf
       (id, name, icon, netbox_role_id, default_vlan_id, default_prefix_id,
        default_dns_zone, default_dhcp_scope, default_gateway,
        manufacturer_filter, requires_asset_tag, auto_create_cmdb,
-       vm_deploy_template_id, netbox_cluster_id, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       vm_deploy_template_id, netbox_cluster_id, default_tags, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, data.name, data.icon, data.netboxRoleId, data.defaultVlanId,
     data.defaultPrefixId, data.defaultDnsZone ?? "", data.defaultDhcpScope ?? "",
@@ -180,6 +181,7 @@ export function createDeviceProfile(data: Omit<DeviceProfile, "id">): DeviceProf
     data.requiresAssetTag ? 1 : 0, data.autoCreateCmdb ? 1 : 0,
     data.vmDeployTemplateId ?? null,
     data.netboxClusterId ?? null,
+    JSON.stringify(data.defaultTags ?? []),
     data.sortOrder ?? 0,
   );
   return getDeviceProfile(id)!;
@@ -196,7 +198,8 @@ export function updateDeviceProfile(id: string, data: Partial<DeviceProfile>): D
       default_gateway = ?,
       manufacturer_filter = ?,
       requires_asset_tag = ?, auto_create_cmdb = ?,
-      vm_deploy_template_id = ?, netbox_cluster_id = ?, sort_order = ?
+      vm_deploy_template_id = ?, netbox_cluster_id = ?,
+      default_tags = ?, sort_order = ?
     WHERE id = ?
   `).run(
     data.name ?? existing.name,
@@ -212,6 +215,7 @@ export function updateDeviceProfile(id: string, data: Partial<DeviceProfile>): D
     (data.autoCreateCmdb ?? existing.autoCreateCmdb) ? 1 : 0,
     data.vmDeployTemplateId !== undefined ? data.vmDeployTemplateId : existing.vmDeployTemplateId,
     data.netboxClusterId !== undefined ? data.netboxClusterId : existing.netboxClusterId,
+    JSON.stringify(data.defaultTags ?? existing.defaultTags),
     data.sortOrder ?? existing.sortOrder,
     id,
   );
@@ -240,6 +244,7 @@ function rowToProfile(row: Record<string, unknown>): DeviceProfile {
     autoCreateCmdb: row.auto_create_cmdb === 1,
     vmDeployTemplateId: row.vm_deploy_template_id ? String(row.vm_deploy_template_id) : null,
     netboxClusterId: row.netbox_cluster_id != null ? Number(row.netbox_cluster_id) : null,
+    defaultTags: (() => { try { return JSON.parse(String(row.default_tags ?? "[]")); } catch { return []; } })(),
     sortOrder: Number(row.sort_order ?? 0),
   };
 }
@@ -566,6 +571,10 @@ export async function executeProvisioning(
   try {
     // Step 1: Create device / VM in Netbox
     markStep("netbox-device", "running");
+    // Resolve tags for Netbox (Netbox accepts tags as [{name: "..."}])
+    const reqTags = req.tags?.length ? req.tags : (profile?.defaultTags ?? []);
+    const nbTags = reqTags.length ? reqTags.map(t => ({ name: t })) : undefined;
+
     if (isVm) {
       // Use Netbox Virtualization module for VMs
       const vmBody: Record<string, unknown> = {
@@ -576,6 +585,7 @@ export async function executeProvisioning(
       };
       if (profile!.netboxClusterId) vmBody.cluster = profile!.netboxClusterId;
       if (roleId) vmBody.role = roleId;
+      if (nbTags) vmBody.tags = nbTags;
       const vm = await netboxFetch("/virtualization/virtual-machines/", { method: "POST", body: JSON.stringify(vmBody) }) as { id: number };
       deviceId = vm.id;
       markStep("netbox-device", "done", `VM ID ${vm.id}`, vm.id, `${cfg.netbox.url}/virtualization/virtual-machines/${vm.id}/`);
@@ -589,6 +599,7 @@ export async function executeProvisioning(
         comments: req.comment || "",
       };
       if (req.assetTag) deviceBody.asset_tag = req.assetTag;
+      if (nbTags) deviceBody.tags = nbTags;
       const device = await netboxFetch("/dcim/devices/", { method: "POST", body: JSON.stringify(deviceBody) }) as { id: number };
       deviceId = device.id;
       markStep("netbox-device", "done", `Device ID ${device.id}`, device.id, `${cfg.netbox.url}/dcim/devices/${device.id}/`);
@@ -676,6 +687,7 @@ export async function executeProvisioning(
       if (!dhcpScope) {
         throw new Error("DHCP scope is required but none was selected and no default is configured in Admin → Provisioning → DHCP → Default Scope");
       }
+      const dhcpDesc = [req.comment || req.deviceName, ...(reqTags.length ? [`[tags: ${reqTags.join(", ")}]`] : [])].join(" ");
       const dhcpRes = await providerFetch(cfg.dhcp.endpoint, "/dhcp/reservations", cfg.dhcp.tokenEncrypted, cfg.dhcp.ignoreSslErrors, {
         method: "POST",
         body: JSON.stringify({
@@ -683,7 +695,7 @@ export async function executeProvisioning(
           ipAddress: allocatedIp,
           hostName: fqdn,
           macAddress: req.macAddress,
-          description: req.comment || req.deviceName,
+          description: dhcpDesc,
         }),
       });
       if (!dhcpRes.ok) {
@@ -758,6 +770,7 @@ export async function executeProvisioning(
         sendRawSyslog(JSON.stringify({
           event: "vmware.deploy", vmName: req.deviceName, ip: allocatedIp,
           template: deployTpl.name, user: actor, status: "success",
+          tags: reqTags.length ? reqTags : undefined,
         }), "vmware.deploy").catch(() => {});
       } else {
         throw new Error(`VMware deploy failed: ${vmResult.error}`);
@@ -765,12 +778,12 @@ export async function executeProvisioning(
     }
 
     // Log success
-    logHistory(actor, req.deviceName, profile?.name ?? "", allocatedIp, req.macAddress, "success", deviceId, { steps });
-    auditLog(actor, req.deviceName, "success", { deviceId, ip: allocatedIp });
+    logHistory(actor, req.deviceName, profile?.name ?? "", allocatedIp, req.macAddress, "success", deviceId, { steps, tags: reqTags.length ? reqTags : undefined });
+    auditLog(actor, req.deviceName, "success", { deviceId, ip: allocatedIp, tags: reqTags.length ? reqTags : undefined });
     writeInfraAudit({
       user: actor, tab: "provision", action: "provision-device",
       target: req.deviceName, status: "success",
-      details: { deviceId, ip: allocatedIp, mac: req.macAddress, profile: profile?.name, isVm },
+      details: { deviceId, ip: allocatedIp, mac: req.macAddress, profile: profile?.name, isVm, tags: reqTags.length ? reqTags : undefined },
       auditEvent: "provisioning.device.created",
     });
 
