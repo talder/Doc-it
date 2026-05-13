@@ -131,13 +131,16 @@ export default function DhcpTab() {
   };
 
   // Delete reservation
+  const [deleteError, setDeleteError] = useState("");
   const handleDelete = async () => {
     if (!deleting) return;
     setDeleteLoading(true);
+    setDeleteError("");
     try {
       const res = await fetch(`/api/provisioning/dhcp/reservations/${encodeURIComponent(deleting.ipAddress)}?scope=${encodeURIComponent(selectedScope)}`, { method: "DELETE" });
       if (res.ok) { setDeleting(null); setDeleteConfirm(""); loadData(); }
-    } catch { /* ignore */ }
+      else { const d = await res.json().catch(() => ({})); setDeleteError(d.error || `HTTP ${res.status}`); }
+    } catch (e) { setDeleteError(e instanceof Error ? e.message : "Failed to reach server"); }
     setDeleteLoading(false);
   };
 
@@ -286,7 +289,7 @@ export default function DhcpTab() {
                     )}
                   </td>
                   <td className="px-4 py-2 flex items-center gap-1">
-                    <button onClick={() => { setDeleting(r); setDeleteConfirm(""); }} className="p-1 rounded hover:bg-red-50 text-text-muted hover:text-red-500">
+                    <button onClick={() => { setDeleting(r); setDeleteConfirm(""); setDeleteError(""); }} className="p-1 rounded hover:bg-red-50 text-text-muted hover:text-red-500">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </td>
@@ -452,6 +455,7 @@ export default function DhcpTab() {
             <p className="text-xs text-text-muted mb-2">Type the IP address to confirm:</p>
             <input value={deleteConfirm} onChange={e => setDeleteConfirm(e.target.value)} placeholder={deleting.ipAddress}
               className="w-full px-3 py-2 text-sm font-mono border border-border rounded-lg bg-surface text-text-primary mb-4" />
+            {deleteError && <div className="flex items-center gap-2 text-xs text-red-500 mb-3"><AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {deleteError}</div>}
             <div className="flex justify-end gap-2">
               <button onClick={() => setDeleting(null)} className="px-4 py-2 text-sm text-text-muted hover:bg-muted rounded-lg">Cancel</button>
               <button onClick={handleDelete} disabled={deleteConfirm !== deleting.ipAddress || deleteLoading}
