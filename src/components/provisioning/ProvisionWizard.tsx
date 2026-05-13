@@ -14,6 +14,7 @@ import type {
   ProvisioningResult, ProvisioningHistoryEntry,
 } from "@/lib/provisioning-shared";
 import { isValidMac, normalizeMac, isValidIpv4 } from "@/lib/provisioning-shared";
+import TagPicker from "@/components/TagPicker";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -390,20 +391,12 @@ export default function ProvisionWizard() {
                 <textarea value={comment} onChange={e => setComment(e.target.value)} rows={2}
                   className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent resize-none" />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-text-secondary mb-1">Tags (optional)</label>
-                <div className="flex flex-wrap gap-1 mb-1.5">
-                  {tags.map((t, i) => (
-                    <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-accent/10 text-accent rounded-full">
-                      {t}
-                      <button type="button" onClick={() => setTags(tags.filter((_, j) => j !== i))} className="hover:text-red-600"><X className="w-3 h-3" /></button>
-                    </span>
-                  ))}
-                </div>
-                <input type="text" placeholder="Type tag + Enter" className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent"
-                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); const v = (e.target as HTMLInputElement).value.trim(); if (v && !tags.includes(v)) { setTags([...tags, v]); (e.target as HTMLInputElement).value = ""; } } }} />
-                <p className="text-[10px] text-text-muted mt-0.5">Tags are pushed to Netbox, VMware, DHCP descriptions</p>
-              </div>
+              <TagPicker
+                label="Tags (optional)"
+                value={tags}
+                onChange={setTags}
+                hint="Tags are pushed to Netbox, VMware, DHCP descriptions"
+              />
             </div>
             <div className="flex justify-between mt-6">
               <button onClick={() => { setStep(1); setSelectedProfile(null); }} className="px-4 py-2 text-sm text-text-muted hover:bg-muted rounded-lg">
