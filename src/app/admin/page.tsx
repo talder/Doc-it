@@ -321,6 +321,25 @@ function AdminContent() {
   const [showVmwarePassword, setShowVmwarePassword] = useState(false);
   const [newVmwareRecipient, setNewVmwareRecipient] = useState("");
 
+  // VM Deploy Templates state
+  interface VmDeployTpl { id: string; name: string; description: string; vcenterTemplateId: string; vcenterTemplateName: string; customizationSpec: string; defaultDatastoreId: string; defaultClusterId: string; defaultResourcePoolId: string; defaultFolderId: string; defaultNetworkId: string; defaultCpuCount: number | null; defaultMemoryMiB: number | null; icon: string; sortOrder: number; }
+  const emptyDeployTpl = (): VmDeployTpl => ({ id: "", name: "", description: "", vcenterTemplateId: "", vcenterTemplateName: "", customizationSpec: "", defaultDatastoreId: "", defaultClusterId: "", defaultResourcePoolId: "", defaultFolderId: "", defaultNetworkId: "", defaultCpuCount: null, defaultMemoryMiB: null, icon: "🖥", sortOrder: 0 });
+  const [vmDeployTemplates, setVmDeployTemplates] = useState<VmDeployTpl[]>([]);
+  const [vmDeployTplLoaded, setVmDeployTplLoaded] = useState(false);
+  const [showDeployTplForm, setShowDeployTplForm] = useState(false);
+  const [editingDeployTplId, setEditingDeployTplId] = useState<string | null>(null);
+  const [deployTplForm, setDeployTplForm] = useState<VmDeployTpl>(emptyDeployTpl());
+  const [deployTplSaving, setDeployTplSaving] = useState(false);
+  // vCenter resource options for deploy template dropdowns
+  const [vcTemplates, setVcTemplates] = useState<{ vm: string; name: string }[]>([]);
+  const [vcCustSpecs, setVcCustSpecs] = useState<{ name: string }[]>([]);
+  const [vcDatastores, setVcDatastores] = useState<{ datastore: string; name: string }[]>([]);
+  const [vcClusters, setVcClusters] = useState<{ cluster: string; name: string }[]>([]);
+  const [vcResourcePools, setVcResourcePools] = useState<{ resource_pool: string; name: string }[]>([]);
+  const [vcFolders, setVcFolders] = useState<{ folder: string; name: string }[]>([]);
+  const [vcNetworks, setVcNetworks] = useState<{ network: string; name: string }[]>([]);
+  const [vcResLoading, setVcResLoading] = useState(false);
+
   // Crash logs state
   const [crashEntries, setCrashEntries] = useState<CrashEntry[]>([]);
   const [crashTotal, setCrashTotal] = useState(0);
@@ -480,6 +499,36 @@ function AdminContent() {
       });
       setVmwareCfgLoaded(true);
     }
+  }, []);
+
+  const fetchVmDeployTemplates = useCallback(async () => {
+    const res = await fetch("/api/vmware/deploy-templates");
+    if (res.ok) {
+      const data = await res.json();
+      setVmDeployTemplates(data.templates ?? []);
+      setVmDeployTplLoaded(true);
+    }
+  }, []);
+
+  const fetchVcResources = useCallback(async () => {
+    setVcResLoading(true);
+    const [tplRes, specRes, dsRes, clRes, rpRes, folRes, netRes] = await Promise.all([
+      fetch("/api/vmware/templates").then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch("/api/vmware/customization-specs").then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch("/api/vmware/resources?type=datastores").then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch("/api/vmware/resources?type=clusters").then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch("/api/vmware/resources?type=resource-pools").then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch("/api/vmware/resources?type=folders").then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch("/api/vmware/resources?type=networks").then(r => r.ok ? r.json() : null).catch(() => null),
+    ]);
+    if (tplRes?.templates) setVcTemplates(tplRes.templates);
+    if (specRes?.specs) setVcCustSpecs(specRes.specs);
+    if (dsRes?.items) setVcDatastores(dsRes.items);
+    if (clRes?.items) setVcClusters(clRes.items);
+    if (rpRes?.items) setVcResourcePools(rpRes.items);
+    if (folRes?.items) setVcFolders(folRes.items);
+    if (netRes?.items) setVcNetworks(netRes.items);
+    setVcResLoading(false);
   }, []);
 
   const fetchProvisioningConfig = useCallback(async () => {
@@ -872,7 +921,7 @@ function AdminContent() {
 
           <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted px-3 mb-1.5">Integrations</p>
           <nav className="space-y-0.5">
-            <button onClick={() => { setTab("vmware"); if (!vmwareCfgLoaded) fetchVmwareConfig(); }} className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-colors text-left ${tab === "vmware" ? "bg-accent/10 text-accent font-medium" : "text-text-secondary hover:bg-muted hover:text-text-primary"}`}>
+            <button onClick={() => { setTab("vmware"); if (!vmwareCfgLoaded) fetchVmwareConfig(); if (!vmDeployTplLoaded) fetchVmDeployTemplates(); }} className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-colors text-left ${tab === "vmware" ? "bg-accent/10 text-accent font-medium" : "text-text-secondary hover:bg-muted hover:text-text-primary"}`}>
               <Network className="w-4 h-4 shrink-0" /> VMware
             </button>
             <button onClick={() => { setTab("mirth"); fetchMirthServers(); }} className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-colors text-left ${tab === "mirth" ? "bg-accent/10 text-accent font-medium" : "text-text-secondary hover:bg-muted hover:text-text-primary"}`}>
@@ -3201,6 +3250,7 @@ function AdminContent() {
 
         {/* VMware Tab */}
         {tab === "vmware" && (
+          <div className="space-y-6">
           <div className="bg-surface rounded-xl shadow-sm border border-border">
             <div className="px-6 py-4 border-b border-border flex items-center gap-2">
               <Network className="w-4 h-4 text-accent" />
@@ -3456,6 +3506,179 @@ function AdminContent() {
                 </button>
               </div>
             </div>
+          </div>
+
+          {/* VM Deploy Templates */}
+          <div className="bg-surface rounded-xl shadow-sm border border-border">
+            <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-text-primary">VM Deploy Templates</h2>
+                <p className="text-xs text-text-muted mt-0.5">Pre-configured templates for deploying VMs from vCenter templates.</p>
+              </div>
+              <button
+                onClick={() => { setEditingDeployTplId(null); setDeployTplForm(emptyDeployTpl()); setShowDeployTplForm(true); fetchVcResources(); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors"
+              >
+                <Plus className="w-4 h-4" /> Add Template
+              </button>
+            </div>
+
+            {/* Create / Edit form */}
+            {showDeployTplForm && (
+              <div className="px-6 py-4 bg-gray-50 border-b border-border">
+                <p className="text-xs font-semibold text-gray-600 mb-3">{editingDeployTplId ? "Edit Deploy Template" : "New Deploy Template"}</p>
+                {vcResLoading && <p className="text-xs text-text-muted mb-3">Loading vCenter resources…</p>}
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Template Name</label>
+                    <input type="text" value={deployTplForm.name} onChange={(e) => setDeployTplForm({ ...deployTplForm, name: e.target.value })} placeholder="e.g. Windows Server 2022" className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
+                    <input type="text" value={deployTplForm.description} onChange={(e) => setDeployTplForm({ ...deployTplForm, description: e.target.value })} placeholder="Optional description" className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">vCenter Template</label>
+                    <select value={deployTplForm.vcenterTemplateId} onChange={(e) => { const tpl = vcTemplates.find(t => t.vm === e.target.value); setDeployTplForm({ ...deployTplForm, vcenterTemplateId: e.target.value, vcenterTemplateName: tpl?.name ?? "" }); }} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                      <option value="">— Select template —</option>
+                      {vcTemplates.map(t => <option key={t.vm} value={t.vm}>{t.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Customization Spec</label>
+                    <select value={deployTplForm.customizationSpec} onChange={(e) => setDeployTplForm({ ...deployTplForm, customizationSpec: e.target.value })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                      <option value="">— None —</option>
+                      {vcCustSpecs.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Datastore</label>
+                    <select value={deployTplForm.defaultDatastoreId} onChange={(e) => setDeployTplForm({ ...deployTplForm, defaultDatastoreId: e.target.value })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                      <option value="">— None —</option>
+                      {vcDatastores.map(d => <option key={d.datastore} value={d.datastore}>{d.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Cluster</label>
+                    <select value={deployTplForm.defaultClusterId} onChange={(e) => setDeployTplForm({ ...deployTplForm, defaultClusterId: e.target.value })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                      <option value="">— None —</option>
+                      {vcClusters.map(c => <option key={c.cluster} value={c.cluster}>{c.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Resource Pool</label>
+                    <select value={deployTplForm.defaultResourcePoolId} onChange={(e) => setDeployTplForm({ ...deployTplForm, defaultResourcePoolId: e.target.value })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                      <option value="">— None —</option>
+                      {vcResourcePools.map(r => <option key={r.resource_pool} value={r.resource_pool}>{r.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Folder</label>
+                    <select value={deployTplForm.defaultFolderId} onChange={(e) => setDeployTplForm({ ...deployTplForm, defaultFolderId: e.target.value })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                      <option value="">— None —</option>
+                      {vcFolders.map(f => <option key={f.folder} value={f.folder}>{f.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Network</label>
+                    <select value={deployTplForm.defaultNetworkId} onChange={(e) => setDeployTplForm({ ...deployTplForm, defaultNetworkId: e.target.value })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                      <option value="">— None —</option>
+                      {vcNetworks.map(n => <option key={n.network} value={n.network}>{n.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Default CPU Count</label>
+                    <input type="number" min={1} value={deployTplForm.defaultCpuCount ?? ""} onChange={(e) => setDeployTplForm({ ...deployTplForm, defaultCpuCount: e.target.value ? parseInt(e.target.value) : null })} placeholder="From template" className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Default Memory (MiB)</label>
+                    <input type="number" min={256} step={256} value={deployTplForm.defaultMemoryMiB ?? ""} onChange={(e) => setDeployTplForm({ ...deployTplForm, defaultMemoryMiB: e.target.value ? parseInt(e.target.value) : null })} placeholder="From template" className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Sort Order</label>
+                    <input type="number" value={deployTplForm.sortOrder} onChange={(e) => setDeployTplForm({ ...deployTplForm, sortOrder: parseInt(e.target.value) || 0 })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    disabled={deployTplSaving || !deployTplForm.name.trim() || !deployTplForm.vcenterTemplateId}
+                    onClick={async () => {
+                      setDeployTplSaving(true);
+                      const body = { ...deployTplForm };
+                      const res = editingDeployTplId
+                        ? await fetch(`/api/vmware/deploy-templates/${editingDeployTplId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null)
+                        : await fetch("/api/vmware/deploy-templates", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
+                      setDeployTplSaving(false);
+                      if (res?.ok) {
+                        setShowDeployTplForm(false);
+                        setEditingDeployTplId(null);
+                        setDeployTplForm(emptyDeployTpl());
+                        fetchVmDeployTemplates();
+                      } else {
+                        const d = res ? await res.json().catch(() => ({})) : {};
+                        flash(d.error || "Failed to save deploy template", "error");
+                      }
+                    }}
+                    className="px-4 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50"
+                  >
+                    {deployTplSaving ? "Saving…" : editingDeployTplId ? "Update" : "Create"}
+                  </button>
+                  <button onClick={() => { setShowDeployTplForm(false); setEditingDeployTplId(null); setDeployTplForm(emptyDeployTpl()); }} className="px-3 py-1.5 text-sm text-gray-500 hover:text-text-secondary">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Template list */}
+            {!vmDeployTplLoaded ? (
+              <p className="px-6 py-6 text-sm text-text-muted text-center">Loading…</p>
+            ) : vmDeployTemplates.length === 0 ? (
+              <p className="px-6 py-6 text-sm text-text-muted text-center">No deploy templates configured.</p>
+            ) : (
+              <div className="divide-y divide-border">
+                {vmDeployTemplates.map((t) => (
+                  <div key={t.id} className="flex items-center gap-4 px-6 py-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">{t.icon || "🖥"}</span>
+                        <span className="text-sm font-medium text-text-primary">{t.name}</span>
+                      </div>
+                      <p className="text-xs text-text-muted">
+                        {[t.vcenterTemplateName && `Template: ${t.vcenterTemplateName}`, t.customizationSpec && `Spec: ${t.customizationSpec}`, t.defaultCpuCount && `${t.defaultCpuCount} vCPU`, t.defaultMemoryMiB && `${Math.round(t.defaultMemoryMiB / 1024)} GB RAM`].filter(Boolean).join(" · ") || "No defaults"}
+                      </p>
+                      {t.description && <p className="text-xs text-text-muted mt-0.5">{t.description}</p>}
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => {
+                          setEditingDeployTplId(t.id);
+                          setDeployTplForm({ ...t });
+                          setShowDeployTplForm(true);
+                          fetchVcResources();
+                        }}
+                        className="p-1.5 rounded-lg hover:bg-muted text-gray-400 hover:text-gray-600 transition-colors"
+                        title="Edit"
+                      >
+                        <Settings className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Delete deploy template "${t.name}"?`)) return;
+                          await fetch(`/api/vmware/deploy-templates/${t.id}`, { method: "DELETE" }).catch(() => {});
+                          fetchVmDeployTemplates();
+                        }}
+                        className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           </div>
         )}
 
