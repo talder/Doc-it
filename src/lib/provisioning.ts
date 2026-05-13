@@ -534,6 +534,24 @@ function tcpProbe(host: string, port: number, timeoutMs: number): Promise<boolea
 
 // ── Execute pipeline ─────────────────────────────────────────────────────────
 
+/** Ensure tags exist in Netbox, creating any that are missing. */
+async function ensureNetboxTags(tagNames: string[]): Promise<void> {
+  if (!tagNames.length) return;
+  for (const name of tagNames) {
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    try {
+      // Check if the tag already exists
+      const existing = await netboxFetch(`/extras/tags/?name=${encodeURIComponent(name)}`) as { count: number };
+      if (existing.count > 0) continue;
+      // Create the tag
+      await netboxFetch("/extras/tags/", {
+        method: "POST",
+        body: JSON.stringify({ name, slug }),
+      });
+    } catch { /* tag may already exist via slug collision — safe to ignore */ }
+  }
+}
+
 /** Convert CIDR prefix length to dotted subnet mask (e.g. 22 → "255.255.252.0"). */
 function cidrToSubnetMask(cidr: number): string {
   const mask = (0xFFFFFFFF << (32 - cidr)) >>> 0;
@@ -582,6 +600,8 @@ export async function executeProvisioning(
     markStep("netbox-device", "running");
     // Resolve tags for Netbox (Netbox accepts tags as [{name: "..."}])
     const reqTags = req.tags?.length ? req.tags : (profile?.defaultTags ?? []);
+    // Ensure tags exist in Netbox before referencing them
+    await ensureNetboxTags(reqTags);
     const nbTags = reqTags.length ? reqTags.map(t => ({ name: t })) : undefined;
 
     if (isVm) {
