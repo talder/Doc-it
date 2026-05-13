@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { netboxFetch } from "@/lib/provisioning";
+import { netboxFetch, clearNetboxCache } from "@/lib/provisioning";
 
 /**
  * GET /api/provisioning/netbox/{...path} — proxy read-only Netbox API requests.
@@ -80,6 +80,8 @@ export async function POST(
   try {
     const body = await request.json();
     const data = await netboxFetch(apiPath, { method: "POST", body: JSON.stringify(body) });
+    // Invalidate cached GET responses for the same resource type
+    clearNetboxCache(apiPath);
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
     return NextResponse.json(

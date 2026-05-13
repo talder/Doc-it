@@ -256,6 +256,14 @@ function rowToProfile(row: Record<string, unknown>): DeviceProfile {
 const _cache = new Map<string, { data: unknown; ts: number }>();
 const CACHE_TTL_MS = 15 * 60_000;
 
+/** Invalidate cached Netbox GET responses whose key contains the given substring. */
+export function clearNetboxCache(pathContains?: string) {
+  if (!pathContains) { _cache.clear(); return; }
+  for (const key of _cache.keys()) {
+    if (key.includes(pathContains)) _cache.delete(key);
+  }
+}
+
 export async function netboxFetch(
   path: string,
   options: RequestInit = {},
