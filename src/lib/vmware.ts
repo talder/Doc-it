@@ -1474,20 +1474,6 @@ export async function cloneVmFromTemplate(
       configSpecXml += "</config>";
     }
 
-    // Network backing change (if networkId specified)
-    let networkXml = "";
-    if (spec.networkId) {
-      networkXml = `<config><deviceChange><operation>edit</operation><device xsi:type="VirtualVmxnet3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><backing xsi:type="VirtualEthernetCardDistributedVirtualPortBackingInfo"><port><portgroupKey>${esc(spec.networkId)}</portgroupKey></port></backing></device></deviceChange></config>`;
-      configSpecXml = ""; // merged into networkXml config
-      if (spec.cpuCount || spec.memoryMiB) {
-        // Inject CPU/mem into the same config block
-        let inject = "";
-        if (spec.cpuCount) inject += `<numCPUs>${spec.cpuCount}</numCPUs>`;
-        if (spec.memoryMiB) inject += `<memoryMB>${spec.memoryMiB}</memoryMB>`;
-        networkXml = networkXml.replace("<deviceChange>", `${inject}<deviceChange>`);
-      }
-    }
-
     // Customization: if a named spec is given, reference it; otherwise inline
     let customizationXml = "";
     if (spec.customizationSpecName) {
@@ -1518,7 +1504,6 @@ export async function cloneVmFromTemplate(
     <location>${locationXml}</location>
     <template>false</template>
     ${configSpecXml}
-    ${networkXml}
     ${customizationXml}
     <powerOn>true</powerOn>
   </spec>
