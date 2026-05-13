@@ -1283,13 +1283,53 @@ export function getDeployHistory(limit = 100): VmDeployHistoryEntry[] {
 export async function listVmTemplates(config: VmwareConfig): Promise<VcTemplate[]> {
   const base = config.vcenterUrl.replace(/\/$/, "");
   const password = await decryptField(config.passwordEncrypted);
-  const token = await getSessionToken(base, config.username, password, config.ignoreSslErrors);
+  const { ignoreSslErrors } = config;
+
+  // Use SOAP PropertyCollector to find VMs where config.template=true.
+  // The REST filter.is_template param is only available on vSphere 8.0+;
+  // SOAP works on all versions.
+  const cookie = await soapLogin(base, config.username, password, ignoreSslErrors);
   try {
-    // REST filter: is_template=true returns only templates
-    const list = await vcGet<VcTemplate[]>(base, "/api/vcenter/vm?filter.is_template=true", token, config.ignoreSslErrors);
-    return (list ?? []).sort((a, b) => a.name.localeCompare(b.name));
+    const { rootFolder, propCollector } = await soapServiceContent(base, cookie, ignoreSslErrors);
+    const xml = await soapPost(`${base}/sdk`, `<?xml version="1.0"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+<soapenv:Body>
+<RetrievePropertiesEx xmlns="urn:vim25" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <_this type="PropertyCollector">${esc(propCollector)}</_this>
+  <specSet>
+    <propSet><type>VirtualMachine</type><all>false</all>
+      <pathSet>name</pathSet>
+      <pathSet>config.template</pathSet>
+    </propSet>
+    <objectSet>
+      <obj type="Folder">${esc(rootFolder)}</obj><skip>false</skip>
+      <selectSet xsi:type="TraversalSpec"><name>visitFolders</name><type>Folder</type><path>childEntity</path><skip>false</skip>
+        <selectSet><name>visitFolders</name></selectSet>
+        <selectSet><name>dcToVmFolder</name></selectSet>
+      </selectSet>
+      <selectSet xsi:type="TraversalSpec"><name>dcToVmFolder</name><type>Datacenter</type><path>vmFolder</path><skip>false</skip>
+        <selectSet><name>visitFolders</name></selectSet>
+      </selectSet>
+    </objectSet>
+  </specSet>
+  <options/>
+</RetrievePropertiesEx>
+</soapenv:Body></soapenv:Envelope>`, cookie, ignoreSslErrors);
+
+    const templates: VcTemplate[] = [];
+    const objRx = /<objects>([\s\S]*?)<\/objects>/g;
+    let m: RegExpExecArray | null;
+    while ((m = objRx.exec(xml)) !== null) {
+      const b = m[1];
+      const isTemplate = /config\.template<\/name>\s*<val[^>]*>true<\/val>/.test(b);
+      if (!isTemplate) continue;
+      const vmMor = b.match(/<obj[^>]*type="VirtualMachine"[^>]*>([^<]+)<\/obj>/)?.[1];
+      const name = b.match(/\bname<\/name>\s*<val[^>]*>([^<]+)<\/val>/)?.[1];
+      if (vmMor && name) templates.push({ vm: vmMor, name });
+    }
+    return templates.sort((a, b) => a.name.localeCompare(b.name));
   } finally {
-    await deleteSession(base, token, config.ignoreSslErrors);
+    await soapLogout(base, cookie, ignoreSslErrors);
   }
 }
 
