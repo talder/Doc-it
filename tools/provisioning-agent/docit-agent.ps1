@@ -33,12 +33,15 @@ if (-not (Test-Path $ConfigPath)) {
 
 $Config = Get-Content $ConfigPath -Raw | ConvertFrom-Json
 
-$Port       = if ($Config.port)  { $Config.port }  else { 8520 }
-$Token      = if ($Config.token) { $Config.token } else { Write-Error "Config: 'token' is required"; exit 1 }
-$Mode       = if ($Config.mode)  { $Config.mode }  else { "both" }  # "dns", "dhcp", or "both"
-$LogDir     = if ($Config.logDir) { $Config.logDir } else { Join-Path $PSScriptRoot "logs" }
-$LogDays    = if ($Config.logRetentionDays) { $Config.logRetentionDays } else { 30 }
-$DnsFlushTargets = if ($Config.dnsFlushTargets) { @($Config.dnsFlushTargets) } else { @() }
+# Helper: safely read optional config properties under StrictMode
+function Get-ConfigValue { param($Name, $Default) if ($Config.PSObject.Properties.Match($Name).Count -gt 0) { $Config.$Name } else { $Default } }
+
+$Port       = Get-ConfigValue 'port' 8520
+$Token      = Get-ConfigValue 'token' $null
+if (-not $Token) { Write-Error "Config: 'token' is required"; exit 1 }
+$Mode       = Get-ConfigValue 'mode' 'both'   # "dns", "dhcp", or "both"
+$LogDir     = Get-ConfigValue 'logDir' (Join-Path $PSScriptRoot "logs")
+$LogDays    = Get-ConfigValue 'logRetentionDays' 30
 
 $Version    = "1.0.0"
 $Prefix     = "http://+:${Port}/"
