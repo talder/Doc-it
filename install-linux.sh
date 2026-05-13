@@ -227,7 +227,48 @@ if [[ "$CURRENT_NODE" -lt "$REQUIRED_NODE" ]]; then
 fi
 info "Node.js $(node -v) · npm $(npm -v)"
 
-# ── 3. Clone or upgrade ────────────────────────────────────────
+# ── 2b. PowerShell Core + VMware PowerCLI (for VM deployment) ──
+if command -v pwsh &>/dev/null; then
+  ok "PowerShell $(pwsh --version 2>/dev/null | head -1)"
+else
+  info "Installing PowerShell Core..."
+  $SUDO apt-get install -y wget apt-transport-https software-properties-common
+  source /etc/os-release
+  # Detect distro for Microsoft repo
+  DISTRO_ID="${ID:-ubuntu}"
+  DISTRO_VER="${VERSION_ID:-22.04}"
+  [[ "$DISTRO_ID" == "debian" ]] || DISTRO_ID="ubuntu"
+  CURL_FLAG=$( $NO_SSL && echo "-fsSLk" || echo "-fsSL" )
+  curl $CURL_FLAG "https://packages.microsoft.com/config/${DISTRO_ID}/${DISTRO_VER}/packages-microsoft-prod.deb" \
+    -o /tmp/packages-microsoft-prod.deb
+  $SUDO dpkg -i /tmp/packages-microsoft-prod.deb
+  rm -f /tmp/packages-microsoft-prod.deb
+  $SUDO apt-get update -q
+  $SUDO apt-get install -y powershell || {
+    warn "Microsoft repo install failed — trying snap fallback..."
+    $SUDO snap install powershell --classic 2>/dev/null || warn "PowerShell install failed — VM deploy feature will be unavailable"
+  }
+  command -v pwsh &>/dev/null && ok "PowerShell $(pwsh --version 2>/dev/null | head -1)" || warn "PowerShell not available"
+fi
+
+# VMware PowerCLI module (needed for VM deployment from templates)
+if command -v pwsh &>/dev/null; then
+  PCLI_OK=$(pwsh -NoProfile -NonInteractive -Command \
+    "if (Get-Module -ListAvailable VMware.PowerCLI -EA SilentlyContinue) { 'yes' } else { 'no' }" 2>/dev/null)
+  if [[ "$PCLI_OK" == "yes" ]]; then
+    ok "VMware PowerCLI module installed"
+  else
+    info "Installing VMware PowerCLI module (this may take a few minutes)..."
+    $SUDO pwsh -NoProfile -NonInteractive -Command '
+      Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+      Install-Module VMware.PowerCLI -Scope AllUsers -Confirm:$false -Force -AllowClobber
+      Set-PowerCLIConfiguration -Scope AllUsers -ParticipateInCEIP $false -Confirm:$false | Out-Null
+    ' && ok "VMware PowerCLI module installed" \
+      || warn "VMware PowerCLI install failed — VM deploy feature will be unavailable"
+  fi
+fi
+
+# ── 3. Clone or upgrade ──────────────────────────────────────────
 if $UPGRADE; then
   [[ -d "$INSTALL_DIR/.git" ]] || die "--upgrade: $INSTALL_DIR is not a git repo. Run without --upgrade to install first."
   info "Stopping service before upgrade..."

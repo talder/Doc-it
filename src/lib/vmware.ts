@@ -7,6 +7,8 @@
  */
 
 import { randomUUID } from "crypto";
+import { spawn } from "child_process";
+import { join } from "path";
 import { readJsonConfig, writeJsonConfig, getDb } from "./config";
 import { encryptField, decryptField } from "./crypto";
 import { addChangeRequest } from "./cmdb";
@@ -1400,7 +1402,7 @@ export async function listNetworks(config: VmwareConfig): Promise<VcNetwork[]> {
   }
 }
 
-// ── VM Clone via SOAP ──────────────────────────────────────────────────────────
+// ── VM Clone via PowerCLI ───────────────────────────────────────────────────────
 
 export interface VmCloneSpec {
   templateId: string;
@@ -1417,6 +1419,85 @@ export interface VmCloneSpec {
   networkId?: string;
   cpuCount?: number | null;
   memoryMiB?: number | null;
+}
+
+export interface VmDeployResult {
+  success: boolean;
+  vmMoRef?: string;
+  vmName?: string;
+  error?: string;
+}
+
+/**
+ * Deploy a VM from template using VMware PowerCLI (pwsh).
+ * Synchronous — waits for the clone task to complete (up to ~10 min).
+ * Requires `pwsh` and `VMware.PowerCLI` to be installed on the server.
+ */
+export async function deployVmViaPowerCLI(
+  config: VmwareConfig,
+  spec: VmCloneSpec,
+): Promise<VmDeployResult> {
+  const password = await decryptField(config.passwordEncrypted);
+  const scriptPath = join(process.cwd(), "scripts", "vmware-clone.ps1");
+
+  const input = JSON.stringify({
+    vcenterUrl: config.vcenterUrl,
+    username: config.username,
+    password,
+    ignoreSslErrors: config.ignoreSslErrors,
+    templateId: spec.templateId,
+    vmName: spec.vmName,
+    customizationSpec: spec.customizationSpecName,
+    ip: spec.ip,
+    subnetMask: spec.subnetMask,
+    gateway: spec.gateway,
+    dns: spec.dns ?? [],
+    datastoreId: spec.datastoreId || null,
+    clusterId: spec.clusterId || null,
+    resourcePoolId: spec.resourcePoolId || null,
+    folderId: spec.folderId || null,
+    cpuCount: spec.cpuCount || null,
+    memoryMiB: spec.memoryMiB || null,
+  });
+
+  return new Promise<VmDeployResult>((resolve, reject) => {
+    const child = spawn("pwsh", ["-NoProfile", "-NonInteractive", "-File", scriptPath], {
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout: 900_000, // 15 min hard kill
+    });
+
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
+    child.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+
+    child.stdin.write(input);
+    child.stdin.end();
+
+    child.on("error", (err) => {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        reject(new Error("PowerShell (pwsh) is not installed. Run the install script with --upgrade to install it."));
+      } else {
+        reject(err);
+      }
+    });
+
+    child.on("close", (code) => {
+      // Parse JSON from stdout (last non-empty line)
+      const lines = stdout.trim().split("\n").filter(Boolean);
+      const jsonLine = lines[lines.length - 1] ?? "";
+      try {
+        const result = JSON.parse(jsonLine) as VmDeployResult;
+        console.log(`[vmware] PowerCLI deploy result: ${JSON.stringify(result)}`);
+        resolve(result);
+      } catch {
+        const errMsg = stderr.trim() || `pwsh exited with code ${code}`;
+        console.error(`[vmware] PowerCLI deploy failed: ${errMsg}`);
+        console.error(`[vmware] stdout: ${stdout}`);
+        reject(new Error(errMsg));
+      }
+    });
+  });
 }
 
 /**

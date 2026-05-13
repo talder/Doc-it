@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import {
   isVmwareAllowed, readVmwareConfig,
-  getVmDeployTemplate, cloneVmFromTemplate, pollTaskUntilDone, deleteVm,
+  getVmDeployTemplate, deployVmViaPowerCLI, deleteVm,
   logDeployHistory, updateDeployHistoryStatus, getDeployHistory,
 } from "@/lib/vmware";
 import { writeInfraAudit } from "@/lib/provisioning";
@@ -44,8 +44,8 @@ export async function POST(request: NextRequest) {
   );
 
   try {
-    // Start clone task
-    const { taskMoRef } = await cloneVmFromTemplate(config, {
+    // Deploy via PowerCLI (synchronous — waits for clone + power on)
+    const result = await deployVmViaPowerCLI(config, {
       templateId: template.vcenterTemplateId,
       vmName,
       customizationSpecName: template.customizationSpec,
@@ -62,15 +62,12 @@ export async function POST(request: NextRequest) {
       memoryMiB: body.memoryMiB ?? template.defaultMemoryMiB,
     });
 
-    // Poll task to completion (blocks up to 10 min)
-    const result = await pollTaskUntilDone(config, taskMoRef);
-
-    if (result.state === "success") {
-      updateDeployHistoryStatus(historyId, "success", { taskMoRef, vmMoRef: result.result });
+    if (result.success) {
+      updateDeployHistoryStatus(historyId, "success", { vmMoRef: result.vmMoRef });
       writeInfraAudit({
         user: user.username, tab: "vmware-deploy", action: "deploy-vm",
         target: vmName, status: "success",
-        details: { template: template.name, ip, taskMoRef, vmMoRef: result.result },
+        details: { template: template.name, ip, vmMoRef: result.vmMoRef },
         auditEvent: "provisioning.vm.deployed",
       });
       sendRawSyslog(JSON.stringify({
@@ -78,13 +75,13 @@ export async function POST(request: NextRequest) {
         user: user.username, status: "success",
       }), "vmware.deploy").catch(() => {});
 
-      return NextResponse.json({ success: true, historyId, taskMoRef, vmMoRef: result.result });
+      return NextResponse.json({ success: true, historyId, vmMoRef: result.vmMoRef });
     } else {
       // Deployment failed — rollback (delete partially-created VM if exists)
-      if (result.result) {
-        try { await deleteVm(config, result.result); } catch { /* best-effort */ }
+      if (result.vmMoRef) {
+        try { await deleteVm(config, result.vmMoRef); } catch { /* best-effort */ }
       }
-      updateDeployHistoryStatus(historyId, "failed", { taskMoRef, error: result.error });
+      updateDeployHistoryStatus(historyId, "failed", { error: result.error });
       writeInfraAudit({
         user: user.username, tab: "vmware-deploy", action: "deploy-vm",
         target: vmName, status: "failure",
