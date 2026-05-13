@@ -12,7 +12,10 @@ import net from "net";
 import { getDb } from "./config";
 import { readJsonConfig, writeJsonConfig } from "./config";
 import { encryptField, decryptField } from "./crypto";
-import { _writeAuditLogDirect } from "./audit";
+import { _writeAuditLogDirect, sendRawSyslog } from "./audit";
+import {
+  readVmwareConfig, getVmDeployTemplate, deployVmViaPowerCLI,
+} from "./vmware";
 import type {
   ProvisioningConfig, DeviceProfile, ProvisioningRequest,
   PreflightResult, PreflightCheckId,
@@ -95,10 +98,12 @@ function initProvisioningTables(): void {
       default_prefix_id    INTEGER,
       default_dns_zone     TEXT NOT NULL DEFAULT '',
       default_dhcp_scope   TEXT NOT NULL DEFAULT '',
+      default_gateway      TEXT NOT NULL DEFAULT '',
       manufacturer_filter  TEXT NOT NULL DEFAULT '[]',
       requires_asset_tag   INTEGER NOT NULL DEFAULT 0,
       auto_create_cmdb     INTEGER NOT NULL DEFAULT 0,
       vm_deploy_template_id TEXT,
+      netbox_cluster_id    INTEGER,
       sort_order           INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS provisioning_history (
@@ -130,6 +135,13 @@ function initProvisioningTables(): void {
     CREATE INDEX IF NOT EXISTS idx_prov_audit_ts
       ON provisioning_audit(timestamp DESC);
   `);
+
+  // Migration: add columns that may not exist yet
+  const db = getDb();
+  const cols = db.prepare("PRAGMA table_info(provisioning_device_profiles)").all() as Array<{ name: string }>;
+  const colNames = new Set(cols.map(c => c.name));
+  if (!colNames.has("default_gateway"))    db.exec("ALTER TABLE provisioning_device_profiles ADD COLUMN default_gateway TEXT NOT NULL DEFAULT ''");
+  if (!colNames.has("netbox_cluster_id"))  db.exec("ALTER TABLE provisioning_device_profiles ADD COLUMN netbox_cluster_id INTEGER");
 }
 
 // ── Device Profile CRUD ──────────────────────────────────────────────────────
@@ -156,15 +168,18 @@ export function createDeviceProfile(data: Omit<DeviceProfile, "id">): DeviceProf
   getDb().prepare(`
     INSERT INTO provisioning_device_profiles
       (id, name, icon, netbox_role_id, default_vlan_id, default_prefix_id,
-       default_dns_zone, default_dhcp_scope,
-       manufacturer_filter, requires_asset_tag, auto_create_cmdb, vm_deploy_template_id, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       default_dns_zone, default_dhcp_scope, default_gateway,
+       manufacturer_filter, requires_asset_tag, auto_create_cmdb,
+       vm_deploy_template_id, netbox_cluster_id, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, data.name, data.icon, data.netboxRoleId, data.defaultVlanId,
     data.defaultPrefixId, data.defaultDnsZone ?? "", data.defaultDhcpScope ?? "",
+    data.defaultGateway ?? "",
     JSON.stringify(data.manufacturerFilter ?? []),
     data.requiresAssetTag ? 1 : 0, data.autoCreateCmdb ? 1 : 0,
     data.vmDeployTemplateId ?? null,
+    data.netboxClusterId ?? null,
     data.sortOrder ?? 0,
   );
   return getDeviceProfile(id)!;
@@ -178,8 +193,10 @@ export function updateDeviceProfile(id: string, data: Partial<DeviceProfile>): D
     UPDATE provisioning_device_profiles SET
       name = ?, icon = ?, netbox_role_id = ?, default_vlan_id = ?,
       default_prefix_id = ?, default_dns_zone = ?, default_dhcp_scope = ?,
+      default_gateway = ?,
       manufacturer_filter = ?,
-      requires_asset_tag = ?, auto_create_cmdb = ?, vm_deploy_template_id = ?, sort_order = ?
+      requires_asset_tag = ?, auto_create_cmdb = ?,
+      vm_deploy_template_id = ?, netbox_cluster_id = ?, sort_order = ?
     WHERE id = ?
   `).run(
     data.name ?? existing.name,
@@ -189,10 +206,12 @@ export function updateDeviceProfile(id: string, data: Partial<DeviceProfile>): D
     data.defaultPrefixId ?? existing.defaultPrefixId,
     data.defaultDnsZone ?? existing.defaultDnsZone,
     data.defaultDhcpScope ?? existing.defaultDhcpScope,
+    data.defaultGateway ?? existing.defaultGateway,
     JSON.stringify(data.manufacturerFilter ?? existing.manufacturerFilter),
     (data.requiresAssetTag ?? existing.requiresAssetTag) ? 1 : 0,
     (data.autoCreateCmdb ?? existing.autoCreateCmdb) ? 1 : 0,
     data.vmDeployTemplateId !== undefined ? data.vmDeployTemplateId : existing.vmDeployTemplateId,
+    data.netboxClusterId !== undefined ? data.netboxClusterId : existing.netboxClusterId,
     data.sortOrder ?? existing.sortOrder,
     id,
   );
@@ -215,10 +234,12 @@ function rowToProfile(row: Record<string, unknown>): DeviceProfile {
     defaultPrefixId: row.default_prefix_id != null ? Number(row.default_prefix_id) : null,
     defaultDnsZone: String(row.default_dns_zone ?? ""),
     defaultDhcpScope: String(row.default_dhcp_scope ?? ""),
+    defaultGateway: String(row.default_gateway ?? ""),
     manufacturerFilter: (() => { try { return JSON.parse(String(row.manufacturer_filter ?? "[]")); } catch { return []; } })(),
     requiresAssetTag: row.requires_asset_tag === 1,
     autoCreateCmdb: row.auto_create_cmdb === 1,
     vmDeployTemplateId: row.vm_deploy_template_id ? String(row.vm_deploy_template_id) : null,
+    netboxClusterId: row.netbox_cluster_id != null ? Number(row.netbox_cluster_id) : null,
     sortOrder: Number(row.sort_order ?? 0),
   };
 }
@@ -499,6 +520,12 @@ function tcpProbe(host: string, port: number, timeoutMs: number): Promise<boolea
 
 // ── Execute pipeline ─────────────────────────────────────────────────────────
 
+/** Convert CIDR prefix length to dotted subnet mask (e.g. 22 → "255.255.252.0"). */
+function cidrToSubnetMask(cidr: number): string {
+  const mask = (0xFFFFFFFF << (32 - cidr)) >>> 0;
+  return [(mask >>> 24) & 0xFF, (mask >>> 16) & 0xFF, (mask >>> 8) & 0xFF, mask & 0xFF].join(".");
+}
+
 export async function executeProvisioning(
   req: ProvisioningRequest,
   actor: string,
@@ -507,17 +534,21 @@ export async function executeProvisioning(
   const profile = getDeviceProfile(req.profileId);
   const roleId = profile?.netboxRoleId ?? cfg.netbox.defaultRoleId;
   const fqdn = `${req.deviceName}.${req.dnsZone}`;
+  const isVm = !!(profile?.vmDeployTemplateId);
 
   const steps: PipelineStep[] = [
-    { id: "netbox-device",     label: "Create device in Netbox",       status: "pending" },
+    { id: "netbox-device",     label: isVm ? "Create VM in Netbox" : "Create device in Netbox", status: "pending" },
     { id: "netbox-interface",  label: "Create network interface",      status: "pending" },
     { id: "netbox-ip",         label: "Allocate IP address",           status: "pending" },
-    { id: "netbox-primary-ip", label: "Set primary IP on device",      status: "pending" },
+    { id: "netbox-primary-ip", label: "Set primary IP",                status: "pending" },
     { id: "dhcp-reservation",  label: "Create DHCP reservation",       status: "pending" },
     { id: "dns-record",        label: "Create DNS record",             status: "pending" },
   ];
   if (profile?.autoCreateCmdb) {
     steps.push({ id: "cmdb-ci", label: "Create CMDB entry", status: "pending" });
+  }
+  if (isVm) {
+    steps.push({ id: "vmware-deploy", label: "Deploy VM via VMware", status: "pending" });
   }
 
   // Track created resources for rollback
@@ -525,6 +556,7 @@ export async function executeProvisioning(
   let interfaceId: number | undefined;
   let ipId: number | undefined;
   let allocatedIp = "";
+  let prefixCidr = 24; // default; will be updated from prefix lookup
 
   function markStep(id: PipelineStepId, status: PipelineStep["status"], detail?: string, resourceId?: string | number, resourceUrl?: string) {
     const step = steps.find(s => s.id === id);
@@ -532,52 +564,76 @@ export async function executeProvisioning(
   }
 
   try {
-    // Step 1: Create device
+    // Step 1: Create device / VM in Netbox
     markStep("netbox-device", "running");
-    const deviceBody: Record<string, unknown> = {
-      name: req.deviceName,
-      device_type: req.deviceTypeId,
-      role: roleId,
-      site: req.siteId,
-      comments: req.comment || "",
-    };
-    if (req.assetTag) deviceBody.asset_tag = req.assetTag;
-    const device = await netboxFetch("/dcim/devices/", { method: "POST", body: JSON.stringify(deviceBody) }) as { id: number; url?: string };
-    deviceId = device.id;
-    markStep("netbox-device", "done", `Device ID ${device.id}`, device.id, `${cfg.netbox.url}/dcim/devices/${device.id}/`);
+    if (isVm) {
+      // Use Netbox Virtualization module for VMs
+      const vmBody: Record<string, unknown> = {
+        name: req.deviceName,
+        site: req.siteId,
+        comments: req.comment || "",
+        status: "active",
+      };
+      if (profile!.netboxClusterId) vmBody.cluster = profile!.netboxClusterId;
+      if (roleId) vmBody.role = roleId;
+      const vm = await netboxFetch("/virtualization/virtual-machines/", { method: "POST", body: JSON.stringify(vmBody) }) as { id: number };
+      deviceId = vm.id;
+      markStep("netbox-device", "done", `VM ID ${vm.id}`, vm.id, `${cfg.netbox.url}/virtualization/virtual-machines/${vm.id}/`);
+    } else {
+      // Physical device
+      const deviceBody: Record<string, unknown> = {
+        name: req.deviceName,
+        device_type: req.deviceTypeId,
+        role: roleId,
+        site: req.siteId,
+        comments: req.comment || "",
+      };
+      if (req.assetTag) deviceBody.asset_tag = req.assetTag;
+      const device = await netboxFetch("/dcim/devices/", { method: "POST", body: JSON.stringify(deviceBody) }) as { id: number };
+      deviceId = device.id;
+      markStep("netbox-device", "done", `Device ID ${device.id}`, device.id, `${cfg.netbox.url}/dcim/devices/${device.id}/`);
+    }
 
     // Step 2: Create interface
     markStep("netbox-interface", "running");
-    const ifBody = { device: deviceId, name: "NIC01", type: "1000base-t", mac_address: req.macAddress };
-    const iface = await netboxFetch("/dcim/interfaces/", { method: "POST", body: JSON.stringify(ifBody) }) as { id: number };
-    interfaceId = iface.id;
-    markStep("netbox-interface", "done", `Interface ID ${iface.id}`, iface.id);
+    if (isVm) {
+      const ifBody = { virtual_machine: deviceId, name: "eth0", mac_address: req.macAddress };
+      const iface = await netboxFetch("/virtualization/interfaces/", { method: "POST", body: JSON.stringify(ifBody) }) as { id: number };
+      interfaceId = iface.id;
+      markStep("netbox-interface", "done", `VM Interface ID ${iface.id}`, iface.id);
+    } else {
+      const ifBody = { device: deviceId, name: "NIC01", type: "1000base-t", mac_address: req.macAddress };
+      const iface = await netboxFetch("/dcim/interfaces/", { method: "POST", body: JSON.stringify(ifBody) }) as { id: number };
+      interfaceId = iface.id;
+      markStep("netbox-interface", "done", `Interface ID ${iface.id}`, iface.id);
+    }
+
+    // Determine the assigned_object_type for IP assignment
+    const ifObjectType = isVm ? "virtualization.vminterface" : "dcim.interface";
 
     // Step 3: Allocate IP
     markStep("netbox-ip", "running");
     let ipData: { id: number; address: string };
     if (req.ipAllocation === "auto") {
-      // Use Netbox available-ips endpoint
       const result = await netboxFetch(`/ipam/prefixes/${req.prefixId}/available-ips/`, {
         method: "POST",
         body: JSON.stringify({
           status: "dhcp",
           dns_name: fqdn,
           description: req.comment || req.deviceName,
-          assigned_object_type: "dcim.interface",
+          assigned_object_type: ifObjectType,
           assigned_object_id: interfaceId,
         }),
       }) as { id: number; address: string } | Array<{ id: number; address: string }>;
       ipData = Array.isArray(result) ? result[0] : result;
     } else {
-      // Register manual IP — look up the prefix to get the correct mask
       let ipWithMask = req.manualIp!;
       if (req.prefixId && !ipWithMask.includes("/")) {
         try {
           const pfx = await netboxFetch(`/ipam/prefixes/${req.prefixId}/`) as { prefix: string };
-          const mask = pfx.prefix.split("/")[1]; // e.g. "22" from "172.24.152.0/22"
-          if (mask) ipWithMask = `${ipWithMask}/${mask}`;
-        } catch { /* fall through — Netbox will default to /32 */ }
+          const mask = pfx.prefix.split("/")[1];
+          if (mask) { ipWithMask = `${ipWithMask}/${mask}`; prefixCidr = Number(mask); }
+        } catch { /* fall through */ }
       }
       const result = await netboxFetch("/ipam/ip-addresses/", {
         method: "POST",
@@ -586,22 +642,31 @@ export async function executeProvisioning(
           status: "dhcp",
           dns_name: fqdn,
           description: req.comment || req.deviceName,
-          assigned_object_type: "dcim.interface",
+          assigned_object_type: ifObjectType,
           assigned_object_id: interfaceId,
         }),
       }) as { id: number; address: string };
       ipData = result;
     }
     ipId = ipData.id;
-    allocatedIp = ipData.address.split("/")[0]; // strip CIDR
+    allocatedIp = ipData.address.split("/")[0];
+    // Extract CIDR from the allocated address (e.g. "172.24.152.5/22" → 22)
+    if (ipData.address.includes("/")) prefixCidr = Number(ipData.address.split("/")[1]) || 24;
     markStep("netbox-ip", "done", `${allocatedIp} (ID ${ipData.id})`, ipData.id);
 
     // Step 4: Set primary IP
     markStep("netbox-primary-ip", "running");
-    await netboxFetch(`/dcim/devices/${deviceId}/`, {
-      method: "PATCH",
-      body: JSON.stringify({ primary_ip4: ipId }),
-    });
+    if (isVm) {
+      await netboxFetch(`/virtualization/virtual-machines/${deviceId}/`, {
+        method: "PATCH",
+        body: JSON.stringify({ primary_ip4: ipId }),
+      });
+    } else {
+      await netboxFetch(`/dcim/devices/${deviceId}/`, {
+        method: "PATCH",
+        body: JSON.stringify({ primary_ip4: ipId }),
+      });
+    }
     markStep("netbox-primary-ip", "done", "Primary IPv4 set");
 
     // Step 5: DHCP reservation
@@ -654,9 +719,49 @@ export async function executeProvisioning(
     // Step 7: CMDB CI (optional)
     if (profile?.autoCreateCmdb) {
       markStep("cmdb-ci", "running");
-      // We don't import cmdb.ts directly to avoid circular deps;
-      // the CMDB entry can be created via internal fetch or left as a TODO.
       markStep("cmdb-ci", "done", "CMDB integration placeholder");
+    }
+
+    // Step 8: VMware Deploy (when profile has a linked deploy template)
+    if (isVm && profile?.vmDeployTemplateId) {
+      markStep("vmware-deploy", "running");
+      const vmConfig = await readVmwareConfig();
+      if (!vmConfig.enabled || !vmConfig.vcenterUrl || !vmConfig.passwordEncrypted) {
+        throw new Error("VMware is not configured — cannot deploy VM");
+      }
+      const deployTpl = getVmDeployTemplate(profile.vmDeployTemplateId);
+      if (!deployTpl) throw new Error(`VMware deploy template "${profile.vmDeployTemplateId}" not found`);
+
+      const subnetMask = cidrToSubnetMask(prefixCidr);
+      const gateway = req.gateway || profile.defaultGateway;
+      if (!gateway) throw new Error("Gateway is required for VM deployment but none was provided");
+
+      const vmResult = await deployVmViaPowerCLI(vmConfig, {
+        templateId: deployTpl.vcenterTemplateId,
+        vmName: req.deviceName,
+        customizationSpecName: deployTpl.customizationSpec,
+        ip: allocatedIp,
+        subnetMask,
+        gateway,
+        dns: [],
+        datastoreId: deployTpl.defaultDatastoreId || undefined,
+        clusterId: deployTpl.defaultClusterId || undefined,
+        resourcePoolId: deployTpl.defaultResourcePoolId || undefined,
+        folderId: deployTpl.defaultFolderId || undefined,
+        networkId: deployTpl.defaultNetworkId || undefined,
+        cpuCount: deployTpl.defaultCpuCount ?? undefined,
+        memoryMiB: deployTpl.defaultMemoryMiB ?? undefined,
+      });
+
+      if (vmResult.success) {
+        markStep("vmware-deploy", "done", `VM deployed (${deployTpl.name})`, vmResult.vmMoRef);
+        sendRawSyslog(JSON.stringify({
+          event: "vmware.deploy", vmName: req.deviceName, ip: allocatedIp,
+          template: deployTpl.name, user: actor, status: "success",
+        }), "vmware.deploy").catch(() => {});
+      } else {
+        throw new Error(`VMware deploy failed: ${vmResult.error}`);
+      }
     }
 
     // Log success
@@ -665,15 +770,16 @@ export async function executeProvisioning(
     writeInfraAudit({
       user: actor, tab: "provision", action: "provision-device",
       target: req.deviceName, status: "success",
-      details: { deviceId, ip: allocatedIp, mac: req.macAddress, profile: profile?.name },
+      details: { deviceId, ip: allocatedIp, mac: req.macAddress, profile: profile?.name, isVm },
       auditEvent: "provisioning.device.created",
     });
 
+    const nbUrlBase = isVm ? "virtualization/virtual-machines" : "dcim/devices";
     return {
       success: true,
       steps,
       netboxDeviceId: deviceId,
-      netboxDeviceUrl: `${cfg.netbox.url}/dcim/devices/${deviceId}/`,
+      netboxDeviceUrl: `${cfg.netbox.url}/${nbUrlBase}/${deviceId}/`,
       ipAddress: allocatedIp,
     };
   } catch (err) {
@@ -691,12 +797,14 @@ export async function executeProvisioning(
       if (ipStep && ipStep.status === "done") ipStep.status = "rolled-back";
     }
     if (interfaceId) {
-      try { await netboxFetch(`/dcim/interfaces/${interfaceId}/`, { method: "DELETE" }); } catch { /* best-effort */ }
+      const ifPath = isVm ? `/virtualization/interfaces/${interfaceId}/` : `/dcim/interfaces/${interfaceId}/`;
+      try { await netboxFetch(ifPath, { method: "DELETE" }); } catch { /* best-effort */ }
       const ifStep = steps.find(s => s.id === "netbox-interface");
       if (ifStep && ifStep.status === "done") ifStep.status = "rolled-back";
     }
     if (deviceId) {
-      try { await netboxFetch(`/dcim/devices/${deviceId}/`, { method: "DELETE" }); } catch { /* best-effort */ }
+      const devPath = isVm ? `/virtualization/virtual-machines/${deviceId}/` : `/dcim/devices/${deviceId}/`;
+      try { await netboxFetch(devPath, { method: "DELETE" }); } catch { /* best-effort */ }
       const devStep = steps.find(s => s.id === "netbox-device");
       if (devStep && devStep.status === "done") devStep.status = "rolled-back";
     }

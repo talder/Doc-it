@@ -78,10 +78,12 @@ export interface DeviceProfile {
   defaultPrefixId: number | null;
   defaultDnsZone: string;          // e.g. "sezz.local" — auto-filled in wizard
   defaultDhcpScope: string;        // e.g. "172.24.152.0" — auto-filled in wizard
+  defaultGateway: string;          // e.g. "172.24.152.1" — for VM deployments
   manufacturerFilter: number[];    // Netbox manufacturer IDs
   requiresAssetTag: boolean;
   autoCreateCmdb: boolean;
   vmDeployTemplateId: string | null;
+  netboxClusterId: number | null;  // Netbox virtualization cluster (for VM profiles)
   sortOrder: number;
 }
 
@@ -145,6 +147,7 @@ export interface ProvisioningRequest {
   manualIp?: string;
   dnsZone: string;
   dhcpScope: string;
+  gateway?: string;  // override for VM deployment (defaults to profile.defaultGateway)
 }
 
 // ── Pre-flight checks ────────────────────────────────────────────────────────

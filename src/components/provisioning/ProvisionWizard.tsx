@@ -115,6 +115,7 @@ export default function ProvisionWizard() {
   const [manualIp, setManualIp] = useState("");
   const [dnsZone, setDnsZone] = useState("");
   const [dhcpScope, setDhcpScope] = useState("");
+  const [gateway, setGateway] = useState("");
 
   // Agent reference data (DNS zones, DHCP scopes)
   const [dnsZones, setDnsZones] = useState<{ name: string }[]>([]);
@@ -188,6 +189,7 @@ export default function ProvisionWizard() {
       setPrefixId(selectedProfile.defaultPrefixId);
       if (selectedProfile.defaultDnsZone) setDnsZone(selectedProfile.defaultDnsZone);
       if (selectedProfile.defaultDhcpScope) setDhcpScope(selectedProfile.defaultDhcpScope);
+      if (selectedProfile.defaultGateway) setGateway(selectedProfile.defaultGateway);
     }
   }, [selectedProfile]);
 
@@ -211,7 +213,8 @@ export default function ProvisionWizard() {
     manualIp: ipAllocation === "manual" ? manualIp.trim() : undefined,
     dnsZone: dnsZone || "sezz.local",
     dhcpScope,
-  }), [selectedProfile, deviceName, deviceTypeId, siteId, assetTag, macAddress, comment, vlanId, prefixId, ipAllocation, manualIp, dnsZone, dhcpScope]);
+    gateway: gateway.trim() || undefined,
+  }), [selectedProfile, deviceName, deviceTypeId, siteId, assetTag, macAddress, comment, vlanId, prefixId, ipAllocation, manualIp, dnsZone, dhcpScope, gateway]);
 
   const runPreflight = async () => {
     setPreflightRunning(true);
@@ -253,7 +256,7 @@ export default function ProvisionWizard() {
     setDeviceName(""); setVendorId(null); setDeviceTypeId(null);
     setSiteId(null); setAssetTag(""); setMacAddress(""); setComment("");
     setVlanId(null); setPrefixId(null); setIpAllocation("auto"); setManualIp("");
-    setDnsZone(""); setDhcpScope("");
+    setDnsZone(""); setDhcpScope(""); setGateway("");
     setPreflightResults([]); setPreflightIp(null); setResult(null);
   };
 
@@ -312,7 +315,10 @@ export default function ProvisionWizard() {
                       <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center text-accent group-hover:bg-accent/20 transition-colors">
                         <ProfileIcon icon={p.icon} />
                       </div>
-                      <span className="font-semibold text-text-primary group-hover:text-accent transition-colors">{p.name}</span>
+                      <div>
+                        <span className="font-semibold text-text-primary group-hover:text-accent transition-colors">{p.name}</span>
+                        {p.vmDeployTemplateId && <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-medium bg-purple-50 text-purple-600 rounded">VM</span>}
+                      </div>
                     </div>
                     {p.requiresAssetTag && <span className="text-[10px] text-text-muted">Requires asset tag</span>}
                   </button>
@@ -472,6 +478,16 @@ export default function ProvisionWizard() {
                   )}
                 </div>
               </div>
+              {selectedProfile?.vmDeployTemplateId && (
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">Default Gateway</label>
+                  <input value={gateway} onChange={e => setGateway(e.target.value)} placeholder="e.g. 172.24.152.1"
+                    className="w-64 px-3 py-2 text-sm font-mono border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent" />
+                  {selectedProfile?.defaultGateway && gateway !== selectedProfile.defaultGateway && (
+                    <p className="text-[10px] text-amber-500 mt-0.5">Profile default: {selectedProfile.defaultGateway}</p>
+                  )}
+                </div>
+              )}
             </div>
             <div className="flex justify-between mt-6">
               <button onClick={() => setStep(2)} className="px-4 py-2 text-sm text-text-muted hover:bg-muted rounded-lg">
@@ -558,10 +574,12 @@ export default function ProvisionWizard() {
                   <h3 className="text-xs font-semibold text-text-muted uppercase mb-2">Summary</h3>
                   <div className="grid grid-cols-2 gap-2 text-sm">
                     <span className="text-text-muted">Device:</span><span className="text-text-primary font-medium">{deviceName}</span>
-                    <span className="text-text-muted">Profile:</span><span className="text-text-primary">{selectedProfile?.name}</span>
+                    <span className="text-text-muted">Profile:</span><span className="text-text-primary">{selectedProfile?.name}{selectedProfile?.vmDeployTemplateId ? " (VM)" : ""}</span>
                     <span className="text-text-muted">MAC:</span><span className="text-text-primary font-mono">{normalizeMac(macAddress)}</span>
                     <span className="text-text-muted">IP:</span><span className="text-text-primary font-mono">{ipAllocation === "auto" ? (preflightIp ? `${preflightIp} (auto)` : "Auto-allocated") : manualIp}</span>
                     <span className="text-text-muted">DNS:</span><span className="text-text-primary">{deviceName}.{dnsZone || "sezz.local"}</span>
+                    {gateway && <><span className="text-text-muted">Gateway:</span><span className="text-text-primary font-mono">{gateway}</span></>}
+                    {selectedProfile?.vmDeployTemplateId && <><span className="text-text-muted">Deploy:</span><span className="text-text-primary">VMware deploy (from template)</span></>}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-700 text-xs rounded-lg border border-amber-200 mb-4">

@@ -25,10 +25,12 @@ export async function POST(request: NextRequest) {
     defaultPrefixId: body.defaultPrefixId ?? null,
     defaultDnsZone: String(body.defaultDnsZone ?? ""),
     defaultDhcpScope: String(body.defaultDhcpScope ?? ""),
+    defaultGateway: String(body.defaultGateway ?? ""),
     manufacturerFilter: Array.isArray(body.manufacturerFilter) ? body.manufacturerFilter : [],
     requiresAssetTag: !!body.requiresAssetTag,
     autoCreateCmdb: !!body.autoCreateCmdb,
     vmDeployTemplateId: body.vmDeployTemplateId ?? null,
+    netboxClusterId: body.netboxClusterId ?? null,
     sortOrder: Number(body.sortOrder ?? 0),
   });
   return NextResponse.json({ profile });

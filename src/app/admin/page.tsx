@@ -232,8 +232,8 @@ function AdminContent() {
   const [provTesting, setProvTesting] = useState<string | null>(null);
 
   // Device profiles state
-  interface DeviceProfileItem { id: string; name: string; icon: string; netboxRoleId: number | null; defaultVlanId: number | null; defaultPrefixId: number | null; defaultDnsZone: string; defaultDhcpScope: string; manufacturerFilter: number[]; requiresAssetTag: boolean; autoCreateCmdb: boolean; sortOrder: number; }
-  const emptyProfile = (): DeviceProfileItem => ({ id: "", name: "", icon: "server", netboxRoleId: null, defaultVlanId: null, defaultPrefixId: null, defaultDnsZone: "", defaultDhcpScope: "", manufacturerFilter: [], requiresAssetTag: false, autoCreateCmdb: true, sortOrder: 0 });
+  interface DeviceProfileItem { id: string; name: string; icon: string; netboxRoleId: number | null; defaultVlanId: number | null; defaultPrefixId: number | null; defaultDnsZone: string; defaultDhcpScope: string; defaultGateway: string; manufacturerFilter: number[]; requiresAssetTag: boolean; autoCreateCmdb: boolean; vmDeployTemplateId: string | null; netboxClusterId: number | null; sortOrder: number; }
+  const emptyProfile = (): DeviceProfileItem => ({ id: "", name: "", icon: "server", netboxRoleId: null, defaultVlanId: null, defaultPrefixId: null, defaultDnsZone: "", defaultDhcpScope: "", defaultGateway: "", manufacturerFilter: [], requiresAssetTag: false, autoCreateCmdb: true, vmDeployTemplateId: null, netboxClusterId: null, sortOrder: 0 });
   const [deviceProfiles, setDeviceProfiles] = useState<DeviceProfileItem[]>([]);
   const [deviceProfilesLoaded, setDeviceProfilesLoaded] = useState(false);
   const [showProfileForm, setShowProfileForm] = useState(false);
@@ -251,6 +251,10 @@ function AdminContent() {
   // DHCP scopes + DNS zones for profile form dropdowns
   const [profileDhcpScopes, setProfileDhcpScopes] = useState<{ scopeId: string; name: string }[]>([]);
   const [profileDnsZones, setProfileDnsZones] = useState<{ name: string }[]>([]);
+
+  // VM deploy templates + Netbox clusters for device profile form
+  const [profileDeployTpls, setProfileDeployTpls] = useState<{ id: string; name: string }[]>([]);
+  const [nbClusters, setNbClusters] = useState<{ id: number; name: string }[]>([]);
 
   // Mirth servers state (admin)
   interface MirthServerAdmin { id: string; name: string; url: string; username: string; passwordSet: boolean; ignoreSslErrors: boolean; enabled: boolean; sortOrder: number; createdAt: string; }
@@ -579,6 +583,9 @@ function AdminContent() {
     // Also fetch DHCP scopes and DNS zones from agents
     fetch("/api/provisioning/agent/dhcp/scopes").then(r => r.ok ? r.json() : null).then(d => { if (d?.scopes) setProfileDhcpScopes(d.scopes); }).catch(() => {});
     fetch("/api/provisioning/agent/dns/zones").then(r => r.ok ? r.json() : null).then(d => { if (d?.zones) setProfileDnsZones(d.zones); }).catch(() => {});
+    // Fetch VM deploy templates and Netbox clusters for device profile form
+    fetch("/api/vmware/deploy-templates").then(r => r.ok ? r.json() : null).then(d => { if (d?.templates) setProfileDeployTpls(d.templates.map((t: { id: string; name: string }) => ({ id: t.id, name: t.name }))); }).catch(() => {});
+    fetcher("/virtualization/clusters/?limit=1000").then(clusters => setNbClusters(clusters)).catch(() => {});
   }, []);
 
   const fetchCrashLogs = useCallback(async (filters: typeof crashFilters, page: number) => {
@@ -4265,6 +4272,24 @@ function AdminContent() {
                       )}
                     </div>
                     <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Default Gateway</label>
+                      <input type="text" value={profileForm.defaultGateway} onChange={(e) => setProfileForm({ ...profileForm, defaultGateway: e.target.value })} placeholder="e.g. 172.24.152.1" className="w-full px-3 py-1.5 text-sm font-mono border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">VMware Deploy Template</label>
+                      <select value={profileForm.vmDeployTemplateId ?? ""} onChange={(e) => setProfileForm({ ...profileForm, vmDeployTemplateId: e.target.value || null })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                        <option value="">— None (physical device) —</option>
+                        {profileDeployTpls.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Netbox Cluster (VM)</label>
+                      <select value={profileForm.netboxClusterId ?? ""} onChange={(e) => setProfileForm({ ...profileForm, netboxClusterId: e.target.value ? parseInt(e.target.value) : null })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                        <option value="">— None —</option>
+                        {nbClusters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Sort Order</label>
                       <input type="number" value={profileForm.sortOrder} onChange={(e) => setProfileForm({ ...profileForm, sortOrder: parseInt(e.target.value) || 0 })} className="w-full px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
@@ -4348,6 +4373,7 @@ function AdminContent() {
                         <div className="flex items-center gap-2">
                           {(() => { const Ic = PROFILE_ICON_OPTIONS.find(o => o.value === p.icon)?.icon; return Ic ? <Ic className="w-4 h-4 text-text-muted" /> : null; })()}
                           <span className="text-sm font-medium text-text-primary">{p.name}</span>
+                          {(p as DeviceProfileItem).vmDeployTemplateId && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-purple-50 text-purple-600 rounded">VM</span>}
                           {p.requiresAssetTag && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-600 rounded">Asset tag required</span>}
                           {p.autoCreateCmdb && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-50 text-blue-600 rounded">Auto CMDB</span>}
                         </div>
