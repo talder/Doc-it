@@ -18,6 +18,7 @@ const ALLOWED_PREFIXES = [
   "/dcim/devices/",
   "/dcim/interfaces/",
   "/ipam/ip-addresses/",
+  "/virtualization/clusters/",
 ];
 
 export async function GET(
