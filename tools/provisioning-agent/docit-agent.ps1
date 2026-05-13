@@ -628,19 +628,24 @@ function Handle-DhcpDeleteReservation {
     }
 
     $scope = $Query["scope"]
+    Write-Log "INFO" "DHCP Delete: IP=$Ip scope=$scope"
 
     try {
-        # Look up reservation first — needed to get ScopeId and for pipeline delete
+        # Look up reservation to get ScopeId (needed when scope not provided)
         $res = Get-DhcpServerv4Reservation -IPAddress $Ip -ErrorAction SilentlyContinue
         if (-not $res) {
             Send-Json $Response 404 @{ error = "No DHCP reservation found for IP $Ip" }; return
         }
-        # Pipe reservation object to Remove — avoids parameter-set ambiguity across module versions
-        $res | Remove-DhcpServerv4Reservation -ErrorAction Stop
-        Write-Log "INFO" "DHCP: Deleted reservation for $Ip"
+        $foundScope = if ($scope) { $scope } else { $res.ScopeId.IPAddressToString }
+        Write-Log "INFO" "DHCP Delete: Found reservation in scope $foundScope (ClientId=$($res.ClientId))"
+
+        # Use explicit string-typed ScopeId + ClientId — most portable across module versions
+        Remove-DhcpServerv4Reservation -ScopeId $foundScope -ClientId $res.ClientId -ErrorAction Stop
+        Write-Log "INFO" "DHCP: Deleted reservation for $Ip in scope $foundScope"
         Send-Json $Response 200 @{ success = $true }
     } catch {
-        Write-Log "ERROR" "DHCP: Failed to delete reservation: $_"
+        Write-Log "ERROR" "DHCP Delete: Failed for $Ip : $($_.Exception.Message)"
+        Write-Log "ERROR" "DHCP Delete: Full error: $_"
         Send-Json $Response 500 @{ error = $_.Exception.Message }
     }
 }
