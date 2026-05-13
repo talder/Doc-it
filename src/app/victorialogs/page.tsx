@@ -121,6 +121,25 @@ function doExportJSON(entries: LogEntry[]) {
   downloadBlob("logs.json", JSON.stringify(entries, null, 2), "application/json");
 }
 
+/** Extract unique values for a field from log entries, parsing _stream if needed. */
+function extractFieldValues(entries: LogEntry[], field: string): FieldValue[] {
+  const counts = new Map<string, number>();
+  const re = new RegExp(`${field}="([^"]*?)"`);
+  for (const entry of entries) {
+    let val = entry[field];
+    if (!val && entry._stream) {
+      const m = entry._stream.match(re);
+      if (m) val = m[1];
+    }
+    if (val && val !== "-" && val !== "") {
+      counts.set(val, (counts.get(val) ?? 0) + 1);
+    }
+  }
+  return Array.from(counts.entries())
+    .map(([value, hits]) => ({ value, hits }))
+    .sort((a, b) => b.hits - a.hits);
+}
+
 // ── SourceList ─────────────────────────────────────────────────────────────────
 
 function SourceList({
@@ -364,6 +383,16 @@ export default function VictoriaLogsPage() {
       .catch(() => {})
       .finally(() => setOverviewLoading(false));
   }, [configured]);
+
+  // Update sidebar from query results (more reliable than field-values API for syslog)
+  useEffect(() => {
+    if (entries.length === 0) return;
+    setOverview({
+      hosts: extractFieldValues(entries, "hostname"),
+      apps: extractFieldValues(entries, "app_name"),
+      eventTypes: extractFieldValues(entries, "msg_id"),
+    });
+  }, [entries]);
 
   const loadSavedQueries = useCallback(async () => {
     setSavedLoading(true);
