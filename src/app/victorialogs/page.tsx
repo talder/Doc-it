@@ -333,6 +333,10 @@ export default function VictoriaLogsPage() {
   const [saveName, setSaveName] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Host filter
+  const [selectedHost, setSelectedHost] = useState("");
+  const [configuredHosts, setConfiguredHosts] = useState<{ hostname: string; label: string }[]>([]);
+
   const inputRef = useRef<HTMLInputElement>(null);
   const runQueryRef = useRef<() => void>(() => {});
 
@@ -344,6 +348,11 @@ export default function VictoriaLogsPage() {
       .then((d) => setConfigured(!!d.allowed))
       .catch(() => setConfigured(false));
     setRecentQueries(loadRecent());
+    // Fetch configured hosts for filter dropdown
+    fetch("/api/victorialogs/hosts")
+      .then((r) => r.json())
+      .then((d) => { if (d.hosts) setConfiguredHosts(d.hosts); })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -370,6 +379,15 @@ export default function VictoriaLogsPage() {
 
   // ── Core query runner ────────────────────────────────────────────────────────
 
+  /** Wrap a query with the selected host filter if one is active. */
+  const wrapHostFilter = useCallback((q: string): string => {
+    if (!selectedHost) return q;
+    const hostClause = `hostname:"${selectedHost}"`;
+    const trimmed = q.trim();
+    if (!trimmed || trimmed === "*") return hostClause;
+    return `${hostClause} AND ${trimmed}`;
+  }, [selectedHost]);
+
   const runQuery = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -379,7 +397,7 @@ export default function VictoriaLogsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          query: query.trim() || "*",
+          query: wrapHostFilter(query.trim() || "*"),
           start: `now-${timeRange}`,
           end: "now",
           limit,
@@ -401,7 +419,7 @@ export default function VictoriaLogsPage() {
       setError(e instanceof Error ? e.message : "Network error");
     }
     setLoading(false);
-  }, [query, timeRange, limit]);
+  }, [query, timeRange, limit, wrapHostFilter]);
 
   // Keep ref in sync so auto-refresh always calls the latest closure
   useEffect(() => { runQueryRef.current = runQuery; });
@@ -422,7 +440,7 @@ export default function VictoriaLogsPage() {
     fetch("/api/victorialogs/query", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query: q, start: `now-${tr}`, end: "now", limit: lim }),
+      body: JSON.stringify({ query: wrapHostFilter(q), start: `now-${tr}`, end: "now", limit: lim }),
     })
       .then((r) => r.json())
       .then((d) => {
@@ -431,7 +449,7 @@ export default function VictoriaLogsPage() {
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Network error"))
       .finally(() => setLoading(false));
-  }, []);
+  }, [wrapHostFilter]);
 
   // ── Sidebar click handlers ───────────────────────────────────────────────────
 
@@ -679,6 +697,47 @@ export default function VictoriaLogsPage() {
                   {p.label}
                 </button>
               ))}
+
+              {/* Host filter */}
+              {(configuredHosts.length > 0 || overview.hosts.length > 0) && (
+                <>
+                  <span className="text-[10px] text-text-muted uppercase tracking-wide font-medium ml-2">Host:</span>
+                  <select
+                    value={selectedHost}
+                    onChange={(e) => { setSelectedHost(e.target.value); }}
+                    className={`text-xs px-2 py-0.5 rounded-lg border transition-colors ${
+                      selectedHost
+                        ? "bg-accent text-white border-accent"
+                        : "border-border text-text-secondary bg-surface"
+                    }`}
+                  >
+                    <option value="">All hosts</option>
+                    {/* Configured (admin-managed) hosts first */}
+                    {configuredHosts.length > 0 && (
+                      <optgroup label="Configured">
+                        {configuredHosts.map((h) => (
+                          <option key={`c-${h.hostname}`} value={h.hostname}>
+                            {h.label ? `${h.label} (${h.hostname})` : h.hostname}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {/* Auto-discovered hosts (from overview, excluding already configured) */}
+                    {(() => {
+                      const cfgSet = new Set(configuredHosts.map((h) => h.hostname));
+                      const discovered = overview.hosts.filter((h) => !cfgSet.has(h.value));
+                      if (discovered.length === 0) return null;
+                      return (
+                        <optgroup label="Discovered">
+                          {discovered.map((h) => (
+                            <option key={`d-${h.value}`} value={h.value}>{h.value}</option>
+                          ))}
+                        </optgroup>
+                      );
+                    })()}
+                  </select>
+                </>
+              )}
 
               <div className="ml-auto flex items-center gap-1.5 flex-wrap">
                 <span className="text-[10px] text-text-muted uppercase tracking-wide font-medium">Last:</span>

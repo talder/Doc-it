@@ -1673,6 +1673,13 @@ function AdminContent() {
                     )}
                   </div>
 
+                  {/* VictoriaLogs Hosts */}
+                  <div className="border border-border rounded-lg p-4 space-y-3">
+                    <h3 className="text-sm font-semibold text-text-primary">VictoriaLogs — Monitored Hosts</h3>
+                    <p className="text-xs text-text-muted">Add hosts that send syslog to VictoriaLogs. These appear in the host filter dropdown on the VictoriaLogs page.</p>
+                    <VlHostManager flash={flash} />
+                  </div>
+
                   <div className="flex items-center gap-3">
                     <button
                       onClick={async () => {
@@ -4545,6 +4552,100 @@ function AdminContent() {
         </div>
       </main>
     </div>
+  );
+}
+
+// ── VictoriaLogs Host Manager Component
+
+function VlHostManager({ flash }: { flash: (msg: string, type: "error" | "success") => void }) {
+  const [hosts, setHosts] = useState<{ id: number; hostname: string; label: string; addedAt: string }[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [hostname, setHostname] = useState("");
+  const [label, setLabel] = useState("");
+
+  const fetchHosts = useCallback(async () => {
+    const r = await fetch("/api/victorialogs/hosts").catch(() => null);
+    if (r?.ok) {
+      const d = await r.json();
+      setHosts(d.hosts ?? []);
+    }
+    setLoaded(true);
+  }, []);
+
+  useEffect(() => { fetchHosts(); }, [fetchHosts]);
+
+  return (
+    <>
+      {loaded && hosts.length > 0 && (
+        <div className="space-y-1">
+          {hosts.map((h) => (
+            <div key={h.id} className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border border-border rounded-lg">
+              <Server className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />
+              <span className="text-xs font-mono text-text-primary flex-1 truncate">{h.hostname}</span>
+              {h.label && <span className="text-xs text-text-muted truncate">{h.label}</span>}
+              <button
+                onClick={async () => {
+                  const r = await fetch("/api/victorialogs/hosts", {
+                    method: "DELETE",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: h.id }),
+                  });
+                  if (r.ok) fetchHosts();
+                  else flash("Failed to remove host", "error");
+                }}
+                className="p-0.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500"
+                title="Remove"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={hostname}
+          onChange={(e) => setHostname(e.target.value)}
+          placeholder="hostname (e.g. vxfw01)"
+          className="flex-1 px-3 py-1.5 text-sm font-mono border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && hostname.trim()) {
+              fetch("/api/victorialogs/hosts", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ hostname: hostname.trim(), label: label.trim() }),
+              }).then((r) => {
+                if (r.ok) { setHostname(""); setLabel(""); fetchHosts(); }
+                else flash("Failed to add host", "error");
+              });
+            }
+          }}
+        />
+        <input
+          type="text"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder="label (optional)"
+          className="w-36 px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <button
+          disabled={!hostname.trim()}
+          onClick={async () => {
+            const r = await fetch("/api/victorialogs/hosts", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ hostname: hostname.trim(), label: label.trim() }),
+            });
+            if (r.ok) { setHostname(""); setLabel(""); fetchHosts(); }
+            else flash("Failed to add host", "error");
+          }}
+          className="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50"
+        >
+          Add
+        </button>
+      </div>
+    </>
   );
 }
 

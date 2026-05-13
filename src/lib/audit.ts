@@ -20,7 +20,7 @@ import {
   createHmac,
   pbkdf2Sync,
 } from "crypto";
-import { readJsonConfig, writeJsonConfig } from "./config";
+import { readJsonConfig, writeJsonConfig, getDb } from "./config";
 import type {
   AuditConfig,
   AuditEntry,
@@ -640,6 +640,55 @@ export interface ChainVerifyResult {
  * Walk every audit log file in chronological order, decrypt each entry,
  * recompute its HMAC, and verify the hash chain is intact.
  */
+// ── VictoriaLogs managed hosts ──────────────────────────────────────────────
+
+export interface VlHost {
+  id: number;
+  hostname: string;
+  label: string;
+  addedAt: string;
+}
+
+function initVlHostsTable(): void {
+  getDb().exec(`
+    CREATE TABLE IF NOT EXISTS victorialogs_hosts (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      hostname  TEXT NOT NULL UNIQUE,
+      label     TEXT NOT NULL DEFAULT '',
+      added_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+}
+
+export function listVlHosts(): VlHost[] {
+  initVlHostsTable();
+  const rows = getDb().prepare(
+    "SELECT id, hostname, label, added_at FROM victorialogs_hosts ORDER BY hostname ASC"
+  ).all() as Array<{ id: number; hostname: string; label: string; added_at: string }>;
+  return rows.map((r) => ({ id: r.id, hostname: r.hostname, label: r.label, addedAt: r.added_at }));
+}
+
+export function addVlHost(hostname: string, label = ""): VlHost {
+  initVlHostsTable();
+  const h = hostname.trim();
+  if (!h) throw new Error("Hostname is required");
+  getDb().prepare(
+    "INSERT OR IGNORE INTO victorialogs_hosts (hostname, label) VALUES (?, ?)"
+  ).run(h, label.trim());
+  const row = getDb().prepare(
+    "SELECT id, hostname, label, added_at FROM victorialogs_hosts WHERE hostname = ?"
+  ).get(h) as { id: number; hostname: string; label: string; added_at: string };
+  return { id: row.id, hostname: row.hostname, label: row.label, addedAt: row.added_at };
+}
+
+export function removeVlHost(id: number): boolean {
+  initVlHostsTable();
+  const r = getDb().prepare("DELETE FROM victorialogs_hosts WHERE id = ?").run(id);
+  return r.changes > 0;
+}
+
+// ── Audit chain integrity verification ─────────────────────────────────────────
+
 export async function verifyAuditChain(): Promise<ChainVerifyResult> {
   let files: string[] = [];
   try {
