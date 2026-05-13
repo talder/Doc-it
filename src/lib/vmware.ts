@@ -1460,9 +1460,10 @@ export async function cloneVmFromTemplate(
     // DNS servers
     const dnsXml = (spec.dns ?? []).filter(Boolean).map(d => `<dnsServerList>${esc(d)}</dnsServerList>`).join("");
 
-    // Build location spec
-    let locationXml = `<pool type="ResourcePool">${esc(rpMor)}</pool>`;
+    // Build location spec (WSDL order: datastore, pool, host)
+    let locationXml = "";
     if (spec.datastoreId) locationXml += `<datastore type="Datastore">${esc(spec.datastoreId)}</datastore>`;
+    locationXml += `<pool type="ResourcePool">${esc(rpMor)}</pool>`;
 
     // Config spec for CPU/memory overrides
     let configSpecXml = "";
