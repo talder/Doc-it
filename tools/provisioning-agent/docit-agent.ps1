@@ -34,7 +34,7 @@ if (-not (Test-Path $ConfigPath)) {
 $Config = Get-Content $ConfigPath -Raw | ConvertFrom-Json
 
 # Helper: safely read optional config properties under StrictMode
-function Get-ConfigValue { param($Name, $Default) if ($Config.PSObject.Properties.Match($Name).Count -gt 0) { $Config.$Name } else { $Default } }
+function Get-ConfigValue { param($Name, $Default) if ($Config.PSObject.Properties.Match($Name).Count -gt 0 -and $Config.$Name) { $Config.$Name } else { $Default } }
 
 $Port       = Get-ConfigValue 'port' 8520
 $Token      = Get-ConfigValue 'token' $null
