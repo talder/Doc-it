@@ -564,11 +564,19 @@ export async function executeProvisioning(
       }) as { id: number; address: string } | Array<{ id: number; address: string }>;
       ipData = Array.isArray(result) ? result[0] : result;
     } else {
-      // Register manual IP
+      // Register manual IP — look up the prefix to get the correct mask
+      let ipWithMask = req.manualIp!;
+      if (req.prefixId && !ipWithMask.includes("/")) {
+        try {
+          const pfx = await netboxFetch(`/ipam/prefixes/${req.prefixId}/`) as { prefix: string };
+          const mask = pfx.prefix.split("/")[1]; // e.g. "22" from "172.24.152.0/22"
+          if (mask) ipWithMask = `${ipWithMask}/${mask}`;
+        } catch { /* fall through — Netbox will default to /32 */ }
+      }
       const result = await netboxFetch("/ipam/ip-addresses/", {
         method: "POST",
         body: JSON.stringify({
-          address: req.manualIp,
+          address: ipWithMask,
           status: "dhcp",
           dns_name: fqdn,
           description: req.comment || req.deviceName,
