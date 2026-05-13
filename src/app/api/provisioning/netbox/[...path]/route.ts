@@ -21,6 +21,11 @@ const ALLOWED_PREFIXES = [
   "/virtualization/clusters/",
 ];
 
+// Paths that accept POST (create) requests
+const POST_ALLOWED_PREFIXES = [
+  "/dcim/device-types/",
+];
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> },
@@ -49,6 +54,33 @@ export async function GET(
   try {
     const data = await netboxFetch(`${apiPath}${qs}`, {}, isRefData);
     return NextResponse.json(data);
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Netbox request failed" },
+      { status: 502 },
+    );
+  }
+}
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ path: string[] }> },
+) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { path: segments } = await params;
+  let apiPath = "/" + segments.join("/");
+  if (!apiPath.endsWith("/")) apiPath += "/";
+
+  if (!POST_ALLOWED_PREFIXES.some(p => apiPath.startsWith(p))) {
+    return NextResponse.json({ error: "POST not allowed for this path" }, { status: 403 });
+  }
+
+  try {
+    const body = await request.json();
+    const data = await netboxFetch(apiPath, { method: "POST", body: JSON.stringify(body) });
+    return NextResponse.json(data, { status: 201 });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Netbox request failed" },

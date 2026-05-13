@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle, ChevronRight,
-  Clock, ExternalLink, History, Loader2, Monitor, RefreshCw,
+  Clock, ExternalLink, History, Loader2, Monitor, Plus, RefreshCw,
   Server, Shield, X, XCircle, Printer, Laptop, Box,
   HardDrive, Database, Network, Wifi, Cloud, Cpu, Smartphone, Globe,
 } from "lucide-react";
@@ -63,9 +63,10 @@ const STATUS_STYLE: Record<string, { cls: string; icon: React.ReactNode }> = {
 
 // ── Netbox data fetcher ──────────────────────────────────────────────────────
 
-function useNetboxList<T>(path: string, enabled = true): { data: T[]; loading: boolean } {
+function useNetboxList<T>(path: string, enabled = true): { data: T[]; loading: boolean; refresh: () => void } {
   const [data, setData] = useState<T[]>([]);
   const [loading, setLoading] = useState(false);
+  const [tick, setTick] = useState(0);
   useEffect(() => {
     if (!enabled) return;
     setLoading(true);
@@ -74,8 +75,9 @@ function useNetboxList<T>(path: string, enabled = true): { data: T[]; loading: b
       .then(d => { if (d?.results) setData(d.results); })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [path, enabled]);
-  return { data, loading };
+  }, [path, enabled, tick]);
+  const refresh = useCallback(() => setTick(t => t + 1), []);
+  return { data, loading, refresh };
 }
 
 // ── Step types ───────────────────────────────────────────────────────────────
@@ -137,10 +139,50 @@ export default function ProvisionWizard() {
 
   // Reference data
   const { data: manufacturers } = useNetboxList<NetboxManufacturer>("/dcim/manufacturers/?limit=1000", step >= 2);
-  const { data: allDeviceTypes } = useNetboxList<NetboxDeviceType>(
+  const { data: allDeviceTypes, refresh: refreshDeviceTypes } = useNetboxList<NetboxDeviceType>(
     vendorId ? `/dcim/device-types/?manufacturer_id=${vendorId}&limit=1000` : "/dcim/device-types/?limit=0",
     step >= 2 && vendorId != null,
   );
+
+  // New device type creation state
+  const [showNewDeviceType, setShowNewDeviceType] = useState(false);
+  const [newDtModel, setNewDtModel] = useState("");
+  const [newDtPartNumber, setNewDtPartNumber] = useState("");
+  const [newDtSaving, setNewDtSaving] = useState(false);
+  const [newDtError, setNewDtError] = useState("");
+
+  const createDeviceType = async () => {
+    if (!vendorId || !newDtModel.trim()) return;
+    setNewDtSaving(true);
+    setNewDtError("");
+    try {
+      const slug = newDtModel.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      const res = await fetch("/api/provisioning/netbox/dcim/device-types/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          manufacturer: vendorId,
+          model: newDtModel.trim(),
+          slug,
+          part_number: newDtPartNumber.trim() || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || `HTTP ${res.status}`);
+      }
+      const created = await res.json() as NetboxDeviceType;
+      refreshDeviceTypes();
+      setDeviceTypeId(created.id);
+      setShowNewDeviceType(false);
+      setNewDtModel("");
+      setNewDtPartNumber("");
+    } catch (err) {
+      setNewDtError(err instanceof Error ? err.message : "Failed to create device type");
+    } finally {
+      setNewDtSaving(false);
+    }
+  };
   const { data: sites } = useNetboxList<NetboxSite>("/dcim/sites/?limit=1000", step >= 2);
   const { data: vlans } = useNetboxList<NetboxVlan>("/ipam/vlans/?limit=1000", step >= 3);
   const { data: prefixes } = useNetboxList<NetboxPrefix>("/ipam/prefixes/?limit=1000", step >= 3);
@@ -353,12 +395,46 @@ export default function ProvisionWizard() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-text-secondary mb-1">Device Type *</label>
-                  <select value={deviceTypeId ?? ""} onChange={e => setDeviceTypeId(Number(e.target.value) || null)}
-                    disabled={!vendorId}
-                    className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent disabled:opacity-50">
-                    <option value="">Select type…</option>
-                    {allDeviceTypes.map(t => <option key={t.id} value={t.id}>{t.model}{t.part_number ? ` (${t.part_number})` : ""}</option>)}
-                  </select>
+                  <div className="flex gap-1.5">
+                    <select value={deviceTypeId ?? ""} onChange={e => setDeviceTypeId(Number(e.target.value) || null)}
+                      disabled={!vendorId}
+                      className="flex-1 px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent disabled:opacity-50">
+                      <option value="">Select type…</option>
+                      {allDeviceTypes.map(t => <option key={t.id} value={t.id}>{t.model}{t.part_number ? ` (${t.part_number})` : ""}</option>)}
+                    </select>
+                    <button type="button" onClick={() => { setShowNewDeviceType(true); setNewDtError(""); }}
+                      disabled={!vendorId}
+                      title="Create new device type in Netbox"
+                      className="px-2 py-2 border border-border rounded-lg bg-surface text-text-secondary hover:bg-accent hover:text-white hover:border-accent transition-colors disabled:opacity-40 disabled:pointer-events-none">
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                  {showNewDeviceType && vendorId && (
+                    <div className="mt-2 p-3 border border-accent/30 rounded-lg bg-accent/5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium text-text-primary">New device type for {filteredManufacturers.find(m => m.id === vendorId)?.name ?? "selected vendor"}</span>
+                        <button onClick={() => setShowNewDeviceType(false)} className="text-text-muted hover:text-text-primary">
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <input value={newDtModel} onChange={e => setNewDtModel(e.target.value)}
+                        placeholder="Model name *" autoFocus
+                        className="w-full px-2.5 py-1.5 text-sm border border-border rounded-md bg-surface text-text-primary focus:outline-none focus:border-accent" />
+                      <input value={newDtPartNumber} onChange={e => setNewDtPartNumber(e.target.value)}
+                        placeholder="Part number (optional)"
+                        className="w-full px-2.5 py-1.5 text-sm border border-border rounded-md bg-surface text-text-primary focus:outline-none focus:border-accent" />
+                      {newDtError && <p className="text-[10px] text-red-500">{newDtError}</p>}
+                      <div className="flex justify-end gap-2">
+                        <button onClick={() => setShowNewDeviceType(false)}
+                          className="px-3 py-1 text-xs text-text-muted hover:bg-muted rounded-md">Cancel</button>
+                        <button onClick={createDeviceType} disabled={!newDtModel.trim() || newDtSaving}
+                          className="flex items-center gap-1 px-3 py-1 text-xs font-medium bg-accent text-white rounded-md hover:bg-accent/90 disabled:opacity-40">
+                          {newDtSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                          Create
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
