@@ -1516,11 +1516,11 @@ export async function cloneVmFromTemplate(
   <name>${esc(spec.vmName)}</name>
   <spec>
     <location>${locationXml}</location>
-    <powerOn>true</powerOn>
     <template>false</template>
     ${configSpecXml}
     ${networkXml}
     ${customizationXml}
+    <powerOn>true</powerOn>
   </spec>
 </CloneVM_Task>
 </soapenv:Body></soapenv:Envelope>`;
