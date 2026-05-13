@@ -273,6 +273,8 @@ export async function netboxFetch(
     throw new Error(`Netbox ${res.status}: ${txt.slice(0, 300)}`);
   }
 
+  // 204 No Content (e.g. DELETE) has no body
+  if (res.status === 204) return null;
   const data = await res.json();
   if (useCache) _cache.set(cacheKey, { data, ts: Date.now() });
   return data;
@@ -738,11 +740,11 @@ export async function executeDecommission(
 ): Promise<DecommissionResult> {
   const cfg = await readProvisioningConfig();
 
+  // Netbox cascades: deleting a device removes its interfaces and assigned IPs.
+  // Order: DNS → DHCP → Device (IP + interface cascade-deleted with device).
   const steps: DecommissionStep[] = [
     { id: "dns-record",        label: "Delete DNS record",          status: "pending" },
     { id: "dhcp-reservation",  label: "Delete DHCP reservation",   status: "pending" },
-    { id: "netbox-ip",         label: "Delete IP address",          status: "pending" },
-    { id: "netbox-interface",  label: "Delete network interface",   status: "pending" },
     { id: "netbox-device",     label: "Delete device from Netbox",  status: "pending" },
   ];
 
@@ -825,37 +827,12 @@ export async function executeDecommission(
       markStep("dhcp-reservation", "done", !cfg.dhcp.endpoint ? "Skipped — DHCP not configured" : "Skipped — no IP address");
     }
 
-    // 4. Delete Netbox IP address
-    markStep("netbox-ip", "running");
-    if (primaryIp?.id) {
-      try {
-        await netboxFetch(`/ipam/ip-addresses/${primaryIp.id}/`, { method: "DELETE" });
-        markStep("netbox-ip", "done", `Deleted IP ${ipAddress} (ID ${primaryIp.id})`);
-      } catch (e) {
-        markStep("netbox-ip", "failed", e instanceof Error ? e.message : "Failed");
-      }
-    } else {
-      markStep("netbox-ip", "done", "Skipped — no primary IP");
-    }
-
-    // 5. Delete Netbox interface
-    markStep("netbox-interface", "running");
-    if (interfaceId) {
-      try {
-        await netboxFetch(`/dcim/interfaces/${interfaceId}/`, { method: "DELETE" });
-        markStep("netbox-interface", "done", `Deleted interface ID ${interfaceId}`);
-      } catch (e) {
-        markStep("netbox-interface", "failed", e instanceof Error ? e.message : "Failed");
-      }
-    } else {
-      markStep("netbox-interface", "done", "Skipped — no interface found");
-    }
-
-    // 6. Delete Netbox device
+    // 4. Delete Netbox device (cascades: interfaces + assigned IPs are auto-deleted)
     markStep("netbox-device", "running");
     try {
       await netboxFetch(`/dcim/devices/${deviceId}/`, { method: "DELETE" });
-      markStep("netbox-device", "done", `Deleted device ID ${deviceId}`);
+      const cascaded = [ipAddress ? `IP ${ipAddress}` : null, interfaceId ? `interface ${interfaceId}` : null].filter(Boolean).join(", ");
+      markStep("netbox-device", "done", `Deleted device ID ${deviceId}${cascaded ? ` (cascade: ${cascaded})` : ""}`);
     } catch (e) {
       markStep("netbox-device", "failed", e instanceof Error ? e.message : "Failed");
     }

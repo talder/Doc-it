@@ -181,8 +181,6 @@ export type PipelineStepId =
 export type DecommissionStepId =
   | "dns-record"
   | "dhcp-reservation"
-  | "netbox-ip"
-  | "netbox-interface"
   | "netbox-device";
 
 export interface DecommissionStep {
