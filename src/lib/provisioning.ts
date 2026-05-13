@@ -140,9 +140,10 @@ function initProvisioningTables(): void {
   const db = getDb();
   const cols = db.prepare("PRAGMA table_info(provisioning_device_profiles)").all() as Array<{ name: string }>;
   const colNames = new Set(cols.map(c => c.name));
-  if (!colNames.has("default_gateway"))    db.exec("ALTER TABLE provisioning_device_profiles ADD COLUMN default_gateway TEXT NOT NULL DEFAULT ''");
-  if (!colNames.has("netbox_cluster_id"))  db.exec("ALTER TABLE provisioning_device_profiles ADD COLUMN netbox_cluster_id INTEGER");
-  if (!colNames.has("default_tags"))       db.exec("ALTER TABLE provisioning_device_profiles ADD COLUMN default_tags TEXT NOT NULL DEFAULT '[]'");
+  if (!colNames.has("default_gateway"))        db.exec("ALTER TABLE provisioning_device_profiles ADD COLUMN default_gateway TEXT NOT NULL DEFAULT ''");
+  if (!colNames.has("vm_deploy_template_id"))  db.exec("ALTER TABLE provisioning_device_profiles ADD COLUMN vm_deploy_template_id TEXT");
+  if (!colNames.has("netbox_cluster_id"))      db.exec("ALTER TABLE provisioning_device_profiles ADD COLUMN netbox_cluster_id INTEGER");
+  if (!colNames.has("default_tags"))           db.exec("ALTER TABLE provisioning_device_profiles ADD COLUMN default_tags TEXT NOT NULL DEFAULT '[]'");
 }
 
 // ── Device Profile CRUD ──────────────────────────────────────────────────────
