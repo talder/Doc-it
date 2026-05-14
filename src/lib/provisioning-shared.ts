@@ -85,6 +85,7 @@ export interface DeviceProfile {
   autoCreateCmdb: boolean;
   vmDeployTemplateId: string | null;
   netboxClusterId: number | null;  // Netbox virtualization cluster (for VM profiles)
+  nacEndSystemGroup: string;       // XIQ-SE NAC end-system group for VLAN assignment
   sortOrder: number;
 }
 
@@ -180,12 +181,14 @@ export type PipelineStepId =
   | "netbox-primary-ip"
   | "dhcp-reservation"
   | "dns-record"
+  | "nac-push"
   | "cmdb-ci"
   | "vmware-deploy";
 
 // ── Decommission pipeline ────────────────────────────────────────────────────
 
 export type DecommissionStepId =
+  | "nac-remove"
   | "dns-record"
   | "dhcp-reservation"
   | "netbox-device";
@@ -261,4 +264,35 @@ export function isValidIpv4(ip: string): boolean {
 
 export function profileIcon(profile: DeviceProfile): string {
   return profile.icon || "📦";
+}
+
+// ── XIQ-SE client-safe types ─────────────────────────────────────────────────
+
+export interface XiqseServerPublic {
+  id: string;
+  name: string;
+  url: string;
+  username: string;
+  passwordSet: boolean;
+  ignoreSslErrors: boolean;
+  enabled: boolean;
+  sortOrder: number;
+  createdAt: string;
+}
+
+export interface NacGroupInfo {
+  name: string;
+  type: string;
+  description: string;
+}
+
+export interface NacEndSystemLookup {
+  macAddress: string;
+  ipAddress: string;
+  state: string;
+  switchIP: string;
+  switchPort: string;
+  policy: string;
+  nacProfileName: string;
+  groups: string[];
 }

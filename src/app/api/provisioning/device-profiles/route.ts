@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
       autoCreateCmdb: !!body.autoCreateCmdb,
       vmDeployTemplateId: body.vmDeployTemplateId ?? null,
       netboxClusterId: body.netboxClusterId ?? null,
+      nacEndSystemGroup: String(body.nacEndSystemGroup ?? ""),
       sortOrder: Number(body.sortOrder ?? 0),
     });
     return NextResponse.json({ profile });

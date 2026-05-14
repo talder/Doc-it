@@ -16,6 +16,9 @@ import { _writeAuditLogDirect, sendRawSyslog } from "./audit";
 import {
   readVmwareConfig, getVmDeployTemplate, deployVmViaPowerCLI,
 } from "./vmware";
+import {
+  addMacToNacGroup, removeMacFromNacGroup, getFirstEnabledServer,
+} from "./xiqse";
 import type {
   ProvisioningConfig, DeviceProfile, ProvisioningRequest,
   PreflightResult, PreflightCheckId,
@@ -144,6 +147,7 @@ function initProvisioningTables(): void {
   if (!colNames.has("vm_deploy_template_id"))  db.exec("ALTER TABLE provisioning_device_profiles ADD COLUMN vm_deploy_template_id TEXT");
   if (!colNames.has("netbox_cluster_id"))      db.exec("ALTER TABLE provisioning_device_profiles ADD COLUMN netbox_cluster_id INTEGER");
   if (!colNames.has("default_tags"))           db.exec("ALTER TABLE provisioning_device_profiles ADD COLUMN default_tags TEXT NOT NULL DEFAULT '[]'");
+  if (!colNames.has("nac_end_system_group"))   db.exec("ALTER TABLE provisioning_device_profiles ADD COLUMN nac_end_system_group TEXT NOT NULL DEFAULT ''");
 }
 
 // ── Device Profile CRUD ──────────────────────────────────────────────────────
@@ -172,8 +176,9 @@ export function createDeviceProfile(data: Omit<DeviceProfile, "id">): DeviceProf
       (id, name, icon, netbox_role_id, default_vlan_id, default_prefix_id,
        default_dns_zone, default_dhcp_scope, default_gateway,
        manufacturer_filter, requires_asset_tag, auto_create_cmdb,
-       vm_deploy_template_id, netbox_cluster_id, default_tags, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       vm_deploy_template_id, netbox_cluster_id, default_tags,
+       nac_end_system_group, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, data.name, data.icon, data.netboxRoleId, data.defaultVlanId,
     data.defaultPrefixId, data.defaultDnsZone ?? "", data.defaultDhcpScope ?? "",
@@ -183,6 +188,7 @@ export function createDeviceProfile(data: Omit<DeviceProfile, "id">): DeviceProf
     data.vmDeployTemplateId ?? null,
     data.netboxClusterId ?? null,
     JSON.stringify(data.defaultTags ?? []),
+    data.nacEndSystemGroup ?? "",
     data.sortOrder ?? 0,
   );
   return getDeviceProfile(id)!;
@@ -200,7 +206,7 @@ export function updateDeviceProfile(id: string, data: Partial<DeviceProfile>): D
       manufacturer_filter = ?,
       requires_asset_tag = ?, auto_create_cmdb = ?,
       vm_deploy_template_id = ?, netbox_cluster_id = ?,
-      default_tags = ?, sort_order = ?
+      default_tags = ?, nac_end_system_group = ?, sort_order = ?
     WHERE id = ?
   `).run(
     data.name ?? existing.name,
@@ -217,6 +223,7 @@ export function updateDeviceProfile(id: string, data: Partial<DeviceProfile>): D
     data.vmDeployTemplateId !== undefined ? data.vmDeployTemplateId : existing.vmDeployTemplateId,
     data.netboxClusterId !== undefined ? data.netboxClusterId : existing.netboxClusterId,
     JSON.stringify(data.defaultTags ?? existing.defaultTags),
+    data.nacEndSystemGroup !== undefined ? data.nacEndSystemGroup : existing.nacEndSystemGroup,
     data.sortOrder ?? existing.sortOrder,
     id,
   );
@@ -246,6 +253,7 @@ function rowToProfile(row: Record<string, unknown>): DeviceProfile {
     vmDeployTemplateId: row.vm_deploy_template_id ? String(row.vm_deploy_template_id) : null,
     netboxClusterId: row.netbox_cluster_id != null ? Number(row.netbox_cluster_id) : null,
     defaultTags: (() => { try { return JSON.parse(String(row.default_tags ?? "[]")); } catch { return []; } })(),
+    nacEndSystemGroup: String(row.nac_end_system_group ?? ""),
     sortOrder: Number(row.sort_order ?? 0),
   };
 }
@@ -574,6 +582,7 @@ export async function executeProvisioning(
     { id: "netbox-ip",         label: "Allocate IP address",           status: "pending" },
     { id: "netbox-primary-ip", label: "Set primary IP",                status: "pending" },
     { id: "dhcp-reservation",  label: "Create DHCP reservation",       status: "pending" },
+    ...(profile?.nacEndSystemGroup ? [{ id: "nac-push" as const, label: "Push MAC to XIQ-SE NAC group", status: "pending" as const }] : []),
     { id: "dns-record",        label: "Create DNS record",             status: "pending" },
   ];
   if (profile?.autoCreateCmdb) {
@@ -736,7 +745,22 @@ export async function executeProvisioning(
       markStep("dhcp-reservation", "done", "Skipped — DHCP not configured");
     }
 
-    // Step 6: DNS record
+    // Step 6: NAC push (XIQ-SE end-system group)
+    if (profile?.nacEndSystemGroup) {
+      markStep("nac-push", "running");
+      const nacResult = await addMacToNacGroup(
+        req.macAddress,
+        profile.nacEndSystemGroup,
+        `${req.deviceName} — provisioned by doc-it`,
+      );
+      if (nacResult.success) {
+        markStep("nac-push", "done", `Added to ${profile.nacEndSystemGroup}`);
+      } else {
+        throw new Error(`NAC push failed: ${nacResult.message}`);
+      }
+    }
+
+    // Step 7: DNS record
     markStep("dns-record", "running");
     if (cfg.dns.endpoint) {
       const dnsRes = await providerFetch(cfg.dns.endpoint, "/dns/records", cfg.dns.tokenEncrypted, cfg.dns.ignoreSslErrors, {
@@ -860,6 +884,14 @@ export async function executeProvisioning(
         dhcpStep.status = "rolled-back";
       }
     }
+    // Rollback NAC push if it was completed
+    if (profile?.nacEndSystemGroup) {
+      const nacStep = steps.find(s => s.id === "nac-push");
+      if (nacStep?.status === "done") {
+        try { await removeMacFromNacGroup(req.macAddress, profile.nacEndSystemGroup); } catch { /* best-effort */ }
+        nacStep.status = "rolled-back";
+      }
+    }
     // Rollback DNS if it was completed
     if (cfg.dns.endpoint) {
       const dnsStep = steps.find(s => s.id === "dns-record");
@@ -895,8 +927,10 @@ export async function executeDecommission(
   const cfg = await readProvisioningConfig();
 
   // Netbox cascades: deleting a device removes its interfaces and assigned IPs.
-  // Order: DNS → DHCP → Device (IP + interface cascade-deleted with device).
+  // Order: NAC remove → DNS → DHCP → Device (IP + interface cascade-deleted with device).
+  const xiqseServer = await getFirstEnabledServer();
   const steps: DecommissionStep[] = [
+    ...(xiqseServer ? [{ id: "nac-remove" as const, label: "Remove MAC from XIQ-SE NAC groups", status: "pending" as const }] : []),
     { id: "dns-record",        label: "Delete DNS record",          status: "pending" },
     { id: "dhcp-reservation",  label: "Delete DHCP reservation",   status: "pending" },
     { id: "netbox-device",     label: "Delete device from Netbox",  status: "pending" },
@@ -933,6 +967,28 @@ export async function executeDecommission(
       const dot = dnsName.indexOf(".");
       dnsHostname = dnsName.slice(0, dot);
       dnsZone = dnsName.slice(dot + 1);
+    }
+
+    // 1b. Remove MAC from XIQ-SE NAC groups (best-effort)
+    if (xiqseServer && macAddress) {
+      markStep("nac-remove", "running");
+      try {
+        // Look up current group memberships and remove from all
+        const { lookupNacMac } = await import("./xiqse");
+        const nacInfo = await lookupNacMac(macAddress);
+        if (nacInfo && nacInfo.groups.length > 0) {
+          for (const grp of nacInfo.groups) {
+            await removeMacFromNacGroup(macAddress, grp);
+          }
+          markStep("nac-remove", "done", `Removed from ${nacInfo.groups.join(", ")}`);
+        } else {
+          markStep("nac-remove", "done", "MAC not in any NAC groups");
+        }
+      } catch (e) {
+        markStep("nac-remove", "failed", e instanceof Error ? e.message : "NAC removal failed");
+      }
+    } else if (xiqseServer) {
+      markStep("nac-remove", "done", "Skipped — no MAC address on device");
     }
 
     // 2. Delete DNS record

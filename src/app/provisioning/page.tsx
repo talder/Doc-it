@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  ArrowLeft, FileText, Globe, Network, Server, Shield, Trash2, Users,
+  ArrowLeft, FileText, Globe, Network, Server, Shield, Trash2, Users, Wifi,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 
@@ -13,12 +13,13 @@ const DnsTab = dynamic(() => import("@/components/provisioning/DnsTab"), { ssr: 
 const DhcpTab = dynamic(() => import("@/components/provisioning/DhcpTab"), { ssr: false });
 const AdTab = dynamic(() => import("@/components/provisioning/AdTab"), { ssr: false });
 const VmDeployTab = dynamic(() => import("@/components/provisioning/VmDeployTab"), { ssr: false });
+const NacTab = dynamic(() => import("@/components/provisioning/NacTab"), { ssr: false });
 const AuditPanel = dynamic(() => import("@/components/provisioning/AuditPanel"), { ssr: false });
 const AgentLogsPanel = dynamic(() => import("@/components/provisioning/AgentLogsPanel"), { ssr: false });
 
 // ── Tab definitions ──────────────────────────────────────────────────────────
 
-type TabId = "provision" | "decommission" | "deploy-vm" | "dns" | "dhcp" | "ad" | "audit" | "logs";
+type TabId = "provision" | "decommission" | "deploy-vm" | "dns" | "dhcp" | "nac" | "ad" | "audit" | "logs";
 
 interface TabDef {
   id: TabId;
@@ -33,6 +34,7 @@ const TABS: TabDef[] = [
   { id: "deploy-vm",     label: "Deploy VM",       icon: <Server className="w-4 h-4" /> },
   { id: "dns",           label: "DNS",             icon: <Globe className="w-4 h-4" /> },
   { id: "dhcp",      label: "DHCP",              icon: <Network className="w-4 h-4" /> },
+  { id: "nac",       label: "NAC",               icon: <Wifi className="w-4 h-4" /> },
   { id: "ad",        label: "Active Directory",  icon: <Users className="w-4 h-4" />, adminOnly: true },
   { id: "audit",     label: "Audit Log",         icon: <Shield className="w-4 h-4" /> },
   { id: "logs",      label: "Agent Logs",        icon: <FileText className="w-4 h-4" /> },
@@ -110,6 +112,7 @@ export default function ProvisioningPage() {
         {activeTab === "deploy-vm" && <VmDeployTab />}
         {activeTab === "dns" && <DnsTab />}
         {activeTab === "dhcp" && <DhcpTab />}
+        {activeTab === "nac" && <NacTab />}
         {activeTab === "ad" && isAdmin && <AdTab />}
         {activeTab === "audit" && <AuditPanel />}
         {activeTab === "logs" && <AgentLogsPanel />}
