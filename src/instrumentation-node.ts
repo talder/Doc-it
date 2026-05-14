@@ -420,7 +420,53 @@ setInterval(async () => {
   }
 }, INTERVAL_MS);
 
-// ── Crash log retention cleanup (once per day) ──────────────────────────────────────
+// ── Helpdesk Scheduled Reports (every 60 seconds) ───────────────────────────────────────────
+
+setInterval(async () => {
+  try {
+    const { readConfig, readTickets, filterTickets, ticketsToCsv, updateScheduledReport } = await import("./lib/helpdesk");
+    const { sendMail } = await import("./lib/email");
+    const cfg = await readConfig();
+    const reports = (cfg.scheduledReports || []).filter((r) => r.enabled);
+    if (reports.length === 0) return;
+
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, "0");
+    const mm = String(now.getMinutes()).padStart(2, "0");
+    const currentTime = `${hh}:${mm}`;
+    const currentDow = now.getDay();
+    const currentDom = now.getDate();
+
+    for (const r of reports) {
+      if (r.time !== currentTime) continue;
+      if (r.schedule === "weekly" && r.dayOfWeek !== undefined && r.dayOfWeek !== currentDow) continue;
+      if (r.schedule === "monthly" && r.dayOfMonth !== undefined && r.dayOfMonth !== currentDom) continue;
+
+      // Debounce: skip if already sent today
+      if (r.lastSentAt) {
+        const diffMin = (now.getTime() - new Date(r.lastSentAt).getTime()) / 60_000;
+        if (diffMin < 60 * 23) continue;
+      }
+
+      const data = await readTickets();
+      const tickets = r.filters ? filterTickets(data.tickets, r.filters) : data.tickets;
+      const csv = ticketsToCsv(tickets);
+      const summary = `Total tickets: ${tickets.length}. Open: ${tickets.filter((t) => t.status === "Open").length}, In Progress: ${tickets.filter((t) => t.status === "In Progress").length}, Resolved: ${tickets.filter((t) => t.status === "Resolved").length}, Closed: ${tickets.filter((t) => t.status === "Closed").length}.`;
+
+      for (const email of r.recipients) {
+        await sendMail(email, `[Helpdesk] Scheduled Report: ${r.name}`,
+          `<p>Report: <strong>${r.name}</strong></p><p>${summary}</p><p>CSV data is attached below:</p><pre style="font-size:11px;max-height:400px;overflow:auto">${csv.slice(0, 10000)}</pre>`);
+      }
+
+      await updateScheduledReport(r.id, { lastSentAt: now.toISOString() });
+      console.log(`[helpdesk-reports] Sent report "${r.name}" to ${r.recipients.length} recipient(s)`);
+    }
+  } catch (err) {
+    console.error("[helpdesk-reports] Error:", err);
+  }
+}, INTERVAL_MS);
+
+// ── Crash log retention cleanup (once per day) ──────────────────────────────────────────────
 
 let lastCrashCleanupDate = "";
 

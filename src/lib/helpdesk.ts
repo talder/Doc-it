@@ -908,7 +908,150 @@ export async function deleteOrganization(id: string): Promise<boolean> {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-//  Config Settings (IMAP, KB, Webhook, Notification Templates)
+//  Saved Filter CRUD
+// ══════════════════════════════════════════════════════════════════════
+
+export async function addSavedFilter(filter: Omit<SavedFilter, "id" | "createdAt">): Promise<SavedFilter> {
+  const cfg = await readConfig();
+  if (!cfg.savedFilters) cfg.savedFilters = [];
+  const f: SavedFilter = { id: randomUUID(), ...filter, createdAt: new Date().toISOString() };
+  cfg.savedFilters.push(f);
+  await writeConfig(cfg);
+  return f;
+}
+
+export async function updateSavedFilter(id: string, updates: Partial<Omit<SavedFilter, "id" | "createdAt">>): Promise<SavedFilter | null> {
+  const cfg = await readConfig();
+  const idx = (cfg.savedFilters ?? []).findIndex((f) => f.id === id);
+  if (idx === -1) return null;
+  Object.assign(cfg.savedFilters[idx], updates);
+  await writeConfig(cfg);
+  return cfg.savedFilters[idx];
+}
+
+export async function deleteSavedFilter(id: string): Promise<boolean> {
+  const cfg = await readConfig();
+  const before = (cfg.savedFilters ?? []).length;
+  cfg.savedFilters = (cfg.savedFilters ?? []).filter((f) => f.id !== id);
+  if (cfg.savedFilters.length === before) return false;
+  await writeConfig(cfg);
+  return true;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  Ticket Template CRUD
+// ══════════════════════════════════════════════════════════════════════
+
+export async function addTicketTemplate(tpl: Omit<TicketTemplate, "id">): Promise<TicketTemplate> {
+  const cfg = await readConfig();
+  if (!cfg.ticketTemplates) cfg.ticketTemplates = [];
+  const t: TicketTemplate = { id: randomUUID(), ...tpl };
+  cfg.ticketTemplates.push(t);
+  await writeConfig(cfg);
+  return t;
+}
+
+export async function updateTicketTemplate(id: string, updates: Partial<Omit<TicketTemplate, "id">>): Promise<TicketTemplate | null> {
+  const cfg = await readConfig();
+  const idx = (cfg.ticketTemplates ?? []).findIndex((t) => t.id === id);
+  if (idx === -1) return null;
+  Object.assign(cfg.ticketTemplates[idx], updates);
+  await writeConfig(cfg);
+  return cfg.ticketTemplates[idx];
+}
+
+export async function deleteTicketTemplate(id: string): Promise<boolean> {
+  const cfg = await readConfig();
+  const before = (cfg.ticketTemplates ?? []).length;
+  cfg.ticketTemplates = (cfg.ticketTemplates ?? []).filter((t) => t.id !== id);
+  if (cfg.ticketTemplates.length === before) return false;
+  await writeConfig(cfg);
+  return true;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  Agent Status CRUD
+// ══════════════════════════════════════════════════════════════════════
+
+export async function setAgentStatus(username: string, status: AgentStatusValue): Promise<AgentStatus> {
+  const cfg = await readConfig();
+  if (!cfg.agentStatuses) cfg.agentStatuses = [];
+  const idx = cfg.agentStatuses.findIndex((a) => a.username === username);
+  const entry: AgentStatus = { username, status, updatedAt: new Date().toISOString() };
+  if (idx >= 0) cfg.agentStatuses[idx] = entry; else cfg.agentStatuses.push(entry);
+  await writeConfig(cfg);
+  return entry;
+}
+
+export async function getAgentStatuses(): Promise<AgentStatus[]> {
+  const cfg = await readConfig();
+  return cfg.agentStatuses ?? [];
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  Support Contract CRUD
+// ══════════════════════════════════════════════════════════════════════
+
+export async function addContract(c: Omit<SupportContract, "id">): Promise<SupportContract> {
+  const cfg = await readConfig();
+  if (!cfg.contracts) cfg.contracts = [];
+  const contract: SupportContract = { id: randomUUID(), ...c };
+  cfg.contracts.push(contract);
+  await writeConfig(cfg);
+  return contract;
+}
+
+export async function updateContract(id: string, updates: Partial<Omit<SupportContract, "id">>): Promise<SupportContract | null> {
+  const cfg = await readConfig();
+  const idx = (cfg.contracts ?? []).findIndex((c) => c.id === id);
+  if (idx === -1) return null;
+  Object.assign(cfg.contracts[idx], updates);
+  await writeConfig(cfg);
+  return cfg.contracts[idx];
+}
+
+export async function deleteContract(id: string): Promise<boolean> {
+  const cfg = await readConfig();
+  const before = (cfg.contracts ?? []).length;
+  cfg.contracts = (cfg.contracts ?? []).filter((c) => c.id !== id);
+  if (cfg.contracts.length === before) return false;
+  await writeConfig(cfg);
+  return true;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  Scheduled Report CRUD
+// ══════════════════════════════════════════════════════════════════════
+
+export async function addScheduledReport(r: Omit<ScheduledReport, "id">): Promise<ScheduledReport> {
+  const cfg = await readConfig();
+  if (!cfg.scheduledReports) cfg.scheduledReports = [];
+  const report: ScheduledReport = { id: randomUUID(), ...r };
+  cfg.scheduledReports.push(report);
+  await writeConfig(cfg);
+  return report;
+}
+
+export async function updateScheduledReport(id: string, updates: Partial<Omit<ScheduledReport, "id">>): Promise<ScheduledReport | null> {
+  const cfg = await readConfig();
+  const idx = (cfg.scheduledReports ?? []).findIndex((r) => r.id === id);
+  if (idx === -1) return null;
+  Object.assign(cfg.scheduledReports[idx], updates);
+  await writeConfig(cfg);
+  return cfg.scheduledReports[idx];
+}
+
+export async function deleteScheduledReport(id: string): Promise<boolean> {
+  const cfg = await readConfig();
+  const before = (cfg.scheduledReports ?? []).length;
+  cfg.scheduledReports = (cfg.scheduledReports ?? []).filter((r) => r.id !== id);
+  if (cfg.scheduledReports.length === before) return false;
+  await writeConfig(cfg);
+  return true;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  Config Settings (IMAP, KB, Webhook, Notification Templates, etc.)
 // ══════════════════════════════════════════════════════════════════════
 
 export async function updateHelpdeskSettings(updates: {
@@ -916,12 +1059,20 @@ export async function updateHelpdeskSettings(updates: {
   webhookSecret?: string;
   kbSpaceSlug?: string;
   notificationTemplates?: HdNotificationTemplate[];
+  slackConfig?: SlackIntegrationConfig;
+  ldapConfig?: LdapConfig;
+  csatEmailEnabled?: boolean;
+  priorityMatrix?: PriorityMatrixEntry[];
 }): Promise<void> {
   const cfg = await readConfig();
   if (updates.imapConfig !== undefined) cfg.imapConfig = updates.imapConfig;
   if (updates.webhookSecret !== undefined) cfg.webhookSecret = updates.webhookSecret;
   if (updates.kbSpaceSlug !== undefined) cfg.kbSpaceSlug = updates.kbSpaceSlug;
   if (updates.notificationTemplates !== undefined) cfg.notificationTemplates = updates.notificationTemplates;
+  if (updates.slackConfig !== undefined) cfg.slackConfig = updates.slackConfig;
+  if (updates.ldapConfig !== undefined) cfg.ldapConfig = updates.ldapConfig;
+  if (updates.csatEmailEnabled !== undefined) cfg.csatEmailEnabled = updates.csatEmailEnabled;
+  if (updates.priorityMatrix !== undefined) cfg.priorityMatrix = updates.priorityMatrix;
   await writeConfig(cfg);
 }
 

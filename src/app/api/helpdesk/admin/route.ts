@@ -13,6 +13,10 @@ import {
   addReplyTemplate, updateReplyTemplate, deleteReplyTemplate,
   addEscalationRule, updateEscalationRule, deleteEscalationRule,
   addOrganization, updateOrganization, deleteOrganization,
+  addSavedFilter, updateSavedFilter, deleteSavedFilter,
+  addTicketTemplate, updateTicketTemplate, deleteTicketTemplate,
+  addContract, updateContract, deleteContract,
+  addScheduledReport, updateScheduledReport, deleteScheduledReport,
   updateHelpdeskSettings,
 } from "@/lib/helpdesk";
 import type { EscalationTrigger } from "@/lib/helpdesk";
@@ -254,10 +258,90 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // ── Settings (IMAP, KB, Webhooks, Notification Templates) ──
+    // ── Saved Filters ──
+    case "createSavedFilter": {
+      const { name, owner, shared, filters } = body;
+      if (!name?.trim()) return NextResponse.json({ error: "Name required" }, { status: 400 });
+      const filter = await addSavedFilter({ name, owner: owner || user.username, shared: !!shared, filters: filters || {} });
+      return NextResponse.json({ savedFilter: filter });
+    }
+    case "updateSavedFilter": {
+      const { id, ...updates } = body; delete updates.action;
+      if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+      const filter = await updateSavedFilter(id, updates);
+      if (!filter) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ savedFilter: filter });
+    }
+    case "deleteSavedFilter": {
+      const ok = await deleteSavedFilter(body.id);
+      if (!ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ ok: true });
+    }
+
+    // ── Ticket Templates ──
+    case "createTicketTemplate": {
+      const { name, description, ticketType, priority, category, assignedGroup, subject, templateBody, tags, order } = body;
+      if (!name?.trim()) return NextResponse.json({ error: "Name required" }, { status: 400 });
+      const tpl = await addTicketTemplate({ name, description: description || "", ticketType, priority, category, assignedGroup, subject, body: templateBody, tags, order: order ?? 0 });
+      return NextResponse.json({ ticketTemplate: tpl });
+    }
+    case "updateTicketTemplate": {
+      const { id, ...updates } = body; delete updates.action;
+      if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+      const tpl = await updateTicketTemplate(id, updates);
+      if (!tpl) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ ticketTemplate: tpl });
+    }
+    case "deleteTicketTemplate": {
+      const ok = await deleteTicketTemplate(body.id);
+      if (!ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ ok: true });
+    }
+
+    // ── Support Contracts ──
+    case "createContract": {
+      const { name, orgId, startDate, endDate, maxTickets, slaOverridePolicyId, notes, active } = body;
+      if (!name?.trim()) return NextResponse.json({ error: "Name required" }, { status: 400 });
+      const contract = await addContract({ name, orgId, startDate: startDate || new Date().toISOString().slice(0, 10), endDate: endDate || "", maxTickets: maxTickets ?? 0, slaOverridePolicyId, notes: notes || "", active: active !== false });
+      return NextResponse.json({ contract });
+    }
+    case "updateContract": {
+      const { id, ...updates } = body; delete updates.action;
+      if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+      const contract = await updateContract(id, updates);
+      if (!contract) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ contract });
+    }
+    case "deleteContract": {
+      const ok = await deleteContract(body.id);
+      if (!ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ ok: true });
+    }
+
+    // ── Scheduled Reports ──
+    case "createScheduledReport": {
+      const { name, enabled, schedule, time, dayOfWeek, dayOfMonth, recipients, filters } = body;
+      if (!name?.trim()) return NextResponse.json({ error: "Name required" }, { status: 400 });
+      const report = await addScheduledReport({ name, enabled: enabled !== false, schedule: schedule || "daily", time: time || "08:00", dayOfWeek, dayOfMonth, recipients: recipients || [], filters });
+      return NextResponse.json({ scheduledReport: report });
+    }
+    case "updateScheduledReport": {
+      const { id, ...updates } = body; delete updates.action;
+      if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+      const report = await updateScheduledReport(id, updates);
+      if (!report) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ scheduledReport: report });
+    }
+    case "deleteScheduledReport": {
+      const ok = await deleteScheduledReport(body.id);
+      if (!ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ ok: true });
+    }
+
+    // ── Settings (IMAP, KB, Webhooks, Notification Templates, Slack, LDAP, etc.) ──
     case "updateSettings": {
-      const { imapConfig, webhookSecret, kbSpaceSlug, notificationTemplates } = body;
-      await updateHelpdeskSettings({ imapConfig, webhookSecret, kbSpaceSlug, notificationTemplates });
+      const { imapConfig, webhookSecret, kbSpaceSlug, notificationTemplates, slackConfig, ldapConfig, csatEmailEnabled, priorityMatrix } = body;
+      await updateHelpdeskSettings({ imapConfig, webhookSecret, kbSpaceSlug, notificationTemplates, slackConfig, ldapConfig, csatEmailEnabled, priorityMatrix });
       return NextResponse.json({ ok: true });
     }
 
