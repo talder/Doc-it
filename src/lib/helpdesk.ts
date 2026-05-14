@@ -234,6 +234,132 @@ export interface HelpdeskOrg {
   domain: string;
   defaultSlaId?: string;
   defaultGroupId?: string;
+  contractId?: string;
+}
+
+// ── Saved Filters ────────────────────────────────────────────────────
+
+export interface SavedFilter {
+  id: string;
+  name: string;
+  owner: string;
+  shared: boolean;
+  filters: TicketFilters;
+  createdAt: string;
+}
+
+// ── Ticket Templates ─────────────────────────────────────────────────
+
+export interface TicketTemplate {
+  id: string;
+  name: string;
+  description: string;
+  ticketType?: TicketType;
+  priority?: TicketPriority;
+  category?: string;
+  assignedGroup?: string;
+  subject?: string;
+  body?: string;
+  tags?: string[];
+  order: number;
+}
+
+// ── Agent Availability ───────────────────────────────────────────────
+
+export type AgentStatusValue = "online" | "offline" | "busy" | "away";
+
+export interface AgentStatus {
+  username: string;
+  status: AgentStatusValue;
+  updatedAt: string;
+}
+
+// ── Support Contracts ────────────────────────────────────────────────
+
+export interface SupportContract {
+  id: string;
+  name: string;
+  orgId?: string;
+  startDate: string;
+  endDate: string;
+  maxTickets: number;  // 0 = unlimited
+  slaOverridePolicyId?: string;
+  notes: string;
+  active: boolean;
+}
+
+// ── Priority Matrix (Impact × Urgency) ───────────────────────────────
+
+export type ImpactLevel = "low" | "medium" | "high" | "critical";
+export type UrgencyLevel = "low" | "medium" | "high" | "critical";
+
+export interface PriorityMatrixEntry {
+  impact: ImpactLevel;
+  urgency: UrgencyLevel;
+  priority: TicketPriority;
+}
+
+export const DEFAULT_PRIORITY_MATRIX: PriorityMatrixEntry[] = [
+  { impact: "critical", urgency: "critical", priority: "Critical" },
+  { impact: "critical", urgency: "high",     priority: "Critical" },
+  { impact: "critical", urgency: "medium",   priority: "High" },
+  { impact: "critical", urgency: "low",      priority: "High" },
+  { impact: "high",     urgency: "critical", priority: "Critical" },
+  { impact: "high",     urgency: "high",     priority: "High" },
+  { impact: "high",     urgency: "medium",   priority: "High" },
+  { impact: "high",     urgency: "low",      priority: "Medium" },
+  { impact: "medium",   urgency: "critical", priority: "High" },
+  { impact: "medium",   urgency: "high",     priority: "High" },
+  { impact: "medium",   urgency: "medium",   priority: "Medium" },
+  { impact: "medium",   urgency: "low",      priority: "Low" },
+  { impact: "low",      urgency: "critical", priority: "High" },
+  { impact: "low",      urgency: "high",     priority: "Medium" },
+  { impact: "low",      urgency: "medium",   priority: "Low" },
+  { impact: "low",      urgency: "low",      priority: "Low" },
+];
+
+export function calculatePriorityFromMatrix(
+  impact: ImpactLevel, urgency: UrgencyLevel, matrix?: PriorityMatrixEntry[],
+): TicketPriority {
+  const m = matrix ?? DEFAULT_PRIORITY_MATRIX;
+  const entry = m.find((e) => e.impact === impact && e.urgency === urgency);
+  return entry?.priority ?? "Medium";
+}
+
+// ── Scheduled Reports ────────────────────────────────────────────────
+
+export interface ScheduledReport {
+  id: string;
+  name: string;
+  enabled: boolean;
+  schedule: "daily" | "weekly" | "monthly";
+  time: string;  // "HH:MM"
+  dayOfWeek?: number;
+  dayOfMonth?: number;
+  recipients: string[];  // email addresses
+  filters?: TicketFilters;
+  lastSentAt?: string;
+}
+
+// ── Integration Config ───────────────────────────────────────────────
+
+export interface SlackIntegrationConfig {
+  enabled: boolean;
+  webhookUrl: string;
+  channel?: string;
+  events: HdNotificationEvent[];
+}
+
+export interface LdapConfig {
+  enabled: boolean;
+  url: string;           // ldap://host:389
+  bindDn: string;
+  bindPasswordEncrypted: string;
+  searchBase: string;
+  searchFilter: string;  // e.g. "(uid={{username}})"
+  usernameAttr: string;
+  emailAttr: string;
+  fullNameAttr: string;
 }
 
 // ── Recurring Tickets ────────────────────────────────────────────────
@@ -309,6 +435,8 @@ export interface Ticket {
   description: string;
   status: TicketStatus;
   priority: TicketPriority;
+  impact?: ImpactLevel;
+  urgency?: UrgencyLevel;
   category: string;
   assignedGroup?: string;
   assignedTo?: string;
@@ -319,6 +447,7 @@ export interface Ticket {
   affectedAssetIds: string[];
   formId?: string;
   relatedChangeId?: string;
+  contractId?: string;
   customFields: Record<string, string | number | boolean | string[]>;
   tags: string[];
   attachments: TicketAttachment[];
@@ -334,8 +463,11 @@ export interface Ticket {
   slaResolutionDue?: string;
   slaResponseMet?: boolean;
   slaResolutionMet?: boolean;
+  slaPausedAt?: string;
+  slaPausedMinutes?: number;
   csatRating?: number;
   csatComment?: string;
+  csatSentAt?: string;
   createdAt: string;
   updatedAt: string;
   resolvedAt?: string;
@@ -358,6 +490,12 @@ export interface HelpdeskConfig {
   organizations: HelpdeskOrg[];
   recurringTickets: RecurringTicketDef[];
   notificationTemplates: HdNotificationTemplate[];
+  savedFilters: SavedFilter[];
+  ticketTemplates: TicketTemplate[];
+  agentStatuses: AgentStatus[];
+  contracts: SupportContract[];
+  priorityMatrix: PriorityMatrixEntry[];
+  scheduledReports: ScheduledReport[];
   /** IMAP config for email-to-ticket */
   imapConfig?: {
     host: string;
@@ -373,6 +511,12 @@ export interface HelpdeskConfig {
   webhookSecret?: string;
   /** Space slug used for KB article suggestions & "Convert to Article" */
   kbSpaceSlug?: string;
+  /** Slack/Teams integration */
+  slackConfig?: SlackIntegrationConfig;
+  /** LDAP auth for portal users */
+  ldapConfig?: LdapConfig;
+  /** Auto-send CSAT survey email on resolve */
+  csatEmailEnabled?: boolean;
 }
 
 export interface HelpdeskTicketData {
@@ -391,6 +535,8 @@ const EMPTY_CONFIG: HelpdeskConfig = {
   groups: [], categories: [], fieldDefs: [], forms: [], rules: [], slaPolicies: [], portalPages: [],
   catalogItems: [], replyTemplates: [], escalationRules: [], organizations: [],
   recurringTickets: [], notificationTemplates: [],
+  savedFilters: [], ticketTemplates: [], agentStatuses: [], contracts: [],
+  priorityMatrix: [], scheduledReports: [],
 };
 const EMPTY_TICKETS: HelpdeskTicketData = { nextNumber: 1, tickets: [] };
 
@@ -788,6 +934,8 @@ export interface CreateTicketFields {
   description: string;
   ticketType?: TicketType;
   priority?: TicketPriority;
+  impact?: ImpactLevel;
+  urgency?: UrgencyLevel;
   category?: string;
   assignedGroup?: string;
   assignedTo?: string;
@@ -797,6 +945,7 @@ export interface CreateTicketFields {
   assetId?: string;
   affectedAssetIds?: string[];
   relatedChangeId?: string;
+  contractId?: string;
   formId?: string;
   customFields?: Record<string, string | number | boolean | string[]>;
   tags?: string[];
@@ -826,6 +975,12 @@ export async function createTicket(fields: CreateTicketFields): Promise<Ticket> 
     if (!fields.priority && catalogItem.defaultPriority) effectivePriority = catalogItem.defaultPriority;
   }
 
+  // Auto-calculate priority from impact × urgency matrix
+  if (fields.impact && fields.urgency && !fields.priority) {
+    const matrix = cfg.priorityMatrix?.length ? cfg.priorityMatrix : undefined;
+    effectivePriority = calculatePriorityFromMatrix(fields.impact, fields.urgency, matrix);
+  }
+
   const ticket: Ticket = {
     id,
     ticketType: tType,
@@ -833,6 +988,8 @@ export async function createTicket(fields: CreateTicketFields): Promise<Ticket> 
     description: fields.description,
     status: "Open",
     priority: effectivePriority,
+    impact: fields.impact,
+    urgency: fields.urgency,
     category: fields.category || "",
     assignedGroup: effectiveGroup,
     assignedTo: effectiveAssignee,
@@ -842,6 +999,7 @@ export async function createTicket(fields: CreateTicketFields): Promise<Ticket> 
     assetId: fields.assetId,
     affectedAssetIds: fields.affectedAssetIds || [],
     relatedChangeId: fields.relatedChangeId,
+    contractId: fields.contractId,
     formId: fields.formId,
     customFields: fields.customFields || {},
     tags: fields.tags || [],
@@ -906,12 +1064,19 @@ export async function createTicket(fields: CreateTicketFields): Promise<Ticket> 
 
 export async function updateTicket(id: string, updates: Partial<Omit<Ticket, "id" | "createdAt" | "comments">>, actor?: string): Promise<Ticket | null> {
   const data = await readTickets();
+  const cfg = await readConfig();
   const idx = data.tickets.findIndex((t) => t.id === id);
   if (idx === -1) return null;
   const t = data.tickets[idx];
   const wasResolved = t.status === "Resolved" || t.status === "Closed";
   const oldStatus = t.status;
   const oldAssignee = t.assignedTo;
+
+  // Auto-calculate priority from impact × urgency if both supplied
+  if (updates.impact && updates.urgency && !updates.priority) {
+    const matrix = cfg.priorityMatrix?.length ? cfg.priorityMatrix : undefined;
+    updates.priority = calculatePriorityFromMatrix(updates.impact, updates.urgency, matrix);
+  }
 
   // Record history for tracked fields
   const now = new Date().toISOString();
@@ -920,6 +1085,29 @@ export async function updateTicket(id: string, updates: Partial<Omit<Ticket, "id
   for (const field of trackedFields) {
     if (updates[field] !== undefined && updates[field] !== (t as unknown as Record<string, unknown>)[field]) {
       t.history.push({ field, oldValue: (t as unknown as Record<string, unknown>)[field], newValue: updates[field], changedBy: actor || "system", changedAt: now });
+    }
+  }
+
+  // SLA pause: entering Waiting or Pending Approval pauses the SLA clock
+  const SLA_PAUSE_STATUSES: TicketStatus[] = ["Waiting", "Pending Approval"];
+  if (updates.status && updates.status !== oldStatus) {
+    const enteringPause = SLA_PAUSE_STATUSES.includes(updates.status) && !SLA_PAUSE_STATUSES.includes(oldStatus);
+    const leavingPause = !SLA_PAUSE_STATUSES.includes(updates.status) && SLA_PAUSE_STATUSES.includes(oldStatus);
+
+    if (enteringPause && !t.slaPausedAt) {
+      t.slaPausedAt = now;
+    } else if (leavingPause && t.slaPausedAt) {
+      const pausedMs = new Date(now).getTime() - new Date(t.slaPausedAt).getTime();
+      const pausedMinutes = Math.round(pausedMs / 60000);
+      t.slaPausedMinutes = (t.slaPausedMinutes || 0) + pausedMinutes;
+      t.slaPausedAt = undefined;
+      // Extend SLA due dates by paused amount
+      if (t.slaResponseDue && t.slaResponseMet === undefined) {
+        t.slaResponseDue = new Date(new Date(t.slaResponseDue).getTime() + pausedMs).toISOString();
+      }
+      if (t.slaResolutionDue && t.slaResolutionMet === undefined) {
+        t.slaResolutionDue = new Date(new Date(t.slaResolutionDue).getTime() + pausedMs).toISOString();
+      }
     }
   }
 
@@ -945,6 +1133,16 @@ export async function updateTicket(id: string, updates: Partial<Omit<Ticket, "id
   }
   if (updates.assignedTo && updates.assignedTo !== oldAssignee) {
     pushHelpdeskNotif(updates.assignedTo, `Ticket ${t.id} assigned to you: ${t.subject}`, t.id).catch(() => {});
+  }
+
+  // CSAT survey email on resolve (fire-and-forget)
+  if (cfg.csatEmailEnabled && !wasResolved && t.status === "Resolved" && t.requesterEmail && !t.csatSentAt) {
+    t.csatSentAt = now;
+    writeTickets(data).catch(() => {});
+    sendMail(t.requesterEmail, `[Helpdesk] How did we do? Rate ticket ${t.id}`,
+      `<p>Your ticket <strong>${t.id}: ${t.subject}</strong> has been resolved.</p>
+       <p>We'd love to hear your feedback. Please reply with a rating from 1 (poor) to 5 (excellent) and any comments.</p>
+       <p>Thank you!</p>`).catch(() => {});
   }
 
   return t;
@@ -1104,16 +1302,55 @@ function applyRules(ticket: Ticket, rules: HdRule[]): void {
 //  SLA Calculator
 // ══════════════════════════════════════════════════════════════════════
 
+/**
+ * Add business-hours-aware minutes from a starting date.
+ * If no business hours are configured, falls back to wall-clock time.
+ */
+function addBusinessMinutes(start: Date, minutes: number, bh?: SlaBusinessHours): Date {
+  if (!bh || !bh.days.length) {
+    return new Date(start.getTime() + minutes * 60000);
+  }
+  const [startH, startM] = bh.start.split(":").map(Number);
+  const [endH, endM] = bh.end.split(":").map(Number);
+  const dayStartMin = startH * 60 + startM;
+  const dayEndMin = endH * 60 + endM;
+  const bizMinutesPerDay = dayEndMin - dayStartMin;
+  if (bizMinutesPerDay <= 0) return new Date(start.getTime() + minutes * 60000);
+
+  let remaining = minutes;
+  const cursor = new Date(start);
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const dow = cursor.getDay();
+    if (bh.days.includes(dow)) {
+      const curMin = cursor.getHours() * 60 + cursor.getMinutes();
+      const effectiveStart = Math.max(curMin, dayStartMin);
+      if (effectiveStart < dayEndMin) {
+        const available = dayEndMin - effectiveStart;
+        if (remaining <= available) {
+          cursor.setHours(0, effectiveStart + remaining, 0, 0);
+          return cursor;
+        }
+        remaining -= available;
+      }
+    }
+    // Advance to next day's business start
+    cursor.setDate(cursor.getDate() + 1);
+    cursor.setHours(startH, startM, 0, 0);
+  }
+}
+
 function applySla(ticket: Ticket, policy: SlaPolicy): void {
   const pc = policy.priorities.find((p) => p.priority === ticket.priority);
   if (!pc) return;
 
   const now = new Date();
   if (pc.responseTimeMinutes > 0) {
-    ticket.slaResponseDue = new Date(now.getTime() + pc.responseTimeMinutes * 60000).toISOString();
+    ticket.slaResponseDue = addBusinessMinutes(now, pc.responseTimeMinutes, policy.businessHours).toISOString();
   }
   if (pc.resolutionTimeMinutes > 0) {
-    ticket.slaResolutionDue = new Date(now.getTime() + pc.resolutionTimeMinutes * 60000).toISOString();
+    ticket.slaResolutionDue = addBusinessMinutes(now, pc.resolutionTimeMinutes, policy.businessHours).toISOString();
   }
 }
 
@@ -1295,4 +1532,118 @@ export async function decideApproval(
   // Notify requester
   pushHelpdeskNotif(ticket.requester, `${ticket.id} approval ${decision.toLowerCase()} by ${approver}`, ticket.id).catch(() => {});
   return ticket;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  Bulk Operations
+// ══════════════════════════════════════════════════════════════════════
+
+export interface BulkUpdateResult {
+  updated: string[];
+  failed: string[];
+}
+
+export async function bulkUpdateTickets(
+  ids: string[],
+  updates: Partial<Omit<Ticket, "id" | "createdAt" | "comments">>,
+  actor: string,
+): Promise<BulkUpdateResult> {
+  const result: BulkUpdateResult = { updated: [], failed: [] };
+  for (const id of ids) {
+    const t = await updateTicket(id, updates, actor);
+    if (t) result.updated.push(id); else result.failed.push(id);
+  }
+  return result;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  CSV Export / Import helpers
+// ══════════════════════════════════════════════════════════════════════
+
+const CSV_COLUMNS = [
+  "id", "ticketType", "subject", "status", "priority", "impact", "urgency",
+  "category", "assignedGroup", "assignedTo", "requester", "requesterEmail",
+  "tags", "createdAt", "updatedAt", "resolvedAt", "closedAt",
+] as const;
+
+function escCsv(v: unknown): string {
+  const s = String(v ?? "");
+  return s.includes(",") || s.includes('"') || s.includes("\n")
+    ? `"${s.replace(/"/g, '""')}"`
+    : s;
+}
+
+export function ticketsToCsv(tickets: Ticket[]): string {
+  const header = CSV_COLUMNS.join(",");
+  const rows = tickets.map((t) =>
+    CSV_COLUMNS.map((col) => {
+      const val = (t as unknown as Record<string, unknown>)[col];
+      if (col === "tags") return escCsv((val as string[] | undefined)?.join(";") ?? "");
+      return escCsv(val);
+    }).join(","),
+  );
+  return [header, ...rows].join("\n");
+}
+
+function parseCsvRow(line: string): string[] {
+  const cols: string[] = [];
+  let cur = "";
+  let inQuote = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuote) {
+      if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+      else if (ch === '"') inQuote = false;
+      else cur += ch;
+    } else {
+      if (ch === '"') inQuote = true;
+      else if (ch === ",") { cols.push(cur); cur = ""; }
+      else cur += ch;
+    }
+  }
+  cols.push(cur);
+  return cols;
+}
+
+export async function importTicketsFromCsv(csv: string, actor: string): Promise<{ imported: number; errors: string[] }> {
+  const lines = csv.split(/\r?\n/).filter(Boolean);
+  if (lines.length < 2) return { imported: 0, errors: ["No data rows"] };
+  const header = parseCsvRow(lines[0]).map((h) => h.trim().toLowerCase());
+  const subjectIdx = header.indexOf("subject");
+  if (subjectIdx === -1) return { imported: 0, errors: ["Missing 'subject' column"] };
+
+  const errors: string[] = [];
+  let imported = 0;
+
+  for (let i = 1; i < lines.length; i++) {
+    try {
+      const cols = parseCsvRow(lines[i]);
+      const get = (name: string) => {
+        const idx = header.indexOf(name.toLowerCase());
+        return idx >= 0 ? cols[idx]?.trim() : undefined;
+      };
+      const subject = get("subject");
+      if (!subject) { errors.push(`Row ${i + 1}: missing subject`); continue; }
+
+      await createTicket({
+        subject,
+        description: get("description") || "",
+        ticketType: (get("tickettype") || "incident") as TicketType,
+        priority: (get("priority") || "Medium") as TicketPriority,
+        impact: get("impact") as ImpactLevel | undefined,
+        urgency: get("urgency") as UrgencyLevel | undefined,
+        category: get("category") || "",
+        assignedGroup: get("assignedgroup") || undefined,
+        assignedTo: get("assignedto") || undefined,
+        requester: get("requester") || actor,
+        requesterEmail: get("requesteremail") || undefined,
+        requesterType: "agent",
+        tags: get("tags")?.split(";").filter(Boolean) || [],
+      });
+      imported++;
+    } catch (e) {
+      errors.push(`Row ${i + 1}: ${(e as Error).message}`);
+    }
+  }
+  return { imported, errors };
 }

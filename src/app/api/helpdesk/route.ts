@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
 
   switch (action) {
     case "createTicket": {
-      const { subject, description, priority, category, assignedGroup, assignedTo, assetId, affectedAssetIds, relatedChangeId, formId, customFields, tags, attachments, ticketType, catalogItemId } = body;
+      const { subject, description, priority, impact, urgency, category, assignedGroup, assignedTo, assetId, affectedAssetIds, relatedChangeId, contractId, formId, customFields, tags, attachments, ticketType, catalogItemId } = body;
       if (!subject?.trim()) return NextResponse.json({ error: "Subject is required" }, { status: 400 });
       if (priority && !VALID_PRIORITIES.includes(priority)) {
         return NextResponse.json({ error: "Invalid priority" }, { status: 400 });
@@ -58,11 +58,12 @@ export async function POST(request: NextRequest) {
         subject, description: description || "",
         ticketType: ticketType as TicketType,
         priority: priority as TicketPriority,
+        impact, urgency,
         category, assignedGroup, assignedTo,
         requester: body.requester || user.username,
         requesterEmail: body.requesterEmail || user.email,
         requesterType: "agent",
-        assetId, affectedAssetIds, relatedChangeId,
+        assetId, affectedAssetIds, relatedChangeId, contractId,
         formId, customFields, tags, attachments, catalogItemId,
       };
       const ticket = await createTicket(fields);
