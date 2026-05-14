@@ -86,6 +86,8 @@ export interface DeviceProfile {
   vmDeployTemplateId: string | null;
   netboxClusterId: number | null;  // Netbox virtualization cluster (for VM profiles)
   nacEndSystemGroup: string;       // XIQ-SE NAC end-system group for VLAN assignment
+  checkmkEnabled: boolean;         // auto-add to CheckMK on provisioning
+  checkmkFolder: string;           // CheckMK folder path (e.g. "/servers")
   sortOrder: number;
 }
 
@@ -182,6 +184,7 @@ export type PipelineStepId =
   | "dhcp-reservation"
   | "dns-record"
   | "nac-push"
+  | "checkmk-host"
   | "cmdb-ci"
   | "vmware-deploy";
 
@@ -189,6 +192,7 @@ export type PipelineStepId =
 
 export type DecommissionStepId =
   | "nac-remove"
+  | "checkmk-remove"
   | "dns-record"
   | "dhcp-reservation"
   | "netbox-device";
@@ -295,4 +299,27 @@ export interface NacEndSystemLookup {
   policy: string;
   nacProfileName: string;
   groups: string[];
+}
+
+// ── CheckMK client-safe types ────────────────────────────────────────────────
+
+export interface CheckmkServerPublic {
+  id: string;
+  name: string;
+  url: string;
+  username: string;
+  secretSet: boolean;
+  ignoreSslErrors: boolean;
+  enabled: boolean;
+  sortOrder: number;
+  createdAt: string;
+}
+
+export interface CheckmkHostInfo {
+  hostName: string;
+  folder: string;
+  ipAddress: string;
+  alias: string;
+  labels: Record<string, string>;
+  isCluster: boolean;
 }

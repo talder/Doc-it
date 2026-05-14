@@ -34,6 +34,8 @@ export async function POST(request: NextRequest) {
       vmDeployTemplateId: body.vmDeployTemplateId ?? null,
       netboxClusterId: body.netboxClusterId ?? null,
       nacEndSystemGroup: String(body.nacEndSystemGroup ?? ""),
+      checkmkEnabled: !!body.checkmkEnabled,
+      checkmkFolder: String(body.checkmkFolder ?? "/"),
       sortOrder: Number(body.sortOrder ?? 0),
     });
     return NextResponse.json({ profile });

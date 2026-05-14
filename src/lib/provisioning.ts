@@ -19,6 +19,9 @@ import {
 import {
   addMacToNacGroup, removeMacFromNacGroup, getFirstEnabledServer,
 } from "./xiqse";
+import {
+  getFirstEnabledCheckmkServer, createCheckmkHost, deleteCheckmkHost,
+} from "./checkmk";
 import type {
   ProvisioningConfig, DeviceProfile, ProvisioningRequest,
   PreflightResult, PreflightCheckId,
@@ -148,6 +151,8 @@ function initProvisioningTables(): void {
   if (!colNames.has("netbox_cluster_id"))      db.exec("ALTER TABLE provisioning_device_profiles ADD COLUMN netbox_cluster_id INTEGER");
   if (!colNames.has("default_tags"))           db.exec("ALTER TABLE provisioning_device_profiles ADD COLUMN default_tags TEXT NOT NULL DEFAULT '[]'");
   if (!colNames.has("nac_end_system_group"))   db.exec("ALTER TABLE provisioning_device_profiles ADD COLUMN nac_end_system_group TEXT NOT NULL DEFAULT ''");
+  if (!colNames.has("checkmk_enabled"))         db.exec("ALTER TABLE provisioning_device_profiles ADD COLUMN checkmk_enabled INTEGER NOT NULL DEFAULT 0");
+  if (!colNames.has("checkmk_folder"))          db.exec("ALTER TABLE provisioning_device_profiles ADD COLUMN checkmk_folder TEXT NOT NULL DEFAULT '/'");
 }
 
 // ── Device Profile CRUD ──────────────────────────────────────────────────────
@@ -177,8 +182,8 @@ export function createDeviceProfile(data: Omit<DeviceProfile, "id">): DeviceProf
        default_dns_zone, default_dhcp_scope, default_gateway,
        manufacturer_filter, requires_asset_tag, auto_create_cmdb,
        vm_deploy_template_id, netbox_cluster_id, default_tags,
-       nac_end_system_group, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       nac_end_system_group, checkmk_enabled, checkmk_folder, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, data.name, data.icon, data.netboxRoleId, data.defaultVlanId,
     data.defaultPrefixId, data.defaultDnsZone ?? "", data.defaultDhcpScope ?? "",
@@ -189,6 +194,8 @@ export function createDeviceProfile(data: Omit<DeviceProfile, "id">): DeviceProf
     data.netboxClusterId ?? null,
     JSON.stringify(data.defaultTags ?? []),
     data.nacEndSystemGroup ?? "",
+    data.checkmkEnabled ? 1 : 0,
+    data.checkmkFolder ?? "/",
     data.sortOrder ?? 0,
   );
   return getDeviceProfile(id)!;
@@ -206,7 +213,8 @@ export function updateDeviceProfile(id: string, data: Partial<DeviceProfile>): D
       manufacturer_filter = ?,
       requires_asset_tag = ?, auto_create_cmdb = ?,
       vm_deploy_template_id = ?, netbox_cluster_id = ?,
-      default_tags = ?, nac_end_system_group = ?, sort_order = ?
+      default_tags = ?, nac_end_system_group = ?,
+      checkmk_enabled = ?, checkmk_folder = ?, sort_order = ?
     WHERE id = ?
   `).run(
     data.name ?? existing.name,
@@ -224,6 +232,8 @@ export function updateDeviceProfile(id: string, data: Partial<DeviceProfile>): D
     data.netboxClusterId !== undefined ? data.netboxClusterId : existing.netboxClusterId,
     JSON.stringify(data.defaultTags ?? existing.defaultTags),
     data.nacEndSystemGroup !== undefined ? data.nacEndSystemGroup : existing.nacEndSystemGroup,
+    (data.checkmkEnabled !== undefined ? data.checkmkEnabled : existing.checkmkEnabled) ? 1 : 0,
+    data.checkmkFolder !== undefined ? data.checkmkFolder : existing.checkmkFolder,
     data.sortOrder ?? existing.sortOrder,
     id,
   );
@@ -254,6 +264,8 @@ function rowToProfile(row: Record<string, unknown>): DeviceProfile {
     netboxClusterId: row.netbox_cluster_id != null ? Number(row.netbox_cluster_id) : null,
     defaultTags: (() => { try { return JSON.parse(String(row.default_tags ?? "[]")); } catch { return []; } })(),
     nacEndSystemGroup: String(row.nac_end_system_group ?? ""),
+    checkmkEnabled: row.checkmk_enabled === 1,
+    checkmkFolder: String(row.checkmk_folder ?? "/"),
     sortOrder: Number(row.sort_order ?? 0),
   };
 }
@@ -583,6 +595,7 @@ export async function executeProvisioning(
     { id: "netbox-primary-ip", label: "Set primary IP",                status: "pending" },
     { id: "dhcp-reservation",  label: "Create DHCP reservation",       status: "pending" },
     ...(profile?.nacEndSystemGroup ? [{ id: "nac-push" as const, label: "Push MAC to XIQ-SE NAC group", status: "pending" as const }] : []),
+    ...(profile?.checkmkEnabled ? [{ id: "checkmk-host" as const, label: "Create host in CheckMK", status: "pending" as const }] : []),
     { id: "dns-record",        label: "Create DNS record",             status: "pending" },
   ];
   if (profile?.autoCreateCmdb) {
@@ -760,6 +773,22 @@ export async function executeProvisioning(
       }
     }
 
+    // Step 6b: CheckMK host (when profile has checkmkEnabled)
+    if (profile?.checkmkEnabled) {
+      markStep("checkmk-host", "running");
+      const cmkResult = await createCheckmkHost({
+        hostName: req.deviceName,
+        folder: profile.checkmkFolder || "/",
+        ipAddress: allocatedIp,
+        alias: req.comment || req.deviceName,
+      });
+      if (cmkResult.success) {
+        markStep("checkmk-host", "done", cmkResult.message);
+      } else {
+        throw new Error(`CheckMK host creation failed: ${cmkResult.message}`);
+      }
+    }
+
     // Step 7: DNS record
     markStep("dns-record", "running");
     if (cfg.dns.endpoint) {
@@ -892,6 +921,14 @@ export async function executeProvisioning(
         nacStep.status = "rolled-back";
       }
     }
+    // Rollback CheckMK host if it was completed
+    if (profile?.checkmkEnabled) {
+      const cmkStep = steps.find(s => s.id === "checkmk-host");
+      if (cmkStep?.status === "done") {
+        try { await deleteCheckmkHost(req.deviceName); } catch { /* best-effort */ }
+        cmkStep.status = "rolled-back";
+      }
+    }
     // Rollback DNS if it was completed
     if (cfg.dns.endpoint) {
       const dnsStep = steps.find(s => s.id === "dns-record");
@@ -929,8 +966,10 @@ export async function executeDecommission(
   // Netbox cascades: deleting a device removes its interfaces and assigned IPs.
   // Order: NAC remove → DNS → DHCP → Device (IP + interface cascade-deleted with device).
   const xiqseServer = await getFirstEnabledServer();
+  const cmkServer = await getFirstEnabledCheckmkServer();
   const steps: DecommissionStep[] = [
     ...(xiqseServer ? [{ id: "nac-remove" as const, label: "Remove MAC from XIQ-SE NAC groups", status: "pending" as const }] : []),
+    ...(cmkServer ? [{ id: "checkmk-remove" as const, label: "Remove host from CheckMK", status: "pending" as const }] : []),
     { id: "dns-record",        label: "Delete DNS record",          status: "pending" },
     { id: "dhcp-reservation",  label: "Delete DHCP reservation",   status: "pending" },
     { id: "netbox-device",     label: "Delete device from Netbox",  status: "pending" },
@@ -989,6 +1028,17 @@ export async function executeDecommission(
       }
     } else if (xiqseServer) {
       markStep("nac-remove", "done", "Skipped — no MAC address on device");
+    }
+
+    // 1c. Remove host from CheckMK (best-effort)
+    if (cmkServer) {
+      markStep("checkmk-remove", "running");
+      try {
+        const cmkResult = await deleteCheckmkHost(deviceName);
+        markStep("checkmk-remove", cmkResult.success ? "done" : "failed", cmkResult.message);
+      } catch (e) {
+        markStep("checkmk-remove", "failed", e instanceof Error ? e.message : "CheckMK removal failed");
+      }
     }
 
     // 2. Delete DNS record

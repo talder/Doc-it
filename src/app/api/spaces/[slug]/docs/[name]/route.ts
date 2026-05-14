@@ -148,7 +148,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
 
   try {
     // Soft delete: move to trash
-    const TRASH_DIR = path.join(process.cwd(), "trash", slug);
+    const TRASH_DIR = path.join(/* turbopackIgnore: true */ process.cwd(), "trash", slug);
     await ensureDir(TRASH_DIR);
     const trashId = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
     const content = await fs.readFile(resolved.filePath, "utf-8");
