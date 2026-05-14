@@ -856,6 +856,7 @@ export interface TicketFilters {
   q?: string;
   status?: string;
   priority?: string;
+  ticketType?: string;
   assignedTo?: string;
   assignedGroup?: string;
   category?: string;
@@ -867,6 +868,7 @@ export function filterTickets(tickets: Ticket[], filters: TicketFilters): Ticket
   let result = tickets;
   if (filters.status) result = result.filter((t) => t.status === filters.status);
   if (filters.priority) result = result.filter((t) => t.priority === filters.priority);
+  if (filters.ticketType) result = result.filter((t) => t.ticketType === filters.ticketType);
   if (filters.assignedTo) result = result.filter((t) => t.assignedTo === filters.assignedTo);
   if (filters.assignedGroup) result = result.filter((t) => t.assignedGroup === filters.assignedGroup);
   if (filters.category) result = result.filter((t) => t.category === filters.category);

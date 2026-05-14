@@ -330,6 +330,47 @@ setInterval(pollMirthDashboard, MIRTH_POLL_INTERVAL_MS);
 // Also run once at startup (after 30 s to let the server boot)
 setTimeout(pollMirthDashboard, 30_000);
 
+// ── Helpdesk Email-to-Ticket poller ──────────────────────────────────────────────────
+
+let lastMailPollAt = 0;
+
+setInterval(async () => {
+  // Debounce: only run once per 55 seconds minimum
+  if (Date.now() - lastMailPollAt < 55_000) return;
+  lastMailPollAt = Date.now();
+  try {
+    const { pollMailbox } = await import("./lib/helpdesk-mail");
+    const result = await pollMailbox();
+    if (result.created > 0 || result.replied > 0) {
+      console.log(`[helpdesk-mail] Polled: ${result.created} created, ${result.replied} replies`);
+    }
+    if (result.errors.length > 0) {
+      console.error(`[helpdesk-mail] Errors:`, result.errors);
+    }
+  } catch (err) {
+    console.error("[helpdesk-mail] Poll error:", err);
+  }
+}, INTERVAL_MS);
+
+// ── Helpdesk Escalation Engine (every 2 minutes) ─────────────────────────────────────
+
+const ESCALATION_INTERVAL_MS = 2 * 60_000;
+let lastEscalationCheckAt = 0;
+
+setInterval(async () => {
+  if (Date.now() - lastEscalationCheckAt < 110_000) return;
+  lastEscalationCheckAt = Date.now();
+  try {
+    const { runEscalationCheck } = await import("./lib/helpdesk-escalation");
+    const result = await runEscalationCheck();
+    if (result.escalated > 0) {
+      console.log(`[helpdesk-escalation] Checked ${result.checked} tickets, escalated ${result.escalated}`);
+    }
+  } catch (err) {
+    console.error("[helpdesk-escalation] Check error:", err);
+  }
+}, ESCALATION_INTERVAL_MS);
+
 // ── Crash log retention cleanup (once per day) ──────────────────────────────────────
 
 let lastCrashCleanupDate = "";

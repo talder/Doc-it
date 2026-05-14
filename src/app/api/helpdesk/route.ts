@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
     q: sp.get("q") || undefined,
     status: sp.get("status") || undefined,
     priority: sp.get("priority") || undefined,
+    ticketType: sp.get("ticketType") || undefined,
     assignedTo: sp.get("assignedTo") || undefined,
     assignedGroup: sp.get("assignedGroup") || undefined,
     category: sp.get("category") || undefined,
