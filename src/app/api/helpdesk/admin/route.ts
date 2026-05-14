@@ -9,7 +9,13 @@ import {
   addRule, updateRule, deleteRule,
   addSlaPolicy, updateSlaPolicy, deleteSlaPolicy,
   addPortalPage, updatePortalPage, deletePortalPage,
+  addCatalogItem, updateCatalogItem, deleteCatalogItem,
+  addReplyTemplate, updateReplyTemplate, deleteReplyTemplate,
+  addEscalationRule, updateEscalationRule, deleteEscalationRule,
+  addOrganization, updateOrganization, deleteOrganization,
+  updateHelpdeskSettings,
 } from "@/lib/helpdesk";
+import type { EscalationTrigger } from "@/lib/helpdesk";
 
 /** GET /api/helpdesk/admin — full helpdesk config */
 export async function GET() {
@@ -165,6 +171,93 @@ export async function POST(request: NextRequest) {
     case "deletePortalPage": {
       const ok = await deletePortalPage(body.id);
       if (!ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ ok: true });
+    }
+
+    // ── Service Catalog Items ──
+    case "createCatalogItem": {
+      const { name, description, icon, categoryId, formId, defaultGroupId, defaultAssignee, defaultPriority, slaOverridePolicyId, approvalRequired, approvers, cost, estimatedDays, published, order } = body;
+      if (!name?.trim()) return NextResponse.json({ error: "Name required" }, { status: 400 });
+      const item = await addCatalogItem({ name, description: description || "", icon, categoryId, formId, defaultGroupId, defaultAssignee, defaultPriority, slaOverridePolicyId, approvalRequired: !!approvalRequired, approvers: approvers || [], cost, estimatedDays, published: !!published, order: order ?? 0 });
+      return NextResponse.json({ catalogItem: item });
+    }
+    case "updateCatalogItem": {
+      const { id, ...updates } = body; delete updates.action;
+      if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+      const item = await updateCatalogItem(id, updates);
+      if (!item) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ catalogItem: item });
+    }
+    case "deleteCatalogItem": {
+      const ok = await deleteCatalogItem(body.id);
+      if (!ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ ok: true });
+    }
+
+    // ── Reply Templates ──
+    case "createReplyTemplate": {
+      const { name, content, category: tplCat } = body;
+      if (!name?.trim()) return NextResponse.json({ error: "Name required" }, { status: 400 });
+      const tpl = await addReplyTemplate({ name, content: content || "", category: tplCat });
+      return NextResponse.json({ replyTemplate: tpl });
+    }
+    case "updateReplyTemplate": {
+      const { id, ...updates } = body; delete updates.action;
+      if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+      const tpl = await updateReplyTemplate(id, updates);
+      if (!tpl) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ replyTemplate: tpl });
+    }
+    case "deleteReplyTemplate": {
+      const ok = await deleteReplyTemplate(body.id);
+      if (!ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ ok: true });
+    }
+
+    // ── Escalation Rules ──
+    case "createEscalationRule": {
+      const { name, enabled, trigger, warningMinutesBefore, actions: ruleActions, order } = body;
+      if (!name?.trim()) return NextResponse.json({ error: "Name required" }, { status: 400 });
+      const rule = await addEscalationRule({ name, enabled: enabled !== false, trigger: trigger as EscalationTrigger, warningMinutesBefore: Number(warningMinutesBefore || 15), actions: ruleActions || [], order: order ?? 0 });
+      return NextResponse.json({ escalationRule: rule });
+    }
+    case "updateEscalationRule": {
+      const { id, ...updates } = body; delete updates.action;
+      if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+      const rule = await updateEscalationRule(id, updates);
+      if (!rule) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ escalationRule: rule });
+    }
+    case "deleteEscalationRule": {
+      const ok = await deleteEscalationRule(body.id);
+      if (!ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ ok: true });
+    }
+
+    // ── Organizations ──
+    case "createOrganization": {
+      const { name, domain, defaultSlaId, defaultGroupId } = body;
+      if (!name?.trim() || !domain?.trim()) return NextResponse.json({ error: "Name and domain required" }, { status: 400 });
+      const org = await addOrganization({ name, domain, defaultSlaId, defaultGroupId });
+      return NextResponse.json({ organization: org });
+    }
+    case "updateOrganization": {
+      const { id, ...updates } = body; delete updates.action;
+      if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+      const org = await updateOrganization(id, updates);
+      if (!org) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ organization: org });
+    }
+    case "deleteOrganization": {
+      const ok = await deleteOrganization(body.id);
+      if (!ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ ok: true });
+    }
+
+    // ── Settings (IMAP, KB, Webhooks, Notification Templates) ──
+    case "updateSettings": {
+      const { imapConfig, webhookSecret, kbSpaceSlug, notificationTemplates } = body;
+      await updateHelpdeskSettings({ imapConfig, webhookSecret, kbSpaceSlug, notificationTemplates });
       return NextResponse.json({ ok: true });
     }
 

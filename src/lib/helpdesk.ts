@@ -636,6 +636,150 @@ export async function deletePortalPage(id: string): Promise<boolean> {
 }
 
 // ══════════════════════════════════════════════════════════════════════
+//  Service Catalog CRUD
+// ══════════════════════════════════════════════════════════════════════
+
+export async function addCatalogItem(item: Omit<ServiceCatalogItem, "id">): Promise<ServiceCatalogItem> {
+  const cfg = await readConfig();
+  const newItem: ServiceCatalogItem = { id: randomUUID(), ...item };
+  if (!cfg.catalogItems) cfg.catalogItems = [];
+  cfg.catalogItems.push(newItem);
+  await writeConfig(cfg);
+  return newItem;
+}
+
+export async function updateCatalogItem(id: string, updates: Partial<Omit<ServiceCatalogItem, "id">>): Promise<ServiceCatalogItem | null> {
+  const cfg = await readConfig();
+  const idx = (cfg.catalogItems ?? []).findIndex((c) => c.id === id);
+  if (idx === -1) return null;
+  Object.assign(cfg.catalogItems[idx], updates);
+  await writeConfig(cfg);
+  return cfg.catalogItems[idx];
+}
+
+export async function deleteCatalogItem(id: string): Promise<boolean> {
+  const cfg = await readConfig();
+  const before = (cfg.catalogItems ?? []).length;
+  cfg.catalogItems = (cfg.catalogItems ?? []).filter((c) => c.id !== id);
+  if (cfg.catalogItems.length === before) return false;
+  await writeConfig(cfg);
+  return true;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  Reply Template CRUD
+// ══════════════════════════════════════════════════════════════════════
+
+export async function addReplyTemplate(tpl: Omit<ReplyTemplate, "id">): Promise<ReplyTemplate> {
+  const cfg = await readConfig();
+  const newTpl: ReplyTemplate = { id: randomUUID(), ...tpl };
+  if (!cfg.replyTemplates) cfg.replyTemplates = [];
+  cfg.replyTemplates.push(newTpl);
+  await writeConfig(cfg);
+  return newTpl;
+}
+
+export async function updateReplyTemplate(id: string, updates: Partial<Omit<ReplyTemplate, "id">>): Promise<ReplyTemplate | null> {
+  const cfg = await readConfig();
+  const idx = (cfg.replyTemplates ?? []).findIndex((t) => t.id === id);
+  if (idx === -1) return null;
+  Object.assign(cfg.replyTemplates[idx], updates);
+  await writeConfig(cfg);
+  return cfg.replyTemplates[idx];
+}
+
+export async function deleteReplyTemplate(id: string): Promise<boolean> {
+  const cfg = await readConfig();
+  const before = (cfg.replyTemplates ?? []).length;
+  cfg.replyTemplates = (cfg.replyTemplates ?? []).filter((t) => t.id !== id);
+  if (cfg.replyTemplates.length === before) return false;
+  await writeConfig(cfg);
+  return true;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  Escalation Rule CRUD
+// ══════════════════════════════════════════════════════════════════════
+
+export async function addEscalationRule(rule: Omit<EscalationRule, "id">): Promise<EscalationRule> {
+  const cfg = await readConfig();
+  const newRule: EscalationRule = { id: randomUUID(), ...rule };
+  if (!cfg.escalationRules) cfg.escalationRules = [];
+  cfg.escalationRules.push(newRule);
+  cfg.escalationRules.sort((a, b) => a.order - b.order);
+  await writeConfig(cfg);
+  return newRule;
+}
+
+export async function updateEscalationRule(id: string, updates: Partial<Omit<EscalationRule, "id">>): Promise<EscalationRule | null> {
+  const cfg = await readConfig();
+  const idx = (cfg.escalationRules ?? []).findIndex((r) => r.id === id);
+  if (idx === -1) return null;
+  Object.assign(cfg.escalationRules[idx], updates);
+  cfg.escalationRules.sort((a, b) => a.order - b.order);
+  await writeConfig(cfg);
+  return cfg.escalationRules[idx];
+}
+
+export async function deleteEscalationRule(id: string): Promise<boolean> {
+  const cfg = await readConfig();
+  const before = (cfg.escalationRules ?? []).length;
+  cfg.escalationRules = (cfg.escalationRules ?? []).filter((r) => r.id !== id);
+  if (cfg.escalationRules.length === before) return false;
+  await writeConfig(cfg);
+  return true;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  Organization CRUD
+// ══════════════════════════════════════════════════════════════════════
+
+export async function addOrganization(org: Omit<HelpdeskOrg, "id">): Promise<HelpdeskOrg> {
+  const cfg = await readConfig();
+  const newOrg: HelpdeskOrg = { id: randomUUID(), ...org };
+  if (!cfg.organizations) cfg.organizations = [];
+  cfg.organizations.push(newOrg);
+  await writeConfig(cfg);
+  return newOrg;
+}
+
+export async function updateOrganization(id: string, updates: Partial<Omit<HelpdeskOrg, "id">>): Promise<HelpdeskOrg | null> {
+  const cfg = await readConfig();
+  const idx = (cfg.organizations ?? []).findIndex((o) => o.id === id);
+  if (idx === -1) return null;
+  Object.assign(cfg.organizations[idx], updates);
+  await writeConfig(cfg);
+  return cfg.organizations[idx];
+}
+
+export async function deleteOrganization(id: string): Promise<boolean> {
+  const cfg = await readConfig();
+  const before = (cfg.organizations ?? []).length;
+  cfg.organizations = (cfg.organizations ?? []).filter((o) => o.id !== id);
+  if (cfg.organizations.length === before) return false;
+  await writeConfig(cfg);
+  return true;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  Config Settings (IMAP, KB, Webhook, Notification Templates)
+// ══════════════════════════════════════════════════════════════════════
+
+export async function updateHelpdeskSettings(updates: {
+  imapConfig?: HelpdeskConfig["imapConfig"];
+  webhookSecret?: string;
+  kbSpaceSlug?: string;
+  notificationTemplates?: HdNotificationTemplate[];
+}): Promise<void> {
+  const cfg = await readConfig();
+  if (updates.imapConfig !== undefined) cfg.imapConfig = updates.imapConfig;
+  if (updates.webhookSecret !== undefined) cfg.webhookSecret = updates.webhookSecret;
+  if (updates.kbSpaceSlug !== undefined) cfg.kbSpaceSlug = updates.kbSpaceSlug;
+  if (updates.notificationTemplates !== undefined) cfg.notificationTemplates = updates.notificationTemplates;
+  await writeConfig(cfg);
+}
+
+// ══════════════════════════════════════════════════════════════════════
 //  Ticket CRUD
 // ══════════════════════════════════════════════════════════════════════
 
