@@ -371,6 +371,55 @@ setInterval(async () => {
   }
 }, ESCALATION_INTERVAL_MS);
 
+// ── Helpdesk Recurring Tickets (every 60 seconds) ───────────────────────────────────
+
+setInterval(async () => {
+  try {
+    const { readConfig, createTicket } = await import("./lib/helpdesk");
+    const { readJsonConfig, writeJsonConfig } = await import("./lib/config");
+    const cfg = await readConfig();
+    const defs = cfg.recurringTickets || [];
+    if (defs.length === 0) return;
+
+    const now = new Date();
+    for (const def of defs) {
+      if (!def.enabled) continue;
+      // Simple cron matching: "HH:MM daily" or "HH:MM weekday:N" or "HH:MM monthly:D"
+      const parts = def.cron.split(/\s+/);
+      const [hh, mm] = (parts[0] || "00:00").split(":").map(Number);
+      if (now.getHours() !== hh || now.getMinutes() !== mm) continue;
+
+      if (parts[1] === "weekly" || parts[1]?.startsWith("weekday:")) {
+        const dayTarget = parts[1].includes(":") ? Number(parts[1].split(":")[1]) : 1;
+        if (now.getDay() !== dayTarget) continue;
+      } else if (parts[1]?.startsWith("monthly:")) {
+        const dayTarget = Number(parts[1].split(":")[1]);
+        if (now.getDate() !== dayTarget) continue;
+      }
+      // "daily" or unrecognized → run every day
+
+      // Debounce: skip if already ran today
+      if (def.lastRun) {
+        const last = new Date(def.lastRun);
+        const diffMin = (now.getTime() - last.getTime()) / 60_000;
+        if (diffMin < 60 * 23) continue;
+      }
+
+      await createTicket({
+        ...def.template,
+        requester: "recurring-scheduler",
+        requesterType: "agent",
+      });
+
+      def.lastRun = now.toISOString();
+    }
+    // Persist lastRun updates
+    await writeJsonConfig("helpdesk.json", cfg);
+  } catch (err) {
+    console.error("[helpdesk-recurring] Error:", err);
+  }
+}, INTERVAL_MS);
+
 // ── Crash log retention cleanup (once per day) ──────────────────────────────────────
 
 let lastCrashCleanupDate = "";
