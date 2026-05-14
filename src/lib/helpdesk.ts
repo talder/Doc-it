@@ -541,7 +541,8 @@ const EMPTY_CONFIG: HelpdeskConfig = {
 const EMPTY_TICKETS: HelpdeskTicketData = { nextNumber: 1, tickets: [] };
 
 export async function readConfig(): Promise<HelpdeskConfig> {
-  return readJsonConfig<HelpdeskConfig>(CONFIG_FILE, { ...EMPTY_CONFIG });
+  const stored = await readJsonConfig<Partial<HelpdeskConfig>>(CONFIG_FILE, {});
+  return { ...EMPTY_CONFIG, ...stored };
 }
 async function writeConfig(data: HelpdeskConfig): Promise<void> {
   await writeJsonConfig(CONFIG_FILE, data);

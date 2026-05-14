@@ -84,10 +84,10 @@ export default function HelpdeskAdminPage() {
             {tab === "rules" && <RuleEditor rules={config.rules} groups={config.groups} categories={config.categories} post={post} />}
             {tab === "sla" && <SlaEditor policies={config.slaPolicies} post={post} />}
             {tab === "portal" && <PortalPageDesigner pages={config.portalPages} post={post} />}
-            {tab === "templates" && <TicketTemplateEditor templates={config.ticketTemplates} categories={config.categories} groups={config.groups} post={post} />}
-            {tab === "filters" && <SavedFilterEditor filters={config.savedFilters} post={post} />}
-            {tab === "contracts" && <ContractEditor contracts={config.contracts} post={post} />}
-            {tab === "reports" && <ScheduledReportEditor reports={config.scheduledReports} post={post} />}
+            {tab === "templates" && <TicketTemplateEditor templates={config.ticketTemplates ?? []} categories={config.categories} groups={config.groups} post={post} />}
+            {tab === "filters" && <SavedFilterEditor filters={config.savedFilters ?? []} post={post} />}
+            {tab === "contracts" && <ContractEditor contracts={config.contracts ?? []} post={post} />}
+            {tab === "reports" && <ScheduledReportEditor reports={config.scheduledReports ?? []} post={post} />}
             {tab === "integrations" && <IntegrationsPanel config={config} post={post} />}
           </>
         )}
