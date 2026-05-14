@@ -6,6 +6,7 @@ import { ArrowLeft, Plus, Headset, Settings, ChevronUp, ChevronDown, Filter, Clo
 import TicketCreateModal from "@/components/helpdesk/TicketCreateModal";
 import TicketDetailPanel from "@/components/helpdesk/TicketDetailPanel";
 import CsvImportModal from "@/components/helpdesk/CsvImportModal";
+import AgentStatusSelector from "@/components/helpdesk/AgentStatusSelector";
 import type { Ticket, HdGroup, HdCategory, HdFieldDef, HdForm, TicketStatus, TicketPriority, SavedFilter, AgentStatus as AgentStatusType, TicketTemplate } from "@/lib/helpdesk";
 
 const STATUSES: TicketStatus[] = ["Open", "In Progress", "Waiting", "Resolved", "Closed"];
@@ -188,6 +189,7 @@ export default function HelpdeskPage() {
           <h1 className="text-lg font-bold text-text-primary">Helpdesk</h1>
         </div>
         <div className="flex items-center gap-2">
+          <AgentStatusSelector />
           <button className="jp-action-btn" onClick={exportCsv} data-tip="Export CSV"><Download className="w-4 h-4" /></button>
           <button className="jp-action-btn" onClick={() => setShowImport(true)} data-tip="Import CSV"><Upload className="w-4 h-4" /></button>
           <button className="jp-action-btn" onClick={() => router.push("/helpdesk/admin")} data-tip="Admin Settings">

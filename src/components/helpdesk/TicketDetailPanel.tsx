@@ -5,6 +5,7 @@ import { X, Clock, AlertTriangle, CheckCircle, Monitor, Paperclip, Lock, Tag, Pa
 import TicketCommentBox from "./TicketCommentBox";
 import TicketCertPanel from "./TicketCertPanel";
 import SlaPredictionPanel from "./SlaPredictionPanel";
+import TicketPresenceBar from "./TicketPresenceBar";
 import type { Ticket, HdGroup, HdCategory, HdFieldDef, TicketStatus, TicketPriority, ImpactLevel, UrgencyLevel } from "@/lib/helpdesk";
 
 const STATUSES: TicketStatus[] = ["Open", "In Progress", "Waiting", "Resolved", "Closed"];
@@ -91,6 +92,7 @@ export default function TicketDetailPanel({ ticketId, groups, categories, fieldD
                 <span className="cl-detail-id">{ticket.id}</span>
                 <span className={`cl-badge hd-priority--${ticket.priority.toLowerCase()}`}>{ticket.priority}</span>
                 <span className={`cl-badge hd-status--${ticket.status.toLowerCase().replace(/\s+/g, "-")}`}>{ticket.status}</span>
+                <TicketPresenceBar ticketId={ticket.id} />
               </div>
               <button onClick={onClose} className="cl-modal-close"><X className="w-4 h-4" /></button>
             </div>
