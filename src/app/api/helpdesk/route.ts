@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import {
   readTickets, readConfig, filterTickets, createTicket, updateTicket, deleteTicket,
+  addWorkLog, linkTickets, mergeTickets, decideApproval, getTicket,
   VALID_STATUSES, VALID_PRIORITIES,
 } from "@/lib/helpdesk";
-import type { TicketPriority, CreateTicketFields } from "@/lib/helpdesk";
+import type { TicketPriority, TicketType, TicketLinkRelation, CreateTicketFields } from "@/lib/helpdesk";
+import { addChangeLogEntry } from "@/lib/changelog";
+import type { ChangeType, ChangeRisk } from "@/lib/changelog";
 
 /** GET /api/helpdesk?q=&status=&priority=&assignedTo=&assignedGroup=&category=&requester= */
 export async function GET(request: NextRequest) {
@@ -45,18 +48,21 @@ export async function POST(request: NextRequest) {
 
   switch (action) {
     case "createTicket": {
-      const { subject, description, priority, category, assignedGroup, assignedTo, assetId, formId, customFields, tags, attachments } = body;
+      const { subject, description, priority, category, assignedGroup, assignedTo, assetId, affectedAssetIds, relatedChangeId, formId, customFields, tags, attachments, ticketType, catalogItemId } = body;
       if (!subject?.trim()) return NextResponse.json({ error: "Subject is required" }, { status: 400 });
       if (priority && !VALID_PRIORITIES.includes(priority)) {
         return NextResponse.json({ error: "Invalid priority" }, { status: 400 });
       }
       const fields: CreateTicketFields = {
-        subject, description: description || "", priority: priority as TicketPriority,
+        subject, description: description || "",
+        ticketType: ticketType as TicketType,
+        priority: priority as TicketPriority,
         category, assignedGroup, assignedTo,
         requester: body.requester || user.username,
         requesterEmail: body.requesterEmail || user.email,
         requesterType: "agent",
-        assetId, formId, customFields, tags, attachments,
+        assetId, affectedAssetIds, relatedChangeId,
+        formId, customFields, tags, attachments, catalogItemId,
       };
       const ticket = await createTicket(fields);
       return NextResponse.json({ ticket });
@@ -72,7 +78,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Invalid priority" }, { status: 400 });
       }
       delete updates.action;
-      const ticket = await updateTicket(id, updates);
+      const ticket = await updateTicket(id, updates, user.username);
       if (!ticket) return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
       return NextResponse.json({ ticket });
     }
@@ -83,6 +89,67 @@ export async function POST(request: NextRequest) {
       const ok = await deleteTicket(id);
       if (!ok) return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
       return NextResponse.json({ ok: true });
+    }
+
+    case "addWorkLog": {
+      const { ticketId, agent, startTime, durationMinutes, notes, billable } = body;
+      if (!ticketId) return NextResponse.json({ error: "ticketId required" }, { status: 400 });
+      const entry = await addWorkLog(ticketId, { agent: agent || user.username, startTime: startTime || new Date().toISOString(), durationMinutes: Number(durationMinutes || 0), notes: notes || "", billable: !!billable });
+      if (!entry) return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
+      return NextResponse.json({ workLog: entry });
+    }
+
+    case "linkTickets": {
+      const { sourceId, targetId, relation } = body;
+      if (!sourceId || !targetId || !relation) return NextResponse.json({ error: "sourceId, targetId and relation required" }, { status: 400 });
+      const ok = await linkTickets(sourceId, targetId, relation as TicketLinkRelation);
+      if (!ok) return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
+      return NextResponse.json({ ok: true });
+    }
+
+    case "mergeTickets": {
+      const { sourceId, targetId } = body;
+      if (!sourceId || !targetId) return NextResponse.json({ error: "sourceId and targetId required" }, { status: 400 });
+      const ok = await mergeTickets(sourceId, targetId, user.username);
+      if (!ok) return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
+      return NextResponse.json({ ok: true });
+    }
+
+    case "decideApproval": {
+      const { ticketId, decision, comment } = body;
+      if (!ticketId || !decision) return NextResponse.json({ error: "ticketId and decision required" }, { status: 400 });
+      const ticket = await decideApproval(ticketId, user.username, decision, comment);
+      if (!ticket) return NextResponse.json({ error: "Approval not found or already decided" }, { status: 404 });
+      return NextResponse.json({ ticket });
+    }
+
+    case "createChangeFromTicket": {
+      const { ticketId, changeType, risk, category: changeCat } = body;
+      if (!ticketId) return NextResponse.json({ error: "ticketId required" }, { status: 400 });
+      const ticket = await getTicket(ticketId);
+      if (!ticket) return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
+      const change = await addChangeLogEntry({
+        changeType: (changeType as ChangeType) || "Normal",
+        date: new Date().toISOString().slice(0, 10),
+        author: user.username,
+        system: ticket.category || "Helpdesk",
+        affectedAssetIds: ticket.affectedAssetIds.length > 0 ? ticket.affectedAssetIds : (ticket.assetId ? [ticket.assetId] : undefined),
+        category: changeCat || "Other",
+        description: `Change from ticket ${ticket.id}: ${ticket.subject}\n\n${ticket.description}`,
+        impact: ticket.priority === "Critical" || ticket.priority === "High" ? "High impact — escalated from helpdesk" : "Standard impact",
+        risk: (risk as ChangeRisk) || (ticket.priority === "Critical" ? "High" : "Medium"),
+      });
+      // Link change back to ticket
+      await updateTicket(ticketId, { relatedChangeId: change.id }, user.username);
+      return NextResponse.json({ change, ticketId });
+    }
+
+    case "setRelatedChange": {
+      const { ticketId, changeId } = body;
+      if (!ticketId || !changeId) return NextResponse.json({ error: "ticketId and changeId required" }, { status: 400 });
+      const ticket = await updateTicket(ticketId, { relatedChangeId: changeId }, user.username);
+      if (!ticket) return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
+      return NextResponse.json({ ticket });
     }
 
     default:

@@ -20,7 +20,7 @@ const NOTIF_DIR = path.join(process.cwd(), "config", "notifications");
 
 export interface AppNotification {
   id: string;
-  type: "mention" | "new_user" | "bundle_ready" | "mirth_alert";
+  type: "mention" | "new_user" | "bundle_ready" | "mirth_alert" | "helpdesk";
   message: string;
   from: string;
   spaceSlug: string;

@@ -10,6 +10,8 @@ import { randomUUID } from "crypto";
 import { readJsonConfig, writeJsonConfig } from "./config";
 import { sendMail } from "./email";
 import { getUsers } from "./auth";
+import { readNotifications, writeNotifications } from "./notifications";
+import type { AppNotification } from "./notifications";
 
 // ══════════════════════════════════════════════════════════════════════
 //  Types
@@ -17,17 +19,20 @@ import { getUsers } from "./auth";
 
 // ── Enums ────────────────────────────────────────────────────────────
 
-export type TicketStatus = "Open" | "In Progress" | "Waiting" | "Resolved" | "Closed";
+export type TicketStatus = "Open" | "In Progress" | "Waiting" | "Pending Approval" | "Resolved" | "Closed";
 export type TicketPriority = "Low" | "Medium" | "High" | "Critical";
+export type TicketType = "incident" | "service_request" | "problem";
 export type HdFieldType = "text" | "number" | "date" | "boolean" | "select" | "multiselect" | "textarea" | "url" | "email";
 export type RuleMatchType = "all" | "any";
 export type RuleConditionOp = "equals" | "not_equals" | "contains" | "not_contains" | "in" | "not_in" | "gt" | "lt";
-export type RuleActionType = "assign_group" | "assign_person" | "set_priority" | "set_status" | "send_notification" | "add_tag";
-export type WidgetType = "hero" | "ticket_form" | "my_tickets" | "announcements" | "faq" | "categories" | "search" | "custom_html" | "quick_links";
+export type RuleActionType = "assign_group" | "assign_person" | "set_priority" | "set_status" | "send_notification" | "add_tag" | "require_approval";
+export type WidgetType = "hero" | "ticket_form" | "my_tickets" | "announcements" | "faq" | "categories" | "search" | "custom_html" | "quick_links" | "service_catalog";
+export type TicketLinkRelation = "parent" | "child" | "related" | "duplicate";
 
-export const VALID_STATUSES: TicketStatus[] = ["Open", "In Progress", "Waiting", "Resolved", "Closed"];
+export const VALID_STATUSES: TicketStatus[] = ["Open", "In Progress", "Waiting", "Pending Approval", "Resolved", "Closed"];
 export const VALID_PRIORITIES: TicketPriority[] = ["Low", "Medium", "High", "Critical"];
 export const VALID_FIELD_TYPES: HdFieldType[] = ["text", "number", "date", "boolean", "select", "multiselect", "textarea", "url", "email"];
+export const VALID_TICKET_TYPES: TicketType[] = ["incident", "service_request", "problem"];
 
 // ── Groups ───────────────────────────────────────────────────────────
 
@@ -47,6 +52,7 @@ export interface HdCategory {
   name: string;
   description: string;
   icon?: string;
+  parentId?: string | null;
   order: number;
 }
 
@@ -135,6 +141,125 @@ export interface SlaPolicy {
   createdAt: string;
 }
 
+// ── Approvals ────────────────────────────────────────────────────────
+
+export interface TicketApproval {
+  id: string;
+  approver: string;
+  level: number;
+  decision: "Pending" | "Approved" | "Rejected";
+  comment?: string;
+  decidedAt?: string;
+}
+
+// ── Ticket Links ─────────────────────────────────────────────────────
+
+export interface TicketLink {
+  ticketId: string;
+  relation: TicketLinkRelation;
+}
+
+// ── Work Logs ────────────────────────────────────────────────────────
+
+export interface WorkLogEntry {
+  id: string;
+  agent: string;
+  startTime: string;
+  durationMinutes: number;
+  notes: string;
+  billable: boolean;
+}
+
+// ── Ticket History (audit trail) ─────────────────────────────────────
+
+export interface TicketHistoryEntry {
+  field: string;
+  oldValue: unknown;
+  newValue: unknown;
+  changedBy: string;
+  changedAt: string;
+}
+
+// ── Service Catalog ──────────────────────────────────────────────────
+
+export interface ServiceCatalogItem {
+  id: string;
+  name: string;
+  description: string;
+  icon?: string;
+  categoryId?: string;
+  formId?: string;
+  defaultGroupId?: string;
+  defaultAssignee?: string;
+  defaultPriority?: TicketPriority;
+  slaOverridePolicyId?: string;
+  approvalRequired: boolean;
+  approvers: string[];
+  cost?: number;
+  estimatedDays?: number;
+  published: boolean;
+  order: number;
+}
+
+// ── Canned Responses ─────────────────────────────────────────────────
+
+export interface ReplyTemplate {
+  id: string;
+  name: string;
+  content: string;
+  category?: string;
+}
+
+// ── Escalation Rules ─────────────────────────────────────────────────
+
+export type EscalationTrigger =
+  | "sla_response_warning" | "sla_response_breach"
+  | "sla_resolution_warning" | "sla_resolution_breach";
+
+export interface EscalationRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  trigger: EscalationTrigger;
+  warningMinutesBefore: number;
+  actions: RuleAction[];
+  order: number;
+}
+
+// ── Requester Organizations ──────────────────────────────────────────
+
+export interface HelpdeskOrg {
+  id: string;
+  name: string;
+  domain: string;
+  defaultSlaId?: string;
+  defaultGroupId?: string;
+}
+
+// ── Recurring Tickets ────────────────────────────────────────────────
+
+export interface RecurringTicketDef {
+  id: string;
+  template: Omit<CreateTicketFields, "requester" | "requesterType">;
+  cron: string;
+  enabled: boolean;
+  lastRun?: string;
+}
+
+// ── Notification Templates ───────────────────────────────────────────
+
+export type HdNotificationEvent =
+  | "ticket_created" | "ticket_assigned" | "status_changed"
+  | "comment_added" | "sla_warning" | "sla_breached"
+  | "escalated" | "approval_requested" | "approval_decided";
+
+export interface HdNotificationTemplate {
+  event: HdNotificationEvent;
+  subject: string;
+  htmlBody: string;
+  enabled: boolean;
+}
+
 // ── Portal Page Designer ─────────────────────────────────────────────
 
 export interface PageWidget {
@@ -179,6 +304,7 @@ export interface TicketComment {
 
 export interface Ticket {
   id: string;
+  ticketType: TicketType;
   subject: string;
   description: string;
   status: TicketStatus;
@@ -190,15 +316,26 @@ export interface Ticket {
   requesterEmail?: string;
   requesterType: "agent" | "portal";
   assetId?: string;
+  affectedAssetIds: string[];
   formId?: string;
+  relatedChangeId?: string;
   customFields: Record<string, string | number | boolean | string[]>;
   tags: string[];
   attachments: TicketAttachment[];
   comments: TicketComment[];
+  approvals: TicketApproval[];
+  linkedTickets: TicketLink[];
+  workLogs: WorkLogEntry[];
+  history: TicketHistoryEntry[];
+  // Problem-specific fields
+  rootCause?: string;
+  workaround?: string;
   slaResponseDue?: string;
   slaResolutionDue?: string;
   slaResponseMet?: boolean;
   slaResolutionMet?: boolean;
+  csatRating?: number;
+  csatComment?: string;
   createdAt: string;
   updatedAt: string;
   resolvedAt?: string;
@@ -215,6 +352,27 @@ export interface HelpdeskConfig {
   rules: HdRule[];
   slaPolicies: SlaPolicy[];
   portalPages: HdPortalPage[];
+  catalogItems: ServiceCatalogItem[];
+  replyTemplates: ReplyTemplate[];
+  escalationRules: EscalationRule[];
+  organizations: HelpdeskOrg[];
+  recurringTickets: RecurringTicketDef[];
+  notificationTemplates: HdNotificationTemplate[];
+  /** IMAP config for email-to-ticket */
+  imapConfig?: {
+    host: string;
+    port: number;
+    tls: boolean;
+    user: string;
+    passEncrypted: string;
+    folder: string;
+    pollIntervalSec: number;
+    enabled: boolean;
+  };
+  /** Webhook secret for inbound ticket creation */
+  webhookSecret?: string;
+  /** Space slug used for KB article suggestions & "Convert to Article" */
+  kbSpaceSlug?: string;
 }
 
 export interface HelpdeskTicketData {
@@ -231,6 +389,8 @@ const TICKETS_FILE = "helpdesk-tickets.json";
 
 const EMPTY_CONFIG: HelpdeskConfig = {
   groups: [], categories: [], fieldDefs: [], forms: [], rules: [], slaPolicies: [], portalPages: [],
+  catalogItems: [], replyTemplates: [], escalationRules: [], organizations: [],
+  recurringTickets: [], notificationTemplates: [],
 };
 const EMPTY_TICKETS: HelpdeskTicketData = { nextNumber: 1, tickets: [] };
 
@@ -482,6 +642,7 @@ export async function deletePortalPage(id: string): Promise<boolean> {
 export interface CreateTicketFields {
   subject: string;
   description: string;
+  ticketType?: TicketType;
   priority?: TicketPriority;
   category?: string;
   assignedGroup?: string;
@@ -490,37 +651,62 @@ export interface CreateTicketFields {
   requesterEmail?: string;
   requesterType: "agent" | "portal";
   assetId?: string;
+  affectedAssetIds?: string[];
+  relatedChangeId?: string;
   formId?: string;
   customFields?: Record<string, string | number | boolean | string[]>;
   tags?: string[];
   attachments?: TicketAttachment[];
+  catalogItemId?: string;
 }
 
 export async function createTicket(fields: CreateTicketFields): Promise<Ticket> {
   const data = await readTickets();
   const cfg = await readConfig();
   const num = data.nextNumber || 1;
-  const id = `TKT-${String(num).padStart(4, "0")}`;
+  const tType = fields.ticketType || "incident";
+  const prefix = tType === "service_request" ? "SR" : tType === "problem" ? "PRB" : "INC";
+  const id = `${prefix}-${String(num).padStart(4, "0")}`;
   const now = new Date().toISOString();
+
+  // Apply service catalog defaults if a catalog item was referenced
+  let effectivePriority = fields.priority || "Medium";
+  let effectiveGroup = fields.assignedGroup;
+  let effectiveAssignee = fields.assignedTo;
+  const catalogItem = fields.catalogItemId
+    ? (cfg.catalogItems ?? []).find((c) => c.id === fields.catalogItemId)
+    : undefined;
+  if (catalogItem) {
+    if (!effectiveGroup && catalogItem.defaultGroupId) effectiveGroup = catalogItem.defaultGroupId;
+    if (!effectiveAssignee && catalogItem.defaultAssignee) effectiveAssignee = catalogItem.defaultAssignee;
+    if (!fields.priority && catalogItem.defaultPriority) effectivePriority = catalogItem.defaultPriority;
+  }
 
   const ticket: Ticket = {
     id,
+    ticketType: tType,
     subject: fields.subject.trim(),
     description: fields.description,
     status: "Open",
-    priority: fields.priority || "Medium",
+    priority: effectivePriority,
     category: fields.category || "",
-    assignedGroup: fields.assignedGroup,
-    assignedTo: fields.assignedTo,
+    assignedGroup: effectiveGroup,
+    assignedTo: effectiveAssignee,
     requester: fields.requester,
     requesterEmail: fields.requesterEmail,
     requesterType: fields.requesterType,
     assetId: fields.assetId,
+    affectedAssetIds: fields.affectedAssetIds || [],
+    relatedChangeId: fields.relatedChangeId,
     formId: fields.formId,
     customFields: fields.customFields || {},
     tags: fields.tags || [],
     attachments: fields.attachments || [],
     comments: [],
+    approvals: [],
+    linkedTickets: [],
+    workLogs: [],
+    history: [],
     createdAt: now,
     updatedAt: now,
   };
@@ -528,40 +714,95 @@ export async function createTicket(fields: CreateTicketFields): Promise<Ticket> 
   // Apply rule engine
   applyRules(ticket, cfg.rules);
 
-  // Apply SLA
-  const defaultSla = cfg.slaPolicies.find((p) => p.isDefault);
-  if (defaultSla) applySla(ticket, defaultSla);
+  // Apply catalog-level approval chain
+  if (catalogItem?.approvalRequired && catalogItem.approvers.length > 0) {
+    ticket.status = "Pending Approval";
+    ticket.approvals = catalogItem.approvers.map((a, i) => ({
+      id: randomUUID(), approver: a, level: i + 1, decision: "Pending" as const,
+    }));
+  }
+
+  // Apply SLA (catalog override or default)
+  const slaPolicy = catalogItem?.slaOverridePolicyId
+    ? cfg.slaPolicies.find((p) => p.id === catalogItem.slaOverridePolicyId)
+    : cfg.slaPolicies.find((p) => p.isDefault);
+  if (slaPolicy) applySla(ticket, slaPolicy);
+
+  // Apply org-specific SLA if requester email matches an org domain
+  if (fields.requesterEmail && !catalogItem?.slaOverridePolicyId) {
+    const domain = fields.requesterEmail.split("@")[1]?.toLowerCase();
+    const org = domain ? (cfg.organizations ?? []).find((o) => o.domain.toLowerCase() === domain) : undefined;
+    if (org?.defaultSlaId) {
+      const orgSla = cfg.slaPolicies.find((p) => p.id === org.defaultSlaId);
+      if (orgSla) applySla(ticket, orgSla);
+    }
+    if (org?.defaultGroupId && !ticket.assignedGroup) {
+      ticket.assignedGroup = org.defaultGroupId;
+    }
+  }
 
   data.tickets.push(ticket);
   data.nextNumber = num + 1;
   await writeTickets(data);
 
-  // Fire-and-forget notifications
+  // Fire-and-forget notifications (email + in-app)
   notifyTicketCreated(ticket, cfg).catch(() => {});
+  pushHelpdeskNotif(ticket.assignedTo, `New ticket ${ticket.id}: ${ticket.subject}`, ticket.id).catch(() => {});
+  if (ticket.assignedGroup) {
+    const grp = cfg.groups.find((g) => g.id === ticket.assignedGroup);
+    if (grp) {
+      for (const m of grp.members) {
+        if (m !== ticket.assignedTo) pushHelpdeskNotif(m, `New ticket ${ticket.id} for ${grp.name}`, ticket.id).catch(() => {});
+      }
+    }
+  }
 
   return ticket;
 }
 
-export async function updateTicket(id: string, updates: Partial<Omit<Ticket, "id" | "createdAt" | "comments">>): Promise<Ticket | null> {
+export async function updateTicket(id: string, updates: Partial<Omit<Ticket, "id" | "createdAt" | "comments">>, actor?: string): Promise<Ticket | null> {
   const data = await readTickets();
   const idx = data.tickets.findIndex((t) => t.id === id);
   if (idx === -1) return null;
   const t = data.tickets[idx];
   const wasResolved = t.status === "Resolved" || t.status === "Closed";
+  const oldStatus = t.status;
+  const oldAssignee = t.assignedTo;
 
-  Object.assign(t, updates, { updatedAt: new Date().toISOString() });
+  // Record history for tracked fields
+  const now = new Date().toISOString();
+  const trackedFields: (keyof typeof updates)[] = ["status", "priority", "assignedTo", "assignedGroup", "category"];
+  if (!t.history) t.history = [];
+  for (const field of trackedFields) {
+    if (updates[field] !== undefined && updates[field] !== (t as unknown as Record<string, unknown>)[field]) {
+      t.history.push({ field, oldValue: (t as unknown as Record<string, unknown>)[field], newValue: updates[field], changedBy: actor || "system", changedAt: now });
+    }
+  }
+
+  Object.assign(t, updates, { updatedAt: now });
 
   // Track resolution/close timestamps
   if (!wasResolved && (t.status === "Resolved" || t.status === "Closed")) {
-    if (!t.resolvedAt) t.resolvedAt = new Date().toISOString();
-    if (t.status === "Closed" && !t.closedAt) t.closedAt = new Date().toISOString();
-    // Check SLA resolution
+    if (!t.resolvedAt) t.resolvedAt = now;
+    if (t.status === "Closed" && !t.closedAt) t.closedAt = now;
     if (t.slaResolutionDue && !t.slaResolutionMet) {
-      t.slaResolutionMet = new Date().toISOString() <= t.slaResolutionDue;
+      t.slaResolutionMet = now <= t.slaResolutionDue;
     }
   }
 
   await writeTickets(data);
+
+  // In-app notifications for status changes and reassignment
+  if (updates.status && updates.status !== oldStatus) {
+    pushHelpdeskNotif(t.assignedTo, `${t.id} status changed to ${t.status}`, t.id).catch(() => {});
+    if (t.requesterType === "agent" && t.requester !== t.assignedTo) {
+      pushHelpdeskNotif(t.requester, `${t.id} status changed to ${t.status}`, t.id).catch(() => {});
+    }
+  }
+  if (updates.assignedTo && updates.assignedTo !== oldAssignee) {
+    pushHelpdeskNotif(updates.assignedTo, `Ticket ${t.id} assigned to you: ${t.subject}`, t.id).catch(() => {});
+  }
+
   return t;
 }
 
@@ -698,6 +939,13 @@ function applyRules(ticket: Ticket, rules: HdRule[]): void {
           case "add_tag":
             if (!ticket.tags.includes(action.value)) ticket.tags.push(action.value);
             break;
+          case "require_approval":
+            // value = comma-separated approver usernames
+            ticket.status = "Pending Approval";
+            ticket.approvals = action.value.split(",").map((a, i) => ({
+              id: randomUUID(), approver: a.trim(), level: i + 1, decision: "Pending" as const,
+            }));
+            break;
           // send_notification handled post-creation
         }
       }
@@ -783,4 +1031,122 @@ async function notifyCommentAdded(ticket: Ticket, comment: TicketComment): Promi
        </blockquote>
        <p>Log in to view the full response.</p>`);
   }
+  // In-app notification for assignee
+  pushHelpdeskNotif(
+    ticket.assignedTo,
+    `New comment on ${ticket.id}: ${comment.content.slice(0, 80)}`,
+    ticket.id,
+  ).catch(() => {});
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  In-App Helpdesk Notifications
+// ══════════════════════════════════════════════════════════════════════
+
+async function pushHelpdeskNotif(username: string | undefined, message: string, ticketId: string): Promise<void> {
+  if (!username) return;
+  try {
+    const notif: AppNotification = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type: "helpdesk" as AppNotification["type"],
+      message,
+      from: "helpdesk",
+      spaceSlug: "",
+      docName: ticketId,
+      category: "helpdesk",
+      createdAt: new Date().toISOString(),
+      read: false,
+      meta: { ticketId },
+    };
+    const existing = await readNotifications(username);
+    existing.unshift(notif);
+    if (existing.length > 100) existing.length = 100;
+    await writeNotifications(username, existing);
+  } catch { /* fire-and-forget */ }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  Work Log helpers
+// ══════════════════════════════════════════════════════════════════════
+
+export async function addWorkLog(ticketId: string, log: Omit<WorkLogEntry, "id">): Promise<WorkLogEntry | null> {
+  const data = await readTickets();
+  const ticket = data.tickets.find((t) => t.id === ticketId);
+  if (!ticket) return null;
+  if (!ticket.workLogs) ticket.workLogs = [];
+  const entry: WorkLogEntry = { id: randomUUID(), ...log };
+  ticket.workLogs.push(entry);
+  ticket.updatedAt = new Date().toISOString();
+  await writeTickets(data);
+  return entry;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  Ticket Linking & Merging
+// ══════════════════════════════════════════════════════════════════════
+
+export async function linkTickets(sourceId: string, targetId: string, relation: TicketLinkRelation): Promise<boolean> {
+  const data = await readTickets();
+  const src = data.tickets.find((t) => t.id === sourceId);
+  const tgt = data.tickets.find((t) => t.id === targetId);
+  if (!src || !tgt) return false;
+  if (!src.linkedTickets) src.linkedTickets = [];
+  if (!tgt.linkedTickets) tgt.linkedTickets = [];
+  // Add bidirectional link
+  const inverseRelation: TicketLinkRelation = relation === "parent" ? "child" : relation === "child" ? "parent" : relation;
+  if (!src.linkedTickets.some((l) => l.ticketId === targetId)) src.linkedTickets.push({ ticketId: targetId, relation });
+  if (!tgt.linkedTickets.some((l) => l.ticketId === sourceId)) tgt.linkedTickets.push({ ticketId: sourceId, relation: inverseRelation });
+  await writeTickets(data);
+  return true;
+}
+
+export async function mergeTickets(sourceId: string, targetId: string, actor: string): Promise<boolean> {
+  const data = await readTickets();
+  const src = data.tickets.find((t) => t.id === sourceId);
+  const tgt = data.tickets.find((t) => t.id === targetId);
+  if (!src || !tgt) return false;
+  // Copy comments from source to target
+  for (const c of src.comments) tgt.comments.push({ ...c, content: `[Merged from ${sourceId}] ${c.content}` });
+  // Close source as duplicate
+  src.status = "Closed";
+  src.closedAt = new Date().toISOString();
+  src.updatedAt = new Date().toISOString();
+  if (!src.linkedTickets) src.linkedTickets = [];
+  if (!tgt.linkedTickets) tgt.linkedTickets = [];
+  src.linkedTickets.push({ ticketId: targetId, relation: "duplicate" });
+  tgt.linkedTickets.push({ ticketId: sourceId, relation: "duplicate" });
+  // Add merge history
+  if (!src.history) src.history = [];
+  src.history.push({ field: "merged_into", oldValue: null, newValue: targetId, changedBy: actor, changedAt: new Date().toISOString() });
+  tgt.updatedAt = new Date().toISOString();
+  await writeTickets(data);
+  return true;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  Approval helpers
+// ══════════════════════════════════════════════════════════════════════
+
+export async function decideApproval(
+  ticketId: string, approver: string, decision: "Approved" | "Rejected", comment?: string,
+): Promise<Ticket | null> {
+  const data = await readTickets();
+  const ticket = data.tickets.find((t) => t.id === ticketId);
+  if (!ticket || !ticket.approvals?.length) return null;
+  const approval = ticket.approvals.find((a) => a.approver === approver && a.decision === "Pending");
+  if (!approval) return null;
+  approval.decision = decision;
+  approval.comment = comment;
+  approval.decidedAt = new Date().toISOString();
+  // If all approvals decided, update status
+  const allDecided = ticket.approvals.every((a) => a.decision !== "Pending");
+  if (allDecided) {
+    const anyRejected = ticket.approvals.some((a) => a.decision === "Rejected");
+    ticket.status = anyRejected ? "Closed" : "Open";
+  }
+  ticket.updatedAt = new Date().toISOString();
+  await writeTickets(data);
+  // Notify requester
+  pushHelpdeskNotif(ticket.requester, `${ticket.id} approval ${decision.toLowerCase()} by ${approver}`, ticket.id).catch(() => {});
+  return ticket;
 }
