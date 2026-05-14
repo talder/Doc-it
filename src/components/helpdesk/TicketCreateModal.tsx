@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { X, Paperclip, Monitor } from "lucide-react";
-import type { HdCategory, HdGroup, HdFieldDef, HdForm, TicketPriority, TicketAttachment } from "@/lib/helpdesk";
+import { X, Paperclip, Monitor, Lightbulb, Sparkles } from "lucide-react";
+import type { HdCategory, HdGroup, HdFieldDef, HdForm, TicketPriority, TicketAttachment, ImpactLevel, UrgencyLevel, TicketTemplate } from "@/lib/helpdesk";
 
 const PRIORITIES: TicketPriority[] = ["Low", "Medium", "High", "Critical"];
+const IMPACTS: ImpactLevel[] = ["low", "medium", "high", "critical"];
+const URGENCIES: UrgencyLevel[] = ["low", "medium", "high", "critical"];
 
 interface TicketCreateModalProps {
   isOpen: boolean;
@@ -13,13 +15,16 @@ interface TicketCreateModalProps {
   groups: HdGroup[];
   fieldDefs: HdFieldDef[];
   forms: HdForm[];
+  templates?: TicketTemplate[];
   onSave: (data: Record<string, unknown>) => Promise<void>;
 }
 
-export default function TicketCreateModal({ isOpen, onClose, categories, groups, fieldDefs, forms, onSave }: TicketCreateModalProps) {
+export default function TicketCreateModal({ isOpen, onClose, categories, groups, fieldDefs, forms, templates, onSave }: TicketCreateModalProps) {
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<TicketPriority>("Medium");
+  const [impact, setImpact] = useState<ImpactLevel | "">("");
+  const [urgency, setUrgency] = useState<UrgencyLevel | "">("");
   const [category, setCategory] = useState("");
   const [assignedGroup, setAssignedGroup] = useState("");
   const [assignedTo, setAssignedTo] = useState("");
@@ -34,14 +39,43 @@ export default function TicketCreateModal({ isOpen, onClose, categories, groups,
   const [selectedFormId, setSelectedFormId] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // AI suggestions
+  const [aiArticles, setAiArticles] = useState<{ title: string; slug: string; score: number }[]>([]);
+  const [aiCategory, setAiCategory] = useState("");
+
   useEffect(() => {
     if (isOpen) {
-      setSubject(""); setDescription(""); setPriority("Medium"); setCategory("");
-      setAssignedGroup(""); setAssignedTo(""); setAssetId(""); setAssetSearch("");
+      setSubject(""); setDescription(""); setPriority("Medium"); setImpact(""); setUrgency("");
+      setCategory(""); setAssignedGroup(""); setAssignedTo(""); setAssetId(""); setAssetSearch("");
       setAssetResults([]); setCustomFields({}); setTags(""); setAttachments([]);
       setSaving(false); setSelectedFormId(forms.find((f) => f.isDefault)?.id || "");
+      setAiArticles([]); setAiCategory("");
     }
   }, [isOpen, forms]);
+
+  // Debounced AI suggestions when subject changes
+  useEffect(() => {
+    if (!subject || subject.length < 5) { setAiArticles([]); setAiCategory(""); return; }
+    const t = setTimeout(() => {
+      fetch(`/api/helpdesk/predict?q=${encodeURIComponent(subject)}&type=suggest`)
+        .then((r) => r.ok ? r.json() : null)
+        .then((d: { articles?: { title: string; slug: string; score: number }[]; suggestedCategory?: string } | null) => {
+          if (d?.articles) setAiArticles(d.articles.slice(0, 3));
+          if (d?.suggestedCategory) setAiCategory(d.suggestedCategory);
+        })
+        .catch(() => {});
+    }, 600);
+    return () => clearTimeout(t);
+  }, [subject]);
+
+  const applyTemplate = (tpl: TicketTemplate) => {
+    if (tpl.subject) setSubject(tpl.subject);
+    if (tpl.body) setDescription(tpl.body);
+    if (tpl.priority) setPriority(tpl.priority);
+    if (tpl.category) setCategory(tpl.category);
+    if (tpl.assignedGroup) setAssignedGroup(tpl.assignedGroup);
+    if (tpl.tags?.length) setTags(tpl.tags.join(", "));
+  };
 
   // CmdbItem search
   useEffect(() => {
@@ -81,7 +115,9 @@ export default function TicketCreateModal({ isOpen, onClose, categories, groups,
     setSaving(true);
     await onSave({
       action: "createTicket",
-      subject, description, priority, category, assignedGroup: assignedGroup || undefined,
+      subject, description, priority,
+      impact: impact || undefined, urgency: urgency || undefined,
+      category, assignedGroup: assignedGroup || undefined,
       assignedTo: assignedTo || undefined, assetId: assetId || undefined,
       formId: selectedFormId || undefined, customFields,
       tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
@@ -103,6 +139,17 @@ export default function TicketCreateModal({ isOpen, onClose, categories, groups,
           <button onClick={onClose} className="cl-modal-close"><X className="w-4 h-4" /></button>
         </div>
         <div className="cl-modal-body" style={{ maxHeight: "70vh", overflowY: "auto" }}>
+          {/* Template selector */}
+          {templates && templates.length > 0 && (
+            <div className="cl-field" style={{ marginBottom: 14 }}>
+              <label className="cl-label">Apply Template</label>
+              <select className="cl-input" defaultValue="" onChange={(e) => { const tpl = templates.find((t) => t.id === e.target.value); if (tpl) applyTemplate(tpl); }}>
+                <option value="">— Select template —</option>
+                {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </div>
+          )}
+
           {/* Form selector */}
           {forms.length > 1 && (
             <div className="cl-field" style={{ marginBottom: 14 }}>
@@ -120,6 +167,25 @@ export default function TicketCreateModal({ isOpen, onClose, categories, groups,
               <input className="cl-input" placeholder="Brief summary of the issue" value={subject} onChange={(e) => setSubject(e.target.value)} />
             </div>
 
+            {/* AI article suggestions */}
+            {aiArticles.length > 0 && (
+              <div className="cl-field cl-field--full">
+                <div className="flex items-center gap-1 text-xs text-accent mb-1"><Lightbulb className="w-3 h-3" /> Related articles:</div>
+                {aiArticles.map((a) => (
+                  <a key={a.slug} href={`/docs/${a.slug}`} target="_blank" rel="noreferrer" className="text-xs text-accent hover:underline block">{a.title}</a>
+                ))}
+              </div>
+            )}
+
+            {/* AI category suggestion */}
+            {aiCategory && !category && (
+              <div className="cl-field cl-field--full">
+                <button className="flex items-center gap-1 text-xs text-accent" onClick={() => setCategory(aiCategory)}>
+                  <Sparkles className="w-3 h-3" /> Suggested category: {categories.find((c) => c.id === aiCategory)?.name || aiCategory} — click to apply
+                </button>
+              </div>
+            )}
+
             {/* Description */}
             <div className="cl-field cl-field--full">
               <label className="cl-label">Description</label>
@@ -131,6 +197,24 @@ export default function TicketCreateModal({ isOpen, onClose, categories, groups,
               <label className="cl-label">Priority</label>
               <select className="cl-input" value={priority} onChange={(e) => setPriority(e.target.value as TicketPriority)}>
                 {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+
+            {/* Impact */}
+            <div className="cl-field">
+              <label className="cl-label">Impact</label>
+              <select className="cl-input" value={impact} onChange={(e) => setImpact(e.target.value as ImpactLevel | "")}>
+                <option value="">— None —</option>
+                {IMPACTS.map((v) => <option key={v} value={v} className="capitalize">{v}</option>)}
+              </select>
+            </div>
+
+            {/* Urgency */}
+            <div className="cl-field">
+              <label className="cl-label">Urgency</label>
+              <select className="cl-input" value={urgency} onChange={(e) => setUrgency(e.target.value as UrgencyLevel | "")}>
+                <option value="">— None —</option>
+                {URGENCIES.map((v) => <option key={v} value={v} className="capitalize">{v}</option>)}
               </select>
             </div>
 

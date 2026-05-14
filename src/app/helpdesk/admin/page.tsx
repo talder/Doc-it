@@ -2,21 +2,26 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Headset, Plus, Pencil, Trash2, Users, Tag, ListChecks, FileText, Zap, Clock, Layout } from "lucide-react";
-import type { HdGroup, HdCategory, HdFieldDef, HdForm, HdRule, SlaPolicy, HdPortalPage, HdFieldType, HelpdeskConfig } from "@/lib/helpdesk";
+import { ArrowLeft, Headset, Plus, Pencil, Trash2, Users, Tag, ListChecks, FileText, Zap, Clock, Layout, Copy, Filter, Shield, BarChart3, Plug } from "lucide-react";
+import type { HdGroup, HdCategory, HdFieldDef, HdForm, HdRule, SlaPolicy, HdPortalPage, HdFieldType, HelpdeskConfig, SavedFilter, TicketTemplate, SupportContract, ScheduledReport, PriorityMatrixEntry, TicketPriority, ImpactLevel, HdNotificationEvent } from "@/lib/helpdesk";
 import FormDesigner from "@/components/helpdesk/FormDesigner";
 import RuleEditor from "@/components/helpdesk/RuleEditor";
 import SlaEditor from "@/components/helpdesk/SlaEditor";
 import PortalPageDesigner from "@/components/helpdesk/PortalPageDesigner";
 
 const TABS = [
-  { key: "groups",     label: "Groups",        icon: Users },
-  { key: "categories", label: "Categories",    icon: Tag },
-  { key: "fields",     label: "Custom Fields", icon: ListChecks },
-  { key: "forms",      label: "Forms",         icon: FileText },
-  { key: "rules",      label: "Rules",         icon: Zap },
-  { key: "sla",        label: "SLA",           icon: Clock },
-  { key: "portal",     label: "Portal Pages",  icon: Layout },
+  { key: "groups",       label: "Groups",         icon: Users },
+  { key: "categories",   label: "Categories",     icon: Tag },
+  { key: "fields",       label: "Custom Fields",  icon: ListChecks },
+  { key: "forms",        label: "Forms",          icon: FileText },
+  { key: "rules",        label: "Rules",          icon: Zap },
+  { key: "sla",          label: "SLA",            icon: Clock },
+  { key: "portal",       label: "Portal Pages",   icon: Layout },
+  { key: "templates",    label: "Templates",      icon: Copy },
+  { key: "filters",      label: "Saved Filters",  icon: Filter },
+  { key: "contracts",    label: "Contracts",      icon: Shield },
+  { key: "reports",      label: "Reports",        icon: BarChart3 },
+  { key: "integrations", label: "Integrations",   icon: Plug },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -79,6 +84,11 @@ export default function HelpdeskAdminPage() {
             {tab === "rules" && <RuleEditor rules={config.rules} groups={config.groups} categories={config.categories} post={post} />}
             {tab === "sla" && <SlaEditor policies={config.slaPolicies} post={post} />}
             {tab === "portal" && <PortalPageDesigner pages={config.portalPages} post={post} />}
+            {tab === "templates" && <TicketTemplateEditor templates={config.ticketTemplates} categories={config.categories} groups={config.groups} post={post} />}
+            {tab === "filters" && <SavedFilterEditor filters={config.savedFilters} post={post} />}
+            {tab === "contracts" && <ContractEditor contracts={config.contracts} post={post} />}
+            {tab === "reports" && <ScheduledReportEditor reports={config.scheduledReports} post={post} />}
+            {tab === "integrations" && <IntegrationsPanel config={config} post={post} />}
           </>
         )}
       </div>
@@ -298,6 +308,504 @@ function FieldDefEditor({ fieldDefs, post }: { fieldDefs: HdFieldDef[]; post: (b
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Ticket Template Editor
+   ═══════════════════════════════════════════════════════════ */
+
+function TicketTemplateEditor({ templates, categories, groups, post }: { templates: TicketTemplate[]; categories: HdCategory[]; groups: HdGroup[]; post: (b: Record<string, unknown>) => Promise<void> }) {
+  const [editing, setEditing] = useState<TicketTemplate | null>(null);
+  const [name, setName] = useState("");
+  const [desc, setDesc] = useState("");
+  const [subject, setSubject] = useState("");
+  const [tplBody, setTplBody] = useState("");
+  const [priority, setPriority] = useState<string>("");
+  const [category, setCategory] = useState("");
+  const [assignedGroup, setAssignedGroup] = useState("");
+  const [tplTags, setTplTags] = useState("");
+
+  const startEdit = (t: TicketTemplate | null) => {
+    setEditing(t);
+    setName(t?.name || "");
+    setDesc(t?.description || "");
+    setSubject(t?.subject || "");
+    setTplBody(t?.body || "");
+    setPriority(t?.priority || "");
+    setCategory(t?.category || "");
+    setAssignedGroup(t?.assignedGroup || "");
+    setTplTags(t?.tags?.join(", ") || "");
+  };
+
+  const save = async () => {
+    if (!name.trim()) return;
+    const tags = tplTags.split(",").map((s) => s.trim()).filter(Boolean);
+    if (editing?.id) {
+      await post({ action: "updateTicketTemplate", id: editing.id, name, description: desc, subject, body: tplBody, priority: priority || undefined, category: category || undefined, assignedGroup: assignedGroup || undefined, tags });
+    } else {
+      await post({ action: "createTicketTemplate", name, description: desc, subject, templateBody: tplBody, priority: priority || undefined, category: category || undefined, assignedGroup: assignedGroup || undefined, tags, order: templates.length });
+    }
+    setEditing(null);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-bold text-text-primary">Ticket Templates ({templates.length})</h3>
+        <button className="cl-btn cl-btn--primary text-xs" onClick={() => startEdit({} as TicketTemplate)}><Plus className="w-3 h-3" /> New Template</button>
+      </div>
+
+      {editing !== null && (
+        <div className="cl-modal-overlay" onClick={() => setEditing(null)}>
+          <div className="cl-modal" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
+            <div className="cl-modal-header"><h2 className="cl-modal-title">{editing.id ? "Edit Template" : "New Template"}</h2></div>
+            <div className="cl-modal-body">
+              <div className="cl-field"><label className="cl-label">Name *</label><input className="cl-input" value={name} onChange={(e) => setName(e.target.value)} /></div>
+              <div className="cl-field mt-2"><label className="cl-label">Description</label><input className="cl-input" value={desc} onChange={(e) => setDesc(e.target.value)} /></div>
+              <div className="cl-field mt-2"><label className="cl-label">Default Subject</label><input className="cl-input" value={subject} onChange={(e) => setSubject(e.target.value)} /></div>
+              <div className="cl-field mt-2"><label className="cl-label">Default Body</label><textarea className="cl-textarea" rows={3} value={tplBody} onChange={(e) => setTplBody(e.target.value)} /></div>
+              <div className="cl-field mt-2"><label className="cl-label">Priority</label>
+                <select className="cl-input" value={priority} onChange={(e) => setPriority(e.target.value)}>
+                  <option value="">— Default —</option>
+                  {(["Low", "Medium", "High", "Critical"] as TicketPriority[]).map((p) => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+              <div className="cl-field mt-2"><label className="cl-label">Category</label>
+                <select className="cl-input" value={category} onChange={(e) => setCategory(e.target.value)}>
+                  <option value="">— None —</option>
+                  {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div className="cl-field mt-2"><label className="cl-label">Assigned Group</label>
+                <select className="cl-input" value={assignedGroup} onChange={(e) => setAssignedGroup(e.target.value)}>
+                  <option value="">— None —</option>
+                  {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+              </div>
+              <div className="cl-field mt-2"><label className="cl-label">Tags (comma separated)</label><input className="cl-input" value={tplTags} onChange={(e) => setTplTags(e.target.value)} /></div>
+            </div>
+            <div className="cl-modal-footer"><button className="cl-btn cl-btn--primary" onClick={save}>Save</button><button className="cl-btn cl-btn--secondary" onClick={() => setEditing(null)}>Cancel</button></div>
+          </div>
+        </div>
+      )}
+
+      {templates.length === 0 && <p className="text-sm text-text-muted">No ticket templates defined yet</p>}
+      {templates.map((t) => (
+        <div key={t.id} className="hd-editor-row">
+          <div className="flex-1">
+            <div className="hd-editor-name">{t.name}</div>
+            <div className="hd-editor-desc">{t.description || "—"}</div>
+            {t.subject && <div className="hd-editor-meta">Subject: {t.subject}</div>}
+          </div>
+          <div className="hd-editor-actions">
+            <button className="hd-editor-btn" onClick={() => startEdit(t)}><Pencil className="w-3 h-3" /></button>
+            <button className="hd-editor-btn hd-editor-btn--danger" onClick={() => { if (confirm(`Delete template "${t.name}"?`)) post({ action: "deleteTicketTemplate", id: t.id }); }}><Trash2 className="w-3 h-3" /></button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Saved Filter Editor
+   ═══════════════════════════════════════════════════════════ */
+
+function SavedFilterEditor({ filters, post }: { filters: SavedFilter[]; post: (b: Record<string, unknown>) => Promise<void> }) {
+  const [editing, setEditing] = useState<SavedFilter | null>(null);
+  const [name, setName] = useState("");
+  const [shared, setShared] = useState(false);
+  const [fStatus, setFStatus] = useState("");
+  const [fPriority, setFPriority] = useState("");
+  const [fAssignee, setFAssignee] = useState("");
+  const [fCategory, setFCategory] = useState("");
+
+  const startEdit = (f: SavedFilter | null) => {
+    setEditing(f);
+    setName(f?.name || "");
+    setShared(f?.shared || false);
+    setFStatus(f?.filters?.status || "");
+    setFPriority(f?.filters?.priority || "");
+    setFAssignee(f?.filters?.assignedTo || "");
+    setFCategory(f?.filters?.category || "");
+  };
+
+  const save = async () => {
+    if (!name.trim()) return;
+    const filterObj: Record<string, string> = {};
+    if (fStatus) filterObj.status = fStatus;
+    if (fPriority) filterObj.priority = fPriority;
+    if (fAssignee) filterObj.assignedTo = fAssignee;
+    if (fCategory) filterObj.category = fCategory;
+    if (editing?.id) {
+      await post({ action: "updateSavedFilter", id: editing.id, name, shared, filters: filterObj });
+    } else {
+      await post({ action: "createSavedFilter", name, shared, filters: filterObj });
+    }
+    setEditing(null);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-bold text-text-primary">Saved Filters ({filters.length})</h3>
+        <button className="cl-btn cl-btn--primary text-xs" onClick={() => startEdit({} as SavedFilter)}><Plus className="w-3 h-3" /> New Filter</button>
+      </div>
+
+      {editing !== null && (
+        <div className="cl-modal-overlay" onClick={() => setEditing(null)}>
+          <div className="cl-modal" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
+            <div className="cl-modal-header"><h2 className="cl-modal-title">{editing.id ? "Edit Filter" : "New Filter"}</h2></div>
+            <div className="cl-modal-body">
+              <div className="cl-field"><label className="cl-label">Name *</label><input className="cl-input" value={name} onChange={(e) => setName(e.target.value)} /></div>
+              <div className="flex items-center gap-2 mt-2">
+                <input type="checkbox" checked={shared} onChange={(e) => setShared(e.target.checked)} id="sf-shared" />
+                <label htmlFor="sf-shared" className="text-sm text-text-secondary">Shared with all agents</label>
+              </div>
+              <div className="cl-field mt-2"><label className="cl-label">Status</label>
+                <select className="cl-input" value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
+                  <option value="">Any</option>
+                  {(["Open", "In Progress", "Waiting", "Resolved", "Closed"] as const).map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="cl-field mt-2"><label className="cl-label">Priority</label>
+                <select className="cl-input" value={fPriority} onChange={(e) => setFPriority(e.target.value)}>
+                  <option value="">Any</option>
+                  {(["Low", "Medium", "High", "Critical"] as const).map((p) => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+              <div className="cl-field mt-2"><label className="cl-label">Assignee (username)</label><input className="cl-input" value={fAssignee} onChange={(e) => setFAssignee(e.target.value)} /></div>
+              <div className="cl-field mt-2"><label className="cl-label">Category ID</label><input className="cl-input" value={fCategory} onChange={(e) => setFCategory(e.target.value)} /></div>
+            </div>
+            <div className="cl-modal-footer"><button className="cl-btn cl-btn--primary" onClick={save}>Save</button><button className="cl-btn cl-btn--secondary" onClick={() => setEditing(null)}>Cancel</button></div>
+          </div>
+        </div>
+      )}
+
+      {filters.length === 0 && <p className="text-sm text-text-muted">No saved filters defined yet</p>}
+      {filters.map((f) => (
+        <div key={f.id} className="hd-editor-row">
+          <div className="flex-1">
+            <div className="hd-editor-name">{f.name} {f.shared && <span className="text-xs text-accent">(Shared)</span>}</div>
+            <div className="hd-editor-desc">Owner: {f.owner} &bull; {Object.keys(f.filters || {}).length} filter(s)</div>
+          </div>
+          <div className="hd-editor-actions">
+            <button className="hd-editor-btn" onClick={() => startEdit(f)}><Pencil className="w-3 h-3" /></button>
+            <button className="hd-editor-btn hd-editor-btn--danger" onClick={() => { if (confirm(`Delete filter "${f.name}"?`)) post({ action: "deleteSavedFilter", id: f.id }); }}><Trash2 className="w-3 h-3" /></button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Contract Editor
+   ═══════════════════════════════════════════════════════════ */
+
+function ContractEditor({ contracts, post }: { contracts: SupportContract[]; post: (b: Record<string, unknown>) => Promise<void> }) {
+  const [editing, setEditing] = useState<SupportContract | null>(null);
+  const [name, setName] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [maxTickets, setMaxTickets] = useState(0);
+  const [notes, setNotes] = useState("");
+  const [active, setActive] = useState(true);
+
+  const startEdit = (c: SupportContract | null) => {
+    setEditing(c);
+    setName(c?.name || "");
+    setStartDate(c?.startDate || new Date().toISOString().slice(0, 10));
+    setEndDate(c?.endDate || "");
+    setMaxTickets(c?.maxTickets || 0);
+    setNotes(c?.notes || "");
+    setActive(c?.active !== false);
+  };
+
+  const save = async () => {
+    if (!name.trim()) return;
+    if (editing?.id) {
+      await post({ action: "updateContract", id: editing.id, name, startDate, endDate, maxTickets, notes, active });
+    } else {
+      await post({ action: "createContract", name, startDate, endDate, maxTickets, notes, active });
+    }
+    setEditing(null);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-bold text-text-primary">Support Contracts ({contracts.length})</h3>
+        <button className="cl-btn cl-btn--primary text-xs" onClick={() => startEdit({} as SupportContract)}><Plus className="w-3 h-3" /> New Contract</button>
+      </div>
+
+      {editing !== null && (
+        <div className="cl-modal-overlay" onClick={() => setEditing(null)}>
+          <div className="cl-modal" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
+            <div className="cl-modal-header"><h2 className="cl-modal-title">{editing.id ? "Edit Contract" : "New Contract"}</h2></div>
+            <div className="cl-modal-body">
+              <div className="cl-field"><label className="cl-label">Name *</label><input className="cl-input" value={name} onChange={(e) => setName(e.target.value)} /></div>
+              <div className="cl-field mt-2"><label className="cl-label">Start Date</label><input className="cl-input" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} /></div>
+              <div className="cl-field mt-2"><label className="cl-label">End Date</label><input className="cl-input" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></div>
+              <div className="cl-field mt-2"><label className="cl-label">Max Tickets (0 = unlimited)</label><input className="cl-input" type="number" value={maxTickets} onChange={(e) => setMaxTickets(Number(e.target.value))} /></div>
+              <div className="cl-field mt-2"><label className="cl-label">Notes</label><textarea className="cl-textarea" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
+              <div className="flex items-center gap-2 mt-2">
+                <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} id="ct-active" />
+                <label htmlFor="ct-active" className="text-sm text-text-secondary">Active</label>
+              </div>
+            </div>
+            <div className="cl-modal-footer"><button className="cl-btn cl-btn--primary" onClick={save}>Save</button><button className="cl-btn cl-btn--secondary" onClick={() => setEditing(null)}>Cancel</button></div>
+          </div>
+        </div>
+      )}
+
+      {contracts.length === 0 && <p className="text-sm text-text-muted">No contracts defined yet</p>}
+      {contracts.map((c) => (
+        <div key={c.id} className="hd-editor-row">
+          <div className="flex-1">
+            <div className="hd-editor-name">{c.name} {!c.active && <span className="text-xs text-text-muted">(Inactive)</span>}</div>
+            <div className="hd-editor-desc">{c.startDate} — {c.endDate || "No end"} &bull; Max: {c.maxTickets || "∞"} tickets</div>
+          </div>
+          <div className="hd-editor-actions">
+            <button className="hd-editor-btn" onClick={() => startEdit(c)}><Pencil className="w-3 h-3" /></button>
+            <button className="hd-editor-btn hd-editor-btn--danger" onClick={() => { if (confirm(`Delete contract "${c.name}"?`)) post({ action: "deleteContract", id: c.id }); }}><Trash2 className="w-3 h-3" /></button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Scheduled Report Editor
+   ═══════════════════════════════════════════════════════════ */
+
+function ScheduledReportEditor({ reports, post }: { reports: ScheduledReport[]; post: (b: Record<string, unknown>) => Promise<void> }) {
+  const [editing, setEditing] = useState<ScheduledReport | null>(null);
+  const [name, setName] = useState("");
+  const [enabled, setEnabled] = useState(true);
+  const [schedule, setSchedule] = useState<"daily" | "weekly" | "monthly">("daily");
+  const [time, setTime] = useState("08:00");
+  const [dayOfWeek, setDayOfWeek] = useState(1);
+  const [dayOfMonth, setDayOfMonth] = useState(1);
+  const [recipients, setRecipients] = useState("");
+
+  const startEdit = (r: ScheduledReport | null) => {
+    setEditing(r);
+    setName(r?.name || "");
+    setEnabled(r?.enabled !== false);
+    setSchedule(r?.schedule || "daily");
+    setTime(r?.time || "08:00");
+    setDayOfWeek(r?.dayOfWeek ?? 1);
+    setDayOfMonth(r?.dayOfMonth ?? 1);
+    setRecipients(r?.recipients?.join(", ") || "");
+  };
+
+  const save = async () => {
+    if (!name.trim()) return;
+    const rcpts = recipients.split(",").map((s) => s.trim()).filter(Boolean);
+    const base: Record<string, unknown> = { name, enabled, schedule, time, recipients: rcpts };
+    if (schedule === "weekly") base.dayOfWeek = dayOfWeek;
+    if (schedule === "monthly") base.dayOfMonth = dayOfMonth;
+    if (editing?.id) {
+      await post({ action: "updateScheduledReport", id: editing.id, ...base });
+    } else {
+      await post({ action: "createScheduledReport", ...base });
+    }
+    setEditing(null);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-bold text-text-primary">Scheduled Reports ({reports.length})</h3>
+        <button className="cl-btn cl-btn--primary text-xs" onClick={() => startEdit({} as ScheduledReport)}><Plus className="w-3 h-3" /> New Report</button>
+      </div>
+
+      {editing !== null && (
+        <div className="cl-modal-overlay" onClick={() => setEditing(null)}>
+          <div className="cl-modal" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
+            <div className="cl-modal-header"><h2 className="cl-modal-title">{editing.id ? "Edit Report" : "New Report"}</h2></div>
+            <div className="cl-modal-body">
+              <div className="cl-field"><label className="cl-label">Name *</label><input className="cl-input" value={name} onChange={(e) => setName(e.target.value)} /></div>
+              <div className="flex items-center gap-2 mt-2">
+                <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} id="rp-enabled" />
+                <label htmlFor="rp-enabled" className="text-sm text-text-secondary">Enabled</label>
+              </div>
+              <div className="cl-field mt-2"><label className="cl-label">Schedule</label>
+                <select className="cl-input" value={schedule} onChange={(e) => setSchedule(e.target.value as "daily" | "weekly" | "monthly")}>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </div>
+              <div className="cl-field mt-2"><label className="cl-label">Time</label><input className="cl-input" type="time" value={time} onChange={(e) => setTime(e.target.value)} /></div>
+              {schedule === "weekly" && (
+                <div className="cl-field mt-2"><label className="cl-label">Day of Week</label>
+                  <select className="cl-input" value={dayOfWeek} onChange={(e) => setDayOfWeek(Number(e.target.value))}>
+                    {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((d, i) => <option key={i} value={i}>{d}</option>)}
+                  </select>
+                </div>
+              )}
+              {schedule === "monthly" && (
+                <div className="cl-field mt-2"><label className="cl-label">Day of Month</label><input className="cl-input" type="number" min={1} max={28} value={dayOfMonth} onChange={(e) => setDayOfMonth(Number(e.target.value))} /></div>
+              )}
+              <div className="cl-field mt-2"><label className="cl-label">Recipients (comma separated emails)</label><input className="cl-input" value={recipients} onChange={(e) => setRecipients(e.target.value)} /></div>
+            </div>
+            <div className="cl-modal-footer"><button className="cl-btn cl-btn--primary" onClick={save}>Save</button><button className="cl-btn cl-btn--secondary" onClick={() => setEditing(null)}>Cancel</button></div>
+          </div>
+        </div>
+      )}
+
+      {reports.length === 0 && <p className="text-sm text-text-muted">No scheduled reports defined yet</p>}
+      {reports.map((r) => (
+        <div key={r.id} className="hd-editor-row">
+          <div className="flex-1">
+            <div className="hd-editor-name">{r.name} {!r.enabled && <span className="text-xs text-text-muted">(Disabled)</span>}</div>
+            <div className="hd-editor-desc">{r.schedule} at {r.time} &bull; {r.recipients.length} recipient(s){r.lastSentAt ? ` • Last: ${new Date(r.lastSentAt).toLocaleDateString()}` : ""}</div>
+          </div>
+          <div className="hd-editor-actions">
+            <button className="hd-editor-btn" onClick={() => startEdit(r)}><Pencil className="w-3 h-3" /></button>
+            <button className="hd-editor-btn hd-editor-btn--danger" onClick={() => { if (confirm(`Delete report "${r.name}"?`)) post({ action: "deleteScheduledReport", id: r.id }); }}><Trash2 className="w-3 h-3" /></button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Integrations Panel (Slack, LDAP, CSAT, Priority Matrix)
+   ═══════════════════════════════════════════════════════════ */
+
+function IntegrationsPanel({ config, post }: { config: HelpdeskConfig; post: (b: Record<string, unknown>) => Promise<void> }) {
+  // Slack
+  const [slackEnabled, setSlackEnabled] = useState(config.slackConfig?.enabled || false);
+  const [slackWebhook, setSlackWebhook] = useState(config.slackConfig?.webhookUrl || "");
+  const [slackChannel, setSlackChannel] = useState(config.slackConfig?.channel || "");
+  const [slackEvents, setSlackEvents] = useState<string[]>(config.slackConfig?.events || []);
+  // LDAP
+  const [ldapEnabled, setLdapEnabled] = useState(config.ldapConfig?.enabled || false);
+  const [ldapUrl, setLdapUrl] = useState(config.ldapConfig?.url || "");
+  const [ldapBindDn, setLdapBindDn] = useState(config.ldapConfig?.bindDn || "");
+  const [ldapSearchBase, setLdapSearchBase] = useState(config.ldapConfig?.searchBase || "");
+  const [ldapSearchFilter, setLdapSearchFilter] = useState(config.ldapConfig?.searchFilter || "(uid={{username}})");
+  const [ldapUsernameAttr, setLdapUsernameAttr] = useState(config.ldapConfig?.usernameAttr || "uid");
+  const [ldapEmailAttr, setLdapEmailAttr] = useState(config.ldapConfig?.emailAttr || "mail");
+  const [ldapFullNameAttr, setLdapFullNameAttr] = useState(config.ldapConfig?.fullNameAttr || "cn");
+  // CSAT
+  const [csatEnabled, setCsatEnabled] = useState(config.csatEmailEnabled || false);
+  // Priority Matrix
+  const levels: ImpactLevel[] = ["critical", "high", "medium", "low"];
+  const matrixPriorities: TicketPriority[] = ["Low", "Medium", "High", "Critical"];
+  const [matrix, setMatrix] = useState<Record<string, TicketPriority>>(() => {
+    const m: Record<string, TicketPriority> = {};
+    for (const entry of config.priorityMatrix || []) m[`${entry.impact}-${entry.urgency}`] = entry.priority;
+    return m;
+  });
+
+  const allEvents: HdNotificationEvent[] = ["ticket_created", "ticket_assigned", "status_changed", "comment_added", "sla_warning", "sla_breached", "escalated", "approval_requested", "approval_decided"];
+
+  const toggleSlackEvent = (ev: string) => setSlackEvents((prev) => prev.includes(ev) ? prev.filter((e) => e !== ev) : [...prev, ev]);
+
+  const saveSlack = () => post({ action: "updateSettings", slackConfig: { enabled: slackEnabled, webhookUrl: slackWebhook, channel: slackChannel || undefined, events: slackEvents } });
+  const saveLdap = () => post({ action: "updateSettings", ldapConfig: { enabled: ldapEnabled, url: ldapUrl, bindDn: ldapBindDn, bindPasswordEncrypted: config.ldapConfig?.bindPasswordEncrypted || "", searchBase: ldapSearchBase, searchFilter: ldapSearchFilter, usernameAttr: ldapUsernameAttr, emailAttr: ldapEmailAttr, fullNameAttr: ldapFullNameAttr } });
+  const saveCsat = () => post({ action: "updateSettings", csatEmailEnabled: csatEnabled });
+  const saveMatrix = () => {
+    const entries: PriorityMatrixEntry[] = [];
+    for (const impact of levels) for (const urgency of levels) entries.push({ impact, urgency, priority: matrix[`${impact}-${urgency}`] || "Medium" });
+    return post({ action: "updateSettings", priorityMatrix: entries });
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Slack */}
+      <div>
+        <h3 className="text-sm font-bold text-text-primary mb-2">Slack Integration</h3>
+        <div className="flex items-center gap-2 mb-2">
+          <input type="checkbox" checked={slackEnabled} onChange={(e) => setSlackEnabled(e.target.checked)} id="int-slack" />
+          <label htmlFor="int-slack" className="text-sm text-text-secondary">Enable Slack notifications</label>
+        </div>
+        {slackEnabled && (
+          <>
+            <div className="cl-field"><label className="cl-label">Webhook URL</label><input className="cl-input" value={slackWebhook} onChange={(e) => setSlackWebhook(e.target.value)} placeholder="https://hooks.slack.com/services/..." /></div>
+            <div className="cl-field mt-2"><label className="cl-label">Channel (optional)</label><input className="cl-input" value={slackChannel} onChange={(e) => setSlackChannel(e.target.value)} placeholder="#helpdesk" /></div>
+            <div className="cl-field mt-2"><label className="cl-label">Events</label>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {allEvents.map((ev) => (
+                  <label key={ev} className="flex items-center gap-1 text-xs">
+                    <input type="checkbox" checked={slackEvents.includes(ev)} onChange={() => toggleSlackEvent(ev)} />
+                    {ev.replace(/_/g, " ")}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+        <button className="cl-btn cl-btn--primary text-xs mt-2" onClick={saveSlack}>Save Slack</button>
+      </div>
+
+      <hr className="border-border" />
+
+      {/* LDAP */}
+      <div>
+        <h3 className="text-sm font-bold text-text-primary mb-2">LDAP Portal Authentication</h3>
+        <div className="flex items-center gap-2 mb-2">
+          <input type="checkbox" checked={ldapEnabled} onChange={(e) => setLdapEnabled(e.target.checked)} id="int-ldap" />
+          <label htmlFor="int-ldap" className="text-sm text-text-secondary">Enable LDAP for portal login</label>
+        </div>
+        {ldapEnabled && (
+          <>
+            <div className="cl-field"><label className="cl-label">LDAP URL</label><input className="cl-input" value={ldapUrl} onChange={(e) => setLdapUrl(e.target.value)} placeholder="ldap://ldap.example.com:389" /></div>
+            <div className="cl-field mt-2"><label className="cl-label">Bind DN</label><input className="cl-input" value={ldapBindDn} onChange={(e) => setLdapBindDn(e.target.value)} placeholder="cn=admin,dc=example,dc=com" /></div>
+            <div className="cl-field mt-2"><label className="cl-label">Search Base</label><input className="cl-input" value={ldapSearchBase} onChange={(e) => setLdapSearchBase(e.target.value)} placeholder="ou=users,dc=example,dc=com" /></div>
+            <div className="cl-field mt-2"><label className="cl-label">Search Filter</label><input className="cl-input" value={ldapSearchFilter} onChange={(e) => setLdapSearchFilter(e.target.value)} /></div>
+            <div className="cl-field mt-2"><label className="cl-label">Username Attribute</label><input className="cl-input" value={ldapUsernameAttr} onChange={(e) => setLdapUsernameAttr(e.target.value)} /></div>
+            <div className="cl-field mt-2"><label className="cl-label">Email Attribute</label><input className="cl-input" value={ldapEmailAttr} onChange={(e) => setLdapEmailAttr(e.target.value)} /></div>
+            <div className="cl-field mt-2"><label className="cl-label">Full Name Attribute</label><input className="cl-input" value={ldapFullNameAttr} onChange={(e) => setLdapFullNameAttr(e.target.value)} /></div>
+          </>
+        )}
+        <button className="cl-btn cl-btn--primary text-xs mt-2" onClick={saveLdap}>Save LDAP</button>
+      </div>
+
+      <hr className="border-border" />
+
+      {/* CSAT */}
+      <div>
+        <h3 className="text-sm font-bold text-text-primary mb-2">Customer Satisfaction (CSAT)</h3>
+        <div className="flex items-center gap-2 mb-2">
+          <input type="checkbox" checked={csatEnabled} onChange={(e) => setCsatEnabled(e.target.checked)} id="int-csat" />
+          <label htmlFor="int-csat" className="text-sm text-text-secondary">Auto-send CSAT survey email when ticket is resolved</label>
+        </div>
+        <button className="cl-btn cl-btn--primary text-xs" onClick={saveCsat}>Save CSAT</button>
+      </div>
+
+      <hr className="border-border" />
+
+      {/* Priority Matrix */}
+      <div>
+        <h3 className="text-sm font-bold text-text-primary mb-2">Priority Matrix (Impact × Urgency)</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "80px repeat(4, 1fr)", gap: 4, fontSize: 12 }}>
+          <div className="text-xs text-text-muted">Impact ↓ Urgency →</div>
+          {levels.map((u) => <div key={u} className="text-center font-medium text-text-secondary capitalize">{u}</div>)}
+          {levels.flatMap((impact) => [
+            <div key={`lbl-${impact}`} className="font-medium text-text-secondary capitalize flex items-center">{impact}</div>,
+            ...levels.map((urgency) => (
+              <select
+                key={`${impact}-${urgency}`}
+                className="cl-input text-xs"
+                value={matrix[`${impact}-${urgency}`] || "Medium"}
+                onChange={(e) => setMatrix((prev) => ({ ...prev, [`${impact}-${urgency}`]: e.target.value as TicketPriority }))}
+              >
+                {matrixPriorities.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+            )),
+          ])}
+        </div>
+        <button className="cl-btn cl-btn--primary text-xs mt-2" onClick={saveMatrix}>Save Matrix</button>
+      </div>
     </div>
   );
 }

@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus, Headset, Settings, ChevronUp, ChevronDown, Filter, Clock, AlertTriangle, CheckCircle, XCircle } from "lucide-react";
+import { ArrowLeft, Plus, Headset, Settings, ChevronUp, ChevronDown, Filter, Clock, AlertTriangle, CheckCircle, XCircle, Download, Upload, Bookmark, Circle } from "lucide-react";
 import TicketCreateModal from "@/components/helpdesk/TicketCreateModal";
 import TicketDetailPanel from "@/components/helpdesk/TicketDetailPanel";
-import type { Ticket, HdGroup, HdCategory, HdFieldDef, HdForm, TicketStatus, TicketPriority } from "@/lib/helpdesk";
+import CsvImportModal from "@/components/helpdesk/CsvImportModal";
+import type { Ticket, HdGroup, HdCategory, HdFieldDef, HdForm, TicketStatus, TicketPriority, SavedFilter, AgentStatus as AgentStatusType, TicketTemplate } from "@/lib/helpdesk";
 
 const STATUSES: TicketStatus[] = ["Open", "In Progress", "Waiting", "Resolved", "Closed"];
 const PRIORITIES: TicketPriority[] = ["Low", "Medium", "High", "Critical"];
@@ -47,7 +48,19 @@ export default function HelpdeskPage() {
 
   // Modals
   const [showCreate, setShowCreate] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<string | null>(null);
+
+  // Bulk operations
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState<string>("");
+  const [bulkPriority, setBulkPriority] = useState<string>("");
+  const [bulkAssignee, setBulkAssignee] = useState<string>("");
+
+  // Saved filters, agent statuses, templates
+  const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([]);
+  const [agentStatuses, setAgentStatuses] = useState<AgentStatusType[]>([]);
+  const [ticketTemplates, setTicketTemplates] = useState<TicketTemplate[]>([]);
 
   // Fetch tickets
   const fetchTickets = useCallback(async () => {
@@ -76,6 +89,9 @@ export default function HelpdeskPage() {
         setCategories(data.categories || []);
         setFieldDefs(data.fieldDefs || []);
         setForms(data.forms || []);
+        setSavedFilters(data.savedFilters || []);
+        setAgentStatuses(data.agentStatuses || []);
+        setTicketTemplates(data.ticketTemplates || []);
       }
     } catch {}
   }, []);
@@ -126,6 +142,41 @@ export default function HelpdeskPage() {
 
   const catName = (id: string) => categories.find((c) => c.id === id)?.name || id;
   const groupName = (id?: string) => id ? groups.find((g) => g.id === id)?.name || id : "—";
+  const agentStatus = (username?: string) => username ? agentStatuses.find((a) => a.username === username)?.status : undefined;
+
+  // Bulk actions
+  const toggleSelect = (id: string) => setSelectedIds((prev) => { const s = new Set(prev); if (s.has(id)) s.delete(id); else s.add(id); return s; });
+  const toggleAll = () => setSelectedIds((prev) => prev.size === sorted.length ? new Set() : new Set(sorted.map((t) => t.id)));
+
+  const applyBulk = async () => {
+    if (selectedIds.size === 0) return;
+    const updates: Record<string, unknown> = {};
+    if (bulkStatus) updates.status = bulkStatus;
+    if (bulkPriority) updates.priority = bulkPriority;
+    if (bulkAssignee) updates.assignedTo = bulkAssignee;
+    if (Object.keys(updates).length === 0) return;
+    await fetch("/api/helpdesk/bulk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(selectedIds), updates }) });
+    setSelectedIds(new Set());
+    setBulkStatus(""); setBulkPriority(""); setBulkAssignee("");
+    fetchTickets();
+  };
+
+  const exportCsv = async () => {
+    const res = await fetch("/api/helpdesk/import-export?format=csv");
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "helpdesk-tickets.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const applySavedFilter = (f: SavedFilter) => {
+    setFilterStatus(f.filters?.status || "");
+    setFilterPriority(f.filters?.priority || "");
+    setFilterAssignee(f.filters?.assignedTo || "");
+    setFilterGroup(f.filters?.assignedGroup || "");
+    setSearchQ(f.filters?.q || "");
+  };
 
   return (
     <div className="jp-root">
@@ -137,6 +188,8 @@ export default function HelpdeskPage() {
           <h1 className="text-lg font-bold text-text-primary">Helpdesk</h1>
         </div>
         <div className="flex items-center gap-2">
+          <button className="jp-action-btn" onClick={exportCsv} data-tip="Export CSV"><Download className="w-4 h-4" /></button>
+          <button className="jp-action-btn" onClick={() => setShowImport(true)} data-tip="Import CSV"><Upload className="w-4 h-4" /></button>
           <button className="jp-action-btn" onClick={() => router.push("/helpdesk/admin")} data-tip="Admin Settings">
             <Settings className="w-4 h-4" />
           </button>
@@ -221,10 +274,41 @@ export default function HelpdeskPage() {
               </button>
             )}
           </div>
+
+          {/* Saved filters */}
+          {savedFilters.length > 0 && (
+            <div className="jp-section">
+              <h3 className="jp-section-title"><Bookmark className="w-3.5 h-3.5" /> Saved Filters</h3>
+              {savedFilters.map((f) => (
+                <button key={f.id} className="cl-btn cl-btn--secondary text-xs w-full mt-1" onClick={() => applySavedFilter(f)}>{f.name}</button>
+              ))}
+            </div>
+          )}
         </aside>
 
         {/* Ticket table */}
         <div className="jp-content">
+          {/* Bulk operations toolbar */}
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-2 mb-3 p-2 rounded" style={{ background: "var(--bg-secondary, #f3f4f6)" }}>
+              <span className="text-xs font-medium">{selectedIds.size} selected</span>
+              <select className="cl-input text-xs" style={{ width: 120 }} value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value)}>
+                <option value="">Set status…</option>
+                {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <select className="cl-input text-xs" style={{ width: 120 }} value={bulkPriority} onChange={(e) => setBulkPriority(e.target.value)}>
+                <option value="">Set priority…</option>
+                {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <select className="cl-input text-xs" style={{ width: 130 }} value={bulkAssignee} onChange={(e) => setBulkAssignee(e.target.value)}>
+                <option value="">Set assignee…</option>
+                {assignees.map((a) => <option key={a} value={a}>{a}</option>)}
+              </select>
+              <button className="cl-btn cl-btn--primary text-xs" onClick={applyBulk}>Apply</button>
+              <button className="cl-btn cl-btn--secondary text-xs" onClick={() => setSelectedIds(new Set())}>Cancel</button>
+            </div>
+          )}
+
           {loading ? (
             <div className="jp-empty">Loading…</div>
           ) : sorted.length === 0 ? (
@@ -233,30 +317,45 @@ export default function HelpdeskPage() {
             <table className="cl-table hd-ticket-table">
               <thead>
                 <tr>
+                  <th style={{ width: 32 }}><input type="checkbox" checked={selectedIds.size === sorted.length && sorted.length > 0} onChange={toggleAll} /></th>
                   <th onClick={() => toggleSort("id")} className="cursor-pointer">ID <SortIcon col="id" /></th>
                   <th onClick={() => toggleSort("subject")} className="cursor-pointer">Subject <SortIcon col="subject" /></th>
                   <th onClick={() => toggleSort("status")} className="cursor-pointer">Status <SortIcon col="status" /></th>
                   <th onClick={() => toggleSort("priority")} className="cursor-pointer">Priority <SortIcon col="priority" /></th>
+                  <th>Impact</th>
+                  <th>Urgency</th>
                   <th onClick={() => toggleSort("category")} className="cursor-pointer">Category <SortIcon col="category" /></th>
                   <th onClick={() => toggleSort("assignedTo")} className="cursor-pointer">Assignee <SortIcon col="assignedTo" /></th>
                   <th onClick={() => toggleSort("updatedAt")} className="cursor-pointer">Updated <SortIcon col="updatedAt" /></th>
                 </tr>
               </thead>
               <tbody>
-                {sorted.map((t) => (
-                  <tr key={t.id} className="hd-ticket-row" onClick={() => setSelectedTicket(t.id)}>
-                    <td className="hd-ticket-id">{t.id}</td>
-                    <td>
-                      <div className="hd-ticket-subject">{t.subject}</div>
-                      <div className="hd-ticket-requester">by {t.requester}</div>
-                    </td>
-                    <td><span className={`cl-badge hd-status--${t.status.toLowerCase().replace(/\s+/g, "-")}`}>{t.status}</span></td>
-                    <td><span className={`cl-badge hd-priority--${t.priority.toLowerCase()}`}>{t.priority}</span></td>
-                    <td>{catName(t.category)}</td>
-                    <td>{t.assignedTo || "—"}</td>
-                    <td className="text-xs text-text-muted">{timeAgo(t.updatedAt)}</td>
-                  </tr>
-                ))}
+                {sorted.map((t) => {
+                  const aStatus = agentStatus(t.assignedTo);
+                  const statusColor = aStatus === "online" ? "#22c55e" : aStatus === "busy" ? "#ef4444" : aStatus === "away" ? "#f59e0b" : "#9ca3af";
+                  return (
+                    <tr key={t.id} className="hd-ticket-row">
+                      <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedIds.has(t.id)} onChange={() => toggleSelect(t.id)} /></td>
+                      <td className="hd-ticket-id" onClick={() => setSelectedTicket(t.id)}>{t.id}</td>
+                      <td onClick={() => setSelectedTicket(t.id)}>
+                        <div className="hd-ticket-subject">{t.subject}</div>
+                        <div className="hd-ticket-requester">by {t.requester}</div>
+                      </td>
+                      <td><span className={`cl-badge hd-status--${t.status.toLowerCase().replace(/\s+/g, "-")}`}>{t.status}</span></td>
+                      <td><span className={`cl-badge hd-priority--${t.priority.toLowerCase()}`}>{t.priority}</span></td>
+                      <td className="text-xs capitalize">{t.impact || "—"}</td>
+                      <td className="text-xs capitalize">{t.urgency || "—"}</td>
+                      <td>{catName(t.category)}</td>
+                      <td>
+                        <span className="flex items-center gap-1">
+                          {t.assignedTo && <Circle className="w-2 h-2" style={{ fill: statusColor, color: statusColor }} />}
+                          {t.assignedTo || "—"}
+                        </span>
+                      </td>
+                      <td className="text-xs text-text-muted">{timeAgo(t.updatedAt)}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
@@ -271,11 +370,17 @@ export default function HelpdeskPage() {
           categories={categories}
           fieldDefs={fieldDefs}
           forms={forms}
+          templates={ticketTemplates}
           onClose={() => { setShowCreate(false); fetchTickets(); }}
           onSave={async (data) => {
             await fetch("/api/helpdesk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
           }}
         />
+      )}
+
+      {/* CSV import modal */}
+      {showImport && (
+        <CsvImportModal onClose={() => { setShowImport(false); fetchTickets(); }} />
       )}
 
       {/* Detail panel */}

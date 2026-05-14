@@ -1,13 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { X, Clock, AlertTriangle, CheckCircle, Monitor, Paperclip, Lock, Tag } from "lucide-react";
+import { X, Clock, AlertTriangle, CheckCircle, Monitor, Paperclip, Lock, Tag, Pause, Zap, Circle } from "lucide-react";
 import TicketCommentBox from "./TicketCommentBox";
 import TicketCertPanel from "./TicketCertPanel";
-import type { Ticket, HdGroup, HdCategory, HdFieldDef, TicketStatus, TicketPriority } from "@/lib/helpdesk";
+import SlaPredictionPanel from "./SlaPredictionPanel";
+import type { Ticket, HdGroup, HdCategory, HdFieldDef, TicketStatus, TicketPriority, ImpactLevel, UrgencyLevel } from "@/lib/helpdesk";
 
 const STATUSES: TicketStatus[] = ["Open", "In Progress", "Waiting", "Resolved", "Closed"];
 const PRIORITIES: TicketPriority[] = ["Low", "Medium", "High", "Critical"];
+const IMPACTS: ImpactLevel[] = ["low", "medium", "high", "critical"];
+const URGENCIES: UrgencyLevel[] = ["low", "medium", "high", "critical"];
 
 interface TicketDetailPanelProps {
   ticketId: string | null;
@@ -109,7 +112,28 @@ export default function TicketDetailPanel({ ticketId, groups, categories, fieldD
                 <div className="flex gap-2 mt-2 flex-wrap">
                   <SlaIndicator label="Response" due={ticket.slaResponseDue} met={ticket.slaResponseMet} />
                   <SlaIndicator label="Resolution" due={ticket.slaResolutionDue} met={ticket.slaResolutionMet} />
+                  {ticket.slaPausedAt && (
+                    <div className="hd-sla-badge" style={{ background: "#fef3c7", color: "#92400e" }}>
+                      <Pause className="w-3 h-3" /> SLA Paused ({ticket.slaPausedMinutes || 0}m accumulated)
+                    </div>
+                  )}
                 </div>
+
+                {/* Impact / Urgency */}
+                {(ticket.impact || ticket.urgency) && (
+                  <div className="flex gap-3 mt-2 text-xs">
+                    {ticket.impact && <span className="capitalize">Impact: <strong>{ticket.impact}</strong></span>}
+                    {ticket.urgency && <span className="capitalize">Urgency: <strong>{ticket.urgency}</strong></span>}
+                  </div>
+                )}
+
+                {/* Contract info */}
+                {ticket.contractId && (
+                  <div className="text-xs text-text-muted mt-1">Contract: {ticket.contractId}</div>
+                )}
+
+                {/* SLA Prediction */}
+                <SlaPredictionPanel ticketId={ticket.id} />
 
                 {/* Description */}
                 {ticket.description && (
@@ -198,6 +222,39 @@ export default function TicketDetailPanel({ ticketId, groups, categories, fieldD
                     {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
                   </select>
                 </div>
+
+                {/* Impact */}
+                <div className="hd-detail-ctrl">
+                  <label className="cl-label">Impact</label>
+                  <select className="cl-input" value={ticket.impact || ""} onChange={(e) => post({ action: "updateTicket", id: ticket.id, impact: e.target.value || undefined })}>
+                    <option value="">— None —</option>
+                    {IMPACTS.map((v) => <option key={v} value={v} className="capitalize">{v}</option>)}
+                  </select>
+                </div>
+
+                {/* Urgency */}
+                <div className="hd-detail-ctrl">
+                  <label className="cl-label">Urgency</label>
+                  <select className="cl-input" value={ticket.urgency || ""} onChange={(e) => post({ action: "updateTicket", id: ticket.id, urgency: e.target.value || undefined })}>
+                    <option value="">— None —</option>
+                    {URGENCIES.map((v) => <option key={v} value={v} className="capitalize">{v}</option>)}
+                  </select>
+                </div>
+
+                {/* Impact cascade button */}
+                {ticket.assetId && (
+                  <div className="hd-detail-ctrl">
+                    <button
+                      className="cl-btn cl-btn--secondary text-xs w-full"
+                      onClick={async () => {
+                        const res = await fetch("/api/helpdesk/impact", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticketId: ticket.id, assetId: ticket.assetId }) });
+                        if (res.ok) { const d = await res.json(); alert(`Impact cascade: ${d.affectedAssets?.length || 0} assets affected`); }
+                      }}
+                    >
+                      <Zap className="w-3 h-3" /> Run Impact Cascade
+                    </button>
+                  </div>
+                )}
 
                 {/* Assigned Group */}
                 <div className="hd-detail-ctrl">
