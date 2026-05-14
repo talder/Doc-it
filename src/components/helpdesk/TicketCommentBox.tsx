@@ -1,15 +1,17 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Send, Paperclip, Lock } from "lucide-react";
-import type { TicketAttachment } from "@/lib/helpdesk";
+import { Send, Paperclip, Lock, FileText } from "lucide-react";
+import type { TicketAttachment, ReplyTemplate } from "@/lib/helpdesk";
 
 interface TicketCommentBoxProps {
   ticketId: string;
+  replyTemplates?: ReplyTemplate[];
   onCommentAdded: () => void;
 }
 
-export default function TicketCommentBox({ ticketId, onCommentAdded }: TicketCommentBoxProps) {
+export default function TicketCommentBox({ ticketId, replyTemplates, onCommentAdded }: TicketCommentBoxProps) {
+  const [showTemplates, setShowTemplates] = useState(false);
   const [content, setContent] = useState("");
   const [isInternal, setIsInternal] = useState(false);
   const [attachments, setAttachments] = useState<TicketAttachment[]>([]);
@@ -57,6 +59,17 @@ export default function TicketCommentBox({ ticketId, onCommentAdded }: TicketCom
         value={content}
         onChange={(e) => setContent(e.target.value)}
       />
+      {/* Canned response picker */}
+      {showTemplates && replyTemplates && replyTemplates.length > 0 && (
+        <div className="border border-border rounded p-2 mb-1" style={{ maxHeight: 120, overflowY: "auto" }}>
+          {replyTemplates.map((t) => (
+            <button key={t.id} className="block w-full text-left px-2 py-1 text-xs hover:bg-[var(--bg-secondary,#f3f4f6)] rounded" onClick={() => { setContent(t.content); setShowTemplates(false); }}>
+              <span className="font-medium">{t.name}</span>
+              {t.category && <span className="text-text-muted ml-1">({t.category})</span>}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="hd-comment-actions">
         <div className="flex items-center gap-2">
           <button
@@ -67,6 +80,11 @@ export default function TicketCommentBox({ ticketId, onCommentAdded }: TicketCom
             <Lock className="w-3.5 h-3.5" />
             {isInternal ? "Internal" : "Public"}
           </button>
+          {replyTemplates && replyTemplates.length > 0 && (
+            <button className="hd-attach-btn" onClick={() => setShowTemplates((v) => !v)} title="Canned responses">
+              <FileText className="w-3.5 h-3.5" />
+            </button>
+          )}
           <button className="hd-attach-btn" onClick={() => fileRef.current?.click()} disabled={uploading}>
             <Paperclip className="w-3.5 h-3.5" />
           </button>

@@ -7,7 +7,7 @@ import TicketCreateModal from "@/components/helpdesk/TicketCreateModal";
 import TicketDetailPanel from "@/components/helpdesk/TicketDetailPanel";
 import CsvImportModal from "@/components/helpdesk/CsvImportModal";
 import AgentStatusSelector from "@/components/helpdesk/AgentStatusSelector";
-import type { Ticket, HdGroup, HdCategory, HdFieldDef, HdForm, TicketStatus, TicketPriority, SavedFilter, AgentStatus as AgentStatusType, TicketTemplate } from "@/lib/helpdesk";
+import type { Ticket, HdGroup, HdCategory, HdFieldDef, HdForm, TicketStatus, TicketPriority, SavedFilter, AgentStatus as AgentStatusType, TicketTemplate, ReplyTemplate } from "@/lib/helpdesk";
 
 const STATUSES: TicketStatus[] = ["Open", "In Progress", "Waiting", "Resolved", "Closed"];
 const PRIORITIES: TicketPriority[] = ["Low", "Medium", "High", "Critical"];
@@ -62,6 +62,7 @@ export default function HelpdeskPage() {
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([]);
   const [agentStatuses, setAgentStatuses] = useState<AgentStatusType[]>([]);
   const [ticketTemplates, setTicketTemplates] = useState<TicketTemplate[]>([]);
+  const [replyTemplates, setReplyTemplates] = useState<ReplyTemplate[]>([]);
 
   // Fetch tickets
   const fetchTickets = useCallback(async () => {
@@ -93,6 +94,7 @@ export default function HelpdeskPage() {
         setSavedFilters(data.savedFilters || []);
         setAgentStatuses(data.agentStatuses || []);
         setTicketTemplates(data.ticketTemplates || []);
+        setReplyTemplates(data.replyTemplates || []);
       }
     } catch {}
   }, []);
@@ -392,6 +394,7 @@ export default function HelpdeskPage() {
           groups={groups}
           categories={categories}
           fieldDefs={fieldDefs}
+          replyTemplates={replyTemplates}
           onClose={() => setSelectedTicket(null)}
           onUpdated={fetchTickets}
         />

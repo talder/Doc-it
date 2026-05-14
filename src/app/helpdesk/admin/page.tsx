@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Headset, Plus, Pencil, Trash2, Users, Tag, ListChecks, FileText, Zap, Clock, Layout, Copy, Filter, Shield, BarChart3, Plug } from "lucide-react";
-import type { HdGroup, HdCategory, HdFieldDef, HdForm, HdRule, SlaPolicy, HdPortalPage, HdFieldType, HelpdeskConfig, SavedFilter, TicketTemplate, SupportContract, ScheduledReport, PriorityMatrixEntry, TicketPriority, ImpactLevel, HdNotificationEvent } from "@/lib/helpdesk";
+import { ArrowLeft, Headset, Plus, Pencil, Trash2, Users, Tag, ListChecks, FileText, Zap, Clock, Layout, Copy, Filter, Shield, BarChart3, Plug, AlertOctagon, MessageSquare, Building, ShoppingCart, RefreshCw, Bell } from "lucide-react";
+import type { HdGroup, HdCategory, HdFieldDef, HdForm, HdRule, SlaPolicy, HdPortalPage, HdFieldType, HelpdeskConfig, SavedFilter, TicketTemplate, SupportContract, ScheduledReport, PriorityMatrixEntry, TicketPriority, ImpactLevel, HdNotificationEvent, EscalationRule, EscalationTrigger, ReplyTemplate, HelpdeskOrg, ServiceCatalogItem, RecurringTicketDef, HdNotificationTemplate } from "@/lib/helpdesk";
 import FormDesigner from "@/components/helpdesk/FormDesigner";
 import RuleEditor from "@/components/helpdesk/RuleEditor";
 import SlaEditor from "@/components/helpdesk/SlaEditor";
@@ -16,8 +16,14 @@ const TABS = [
   { key: "forms",        label: "Forms",          icon: FileText },
   { key: "rules",        label: "Rules",          icon: Zap },
   { key: "sla",          label: "SLA",            icon: Clock },
+  { key: "escalations",  label: "Escalations",    icon: AlertOctagon },
   { key: "portal",       label: "Portal Pages",   icon: Layout },
   { key: "templates",    label: "Templates",      icon: Copy },
+  { key: "replies",      label: "Reply Templates", icon: MessageSquare },
+  { key: "orgs",         label: "Organizations",  icon: Building },
+  { key: "catalog",      label: "Service Catalog", icon: ShoppingCart },
+  { key: "recurring",    label: "Recurring",      icon: RefreshCw },
+  { key: "notifications",label: "Notifications",  icon: Bell },
   { key: "filters",      label: "Saved Filters",  icon: Filter },
   { key: "contracts",    label: "Contracts",      icon: Shield },
   { key: "reports",      label: "Reports",        icon: BarChart3 },
@@ -84,7 +90,13 @@ export default function HelpdeskAdminPage() {
             {tab === "rules" && <RuleEditor rules={config.rules} groups={config.groups} categories={config.categories} post={post} />}
             {tab === "sla" && <SlaEditor policies={config.slaPolicies} post={post} />}
             {tab === "portal" && <PortalPageDesigner pages={config.portalPages} post={post} />}
+            {tab === "escalations" && <EscalationRuleEditor rules={config.escalationRules ?? []} post={post} />}
             {tab === "templates" && <TicketTemplateEditor templates={config.ticketTemplates ?? []} categories={config.categories} groups={config.groups} post={post} />}
+            {tab === "replies" && <ReplyTemplateEditor templates={config.replyTemplates ?? []} post={post} />}
+            {tab === "orgs" && <OrganizationEditor orgs={config.organizations ?? []} groups={config.groups} slaPolicies={config.slaPolicies} post={post} />}
+            {tab === "catalog" && <CatalogItemEditor items={config.catalogItems ?? []} categories={config.categories} groups={config.groups} slaPolicies={config.slaPolicies} post={post} />}
+            {tab === "recurring" && <RecurringTicketEditor defs={config.recurringTickets ?? []} post={post} />}
+            {tab === "notifications" && <NotificationTemplateEditor templates={config.notificationTemplates ?? []} post={post} />}
             {tab === "filters" && <SavedFilterEditor filters={config.savedFilters ?? []} post={post} />}
             {tab === "contracts" && <ContractEditor contracts={config.contracts ?? []} post={post} />}
             {tab === "reports" && <ScheduledReportEditor reports={config.scheduledReports ?? []} post={post} />}
@@ -845,6 +857,230 @@ function IntegrationsPanel({ config, post }: { config: HelpdeskConfig; post: (b:
         </div>
         <button className="cl-btn cl-btn--primary text-xs mt-2" onClick={saveMatrix}>Save Matrix</button>
       </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Escalation Rule Editor
+   ═══════════════════════════════════════════════════════════ */
+
+const ESC_TRIGGERS: { value: EscalationTrigger; label: string }[] = [
+  { value: "sla_response_warning", label: "SLA Response Warning" },
+  { value: "sla_response_breach", label: "SLA Response Breach" },
+  { value: "sla_resolution_warning", label: "SLA Resolution Warning" },
+  { value: "sla_resolution_breach", label: "SLA Resolution Breach" },
+];
+
+function EscalationRuleEditor({ rules, post }: { rules: EscalationRule[]; post: (b: Record<string, unknown>) => Promise<void> }) {
+  const [editing, setEditing] = useState<EscalationRule | null>(null);
+  const [name, setName] = useState("");
+  const [enabled, setEnabled] = useState(true);
+  const [trigger, setTrigger] = useState<EscalationTrigger>("sla_response_warning");
+  const [warnMin, setWarnMin] = useState(15);
+
+  const startEdit = (r: EscalationRule | null) => { setEditing(r); setName(r?.name || ""); setEnabled(r?.enabled !== false); setTrigger(r?.trigger || "sla_response_warning"); setWarnMin(r?.warningMinutesBefore ?? 15); };
+  const save = async () => {
+    if (!name.trim()) return;
+    if (editing?.id) await post({ action: "updateEscalationRule", id: editing.id, name, enabled, trigger, warningMinutesBefore: warnMin });
+    else await post({ action: "createEscalationRule", name, enabled, trigger, warningMinutesBefore: warnMin, actions: [], order: rules.length });
+    setEditing(null);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3"><h3 className="text-sm font-bold text-text-primary">Escalation Rules ({rules.length})</h3><button className="cl-btn cl-btn--primary text-xs" onClick={() => startEdit({} as EscalationRule)}><Plus className="w-3 h-3" /> New Rule</button></div>
+      {editing !== null && (
+        <div className="cl-modal-overlay" onClick={() => setEditing(null)}><div className="cl-modal" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
+          <div className="cl-modal-header"><h2 className="cl-modal-title">{editing.id ? "Edit" : "New"} Escalation Rule</h2></div>
+          <div className="cl-modal-body">
+            <div className="cl-field"><label className="cl-label">Name *</label><input className="cl-input" value={name} onChange={(e) => setName(e.target.value)} /></div>
+            <div className="flex items-center gap-2 mt-2"><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} id="esc-en" /><label htmlFor="esc-en" className="text-sm text-text-secondary">Enabled</label></div>
+            <div className="cl-field mt-2"><label className="cl-label">Trigger</label><select className="cl-input" value={trigger} onChange={(e) => setTrigger(e.target.value as EscalationTrigger)}>{ESC_TRIGGERS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
+            <div className="cl-field mt-2"><label className="cl-label">Warning Minutes Before</label><input className="cl-input" type="number" value={warnMin} onChange={(e) => setWarnMin(Number(e.target.value))} /></div>
+          </div>
+          <div className="cl-modal-footer"><button className="cl-btn cl-btn--primary" onClick={save}>Save</button><button className="cl-btn cl-btn--secondary" onClick={() => setEditing(null)}>Cancel</button></div>
+        </div></div>
+      )}
+      {rules.length === 0 && <p className="text-sm text-text-muted">No escalation rules defined yet</p>}
+      {rules.map((r) => (<div key={r.id} className="hd-editor-row"><div className="flex-1"><div className="hd-editor-name">{r.name} {!r.enabled && <span className="text-xs text-text-muted">(Disabled)</span>}</div><div className="hd-editor-desc">{ESC_TRIGGERS.find((t) => t.value === r.trigger)?.label} &bull; {r.warningMinutesBefore}min before</div></div><div className="hd-editor-actions"><button className="hd-editor-btn" onClick={() => startEdit(r)}><Pencil className="w-3 h-3" /></button><button className="hd-editor-btn hd-editor-btn--danger" onClick={() => { if (confirm(`Delete "${r.name}"?`)) post({ action: "deleteEscalationRule", id: r.id }); }}><Trash2 className="w-3 h-3" /></button></div></div>))}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Reply Template Editor
+   ═══════════════════════════════════════════════════════════ */
+
+function ReplyTemplateEditor({ templates, post }: { templates: ReplyTemplate[]; post: (b: Record<string, unknown>) => Promise<void> }) {
+  const [editing, setEditing] = useState<ReplyTemplate | null>(null);
+  const [name, setName] = useState("");
+  const [content, setContent] = useState("");
+  const [category, setCategory] = useState("");
+
+  const startEdit = (t: ReplyTemplate | null) => { setEditing(t); setName(t?.name || ""); setContent(t?.content || ""); setCategory(t?.category || ""); };
+  const save = async () => {
+    if (!name.trim()) return;
+    if (editing?.id) await post({ action: "updateReplyTemplate", id: editing.id, name, content, category: category || undefined });
+    else await post({ action: "createReplyTemplate", name, content, category: category || undefined });
+    setEditing(null);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3"><h3 className="text-sm font-bold text-text-primary">Reply Templates ({templates.length})</h3><button className="cl-btn cl-btn--primary text-xs" onClick={() => startEdit({} as ReplyTemplate)}><Plus className="w-3 h-3" /> New Template</button></div>
+      {editing !== null && (
+        <div className="cl-modal-overlay" onClick={() => setEditing(null)}><div className="cl-modal" style={{ maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
+          <div className="cl-modal-header"><h2 className="cl-modal-title">{editing.id ? "Edit" : "New"} Reply Template</h2></div>
+          <div className="cl-modal-body">
+            <div className="cl-field"><label className="cl-label">Name *</label><input className="cl-input" value={name} onChange={(e) => setName(e.target.value)} /></div>
+            <div className="cl-field mt-2"><label className="cl-label">Category (optional)</label><input className="cl-input" value={category} onChange={(e) => setCategory(e.target.value)} /></div>
+            <div className="cl-field mt-2"><label className="cl-label">Content *</label><textarea className="cl-textarea" rows={5} value={content} onChange={(e) => setContent(e.target.value)} /></div>
+          </div>
+          <div className="cl-modal-footer"><button className="cl-btn cl-btn--primary" onClick={save}>Save</button><button className="cl-btn cl-btn--secondary" onClick={() => setEditing(null)}>Cancel</button></div>
+        </div></div>
+      )}
+      {templates.length === 0 && <p className="text-sm text-text-muted">No reply templates defined yet</p>}
+      {templates.map((t) => (<div key={t.id} className="hd-editor-row"><div className="flex-1"><div className="hd-editor-name">{t.name}{t.category && <span className="text-xs text-text-muted ml-1">({t.category})</span>}</div><div className="hd-editor-desc">{t.content.slice(0, 80)}{t.content.length > 80 ? "…" : ""}</div></div><div className="hd-editor-actions"><button className="hd-editor-btn" onClick={() => startEdit(t)}><Pencil className="w-3 h-3" /></button><button className="hd-editor-btn hd-editor-btn--danger" onClick={() => { if (confirm(`Delete "${t.name}"?`)) post({ action: "deleteReplyTemplate", id: t.id }); }}><Trash2 className="w-3 h-3" /></button></div></div>))}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Organization Editor
+   ═══════════════════════════════════════════════════════════ */
+
+function OrganizationEditor({ orgs, groups, slaPolicies, post }: { orgs: HelpdeskOrg[]; groups: HdGroup[]; slaPolicies: SlaPolicy[]; post: (b: Record<string, unknown>) => Promise<void> }) {
+  const [editing, setEditing] = useState<HelpdeskOrg | null>(null);
+  const [name, setName] = useState(""); const [domain, setDomain] = useState(""); const [defSla, setDefSla] = useState(""); const [defGroup, setDefGroup] = useState("");
+
+  const startEdit = (o: HelpdeskOrg | null) => { setEditing(o); setName(o?.name || ""); setDomain(o?.domain || ""); setDefSla(o?.defaultSlaId || ""); setDefGroup(o?.defaultGroupId || ""); };
+  const save = async () => {
+    if (!name.trim() || !domain.trim()) return;
+    if (editing?.id) await post({ action: "updateOrganization", id: editing.id, name, domain, defaultSlaId: defSla || undefined, defaultGroupId: defGroup || undefined });
+    else await post({ action: "createOrganization", name, domain, defaultSlaId: defSla || undefined, defaultGroupId: defGroup || undefined });
+    setEditing(null);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3"><h3 className="text-sm font-bold text-text-primary">Organizations ({orgs.length})</h3><button className="cl-btn cl-btn--primary text-xs" onClick={() => startEdit({} as HelpdeskOrg)}><Plus className="w-3 h-3" /> New Org</button></div>
+      {editing !== null && (
+        <div className="cl-modal-overlay" onClick={() => setEditing(null)}><div className="cl-modal" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
+          <div className="cl-modal-header"><h2 className="cl-modal-title">{editing.id ? "Edit" : "New"} Organization</h2></div>
+          <div className="cl-modal-body">
+            <div className="cl-field"><label className="cl-label">Name *</label><input className="cl-input" value={name} onChange={(e) => setName(e.target.value)} /></div>
+            <div className="cl-field mt-2"><label className="cl-label">Email Domain *</label><input className="cl-input" value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="example.com" /></div>
+            <div className="cl-field mt-2"><label className="cl-label">Default SLA</label><select className="cl-input" value={defSla} onChange={(e) => setDefSla(e.target.value)}><option value="">— None —</option>{slaPolicies.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+            <div className="cl-field mt-2"><label className="cl-label">Default Group</label><select className="cl-input" value={defGroup} onChange={(e) => setDefGroup(e.target.value)}><option value="">— None —</option>{groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
+          </div>
+          <div className="cl-modal-footer"><button className="cl-btn cl-btn--primary" onClick={save}>Save</button><button className="cl-btn cl-btn--secondary" onClick={() => setEditing(null)}>Cancel</button></div>
+        </div></div>
+      )}
+      {orgs.length === 0 && <p className="text-sm text-text-muted">No organizations defined yet</p>}
+      {orgs.map((o) => (<div key={o.id} className="hd-editor-row"><div className="flex-1"><div className="hd-editor-name">{o.name}</div><div className="hd-editor-desc">@{o.domain}</div></div><div className="hd-editor-actions"><button className="hd-editor-btn" onClick={() => startEdit(o)}><Pencil className="w-3 h-3" /></button><button className="hd-editor-btn hd-editor-btn--danger" onClick={() => { if (confirm(`Delete "${o.name}"?`)) post({ action: "deleteOrganization", id: o.id }); }}><Trash2 className="w-3 h-3" /></button></div></div>))}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Service Catalog Item Editor
+   ═══════════════════════════════════════════════════════════ */
+
+function CatalogItemEditor({ items, categories, groups, slaPolicies, post }: { items: ServiceCatalogItem[]; categories: HdCategory[]; groups: HdGroup[]; slaPolicies: SlaPolicy[]; post: (b: Record<string, unknown>) => Promise<void> }) {
+  const [editing, setEditing] = useState<ServiceCatalogItem | null>(null);
+  const [name, setName] = useState(""); const [desc, setDesc] = useState(""); const [published, setPublished] = useState(true);
+  const [defGroup, setDefGroup] = useState(""); const [defPriority, setDefPriority] = useState(""); const [approvalReq, setApprovalReq] = useState(false); const [approvers, setApprovers] = useState("");
+  const [cost, setCost] = useState(""); const [estDays, setEstDays] = useState(""); const [slaId, setSlaId] = useState(""); const [catId, setCatId] = useState("");
+
+  const startEdit = (i: ServiceCatalogItem | null) => { setEditing(i); setName(i?.name || ""); setDesc(i?.description || ""); setPublished(i?.published !== false); setDefGroup(i?.defaultGroupId || ""); setDefPriority(i?.defaultPriority || ""); setApprovalReq(!!i?.approvalRequired); setApprovers(i?.approvers?.join(", ") || ""); setCost(i?.cost?.toString() || ""); setEstDays(i?.estimatedDays?.toString() || ""); setSlaId(i?.slaOverridePolicyId || ""); setCatId(i?.categoryId || ""); };
+  const save = async () => {
+    if (!name.trim()) return;
+    const b: Record<string, unknown> = { name, description: desc, published, defaultGroupId: defGroup || undefined, defaultPriority: defPriority || undefined, approvalRequired: approvalReq, approvers: approvers.split(",").map((s) => s.trim()).filter(Boolean), cost: cost ? Number(cost) : undefined, estimatedDays: estDays ? Number(estDays) : undefined, slaOverridePolicyId: slaId || undefined, categoryId: catId || undefined, order: items.length };
+    if (editing?.id) await post({ action: "updateCatalogItem", id: editing.id, ...b });
+    else await post({ action: "createCatalogItem", ...b });
+    setEditing(null);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3"><h3 className="text-sm font-bold text-text-primary">Service Catalog ({items.length})</h3><button className="cl-btn cl-btn--primary text-xs" onClick={() => startEdit({} as ServiceCatalogItem)}><Plus className="w-3 h-3" /> New Item</button></div>
+      {editing !== null && (
+        <div className="cl-modal-overlay" onClick={() => setEditing(null)}><div className="cl-modal" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
+          <div className="cl-modal-header"><h2 className="cl-modal-title">{editing.id ? "Edit" : "New"} Catalog Item</h2></div>
+          <div className="cl-modal-body">
+            <div className="cl-field"><label className="cl-label">Name *</label><input className="cl-input" value={name} onChange={(e) => setName(e.target.value)} /></div>
+            <div className="cl-field mt-2"><label className="cl-label">Description</label><textarea className="cl-textarea" rows={2} value={desc} onChange={(e) => setDesc(e.target.value)} /></div>
+            <div className="cl-field mt-2"><label className="cl-label">Category</label><select className="cl-input" value={catId} onChange={(e) => setCatId(e.target.value)}><option value="">— None —</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+            <div className="cl-field mt-2"><label className="cl-label">Default Group</label><select className="cl-input" value={defGroup} onChange={(e) => setDefGroup(e.target.value)}><option value="">— None —</option>{groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
+            <div className="cl-field mt-2"><label className="cl-label">Default Priority</label><select className="cl-input" value={defPriority} onChange={(e) => setDefPriority(e.target.value)}><option value="">— Default —</option>{(["Low","Medium","High","Critical"] as const).map((p) => <option key={p} value={p}>{p}</option>)}</select></div>
+            <div className="cl-field mt-2"><label className="cl-label">SLA Override</label><select className="cl-input" value={slaId} onChange={(e) => setSlaId(e.target.value)}><option value="">— Default —</option>{slaPolicies.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+            <div className="flex gap-4 mt-2"><div className="cl-field flex-1"><label className="cl-label">Cost</label><input className="cl-input" type="number" value={cost} onChange={(e) => setCost(e.target.value)} /></div><div className="cl-field flex-1"><label className="cl-label">Est. Days</label><input className="cl-input" type="number" value={estDays} onChange={(e) => setEstDays(e.target.value)} /></div></div>
+            <div className="flex items-center gap-4 mt-2"><label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={published} onChange={(e) => setPublished(e.target.checked)} />Published</label><label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={approvalReq} onChange={(e) => setApprovalReq(e.target.checked)} />Approval required</label></div>
+            {approvalReq && <div className="cl-field mt-2"><label className="cl-label">Approvers (comma separated usernames)</label><input className="cl-input" value={approvers} onChange={(e) => setApprovers(e.target.value)} /></div>}
+          </div>
+          <div className="cl-modal-footer"><button className="cl-btn cl-btn--primary" onClick={save}>Save</button><button className="cl-btn cl-btn--secondary" onClick={() => setEditing(null)}>Cancel</button></div>
+        </div></div>
+      )}
+      {items.length === 0 && <p className="text-sm text-text-muted">No catalog items defined yet</p>}
+      {items.map((i) => (<div key={i.id} className="hd-editor-row"><div className="flex-1"><div className="hd-editor-name">{i.name} {!i.published && <span className="text-xs text-text-muted">(Draft)</span>}</div><div className="hd-editor-desc">{i.description?.slice(0, 60) || "—"}{i.cost ? ` • $${i.cost}` : ""}{i.estimatedDays ? ` • ${i.estimatedDays}d` : ""}</div></div><div className="hd-editor-actions"><button className="hd-editor-btn" onClick={() => startEdit(i)}><Pencil className="w-3 h-3" /></button><button className="hd-editor-btn hd-editor-btn--danger" onClick={() => { if (confirm(`Delete "${i.name}"?`)) post({ action: "deleteCatalogItem", id: i.id }); }}><Trash2 className="w-3 h-3" /></button></div></div>))}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Recurring Ticket Editor
+   ═══════════════════════════════════════════════════════════ */
+
+function RecurringTicketEditor({ defs, post }: { defs: RecurringTicketDef[]; post: (b: Record<string, unknown>) => Promise<void> }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3"><h3 className="text-sm font-bold text-text-primary">Recurring Tickets ({defs.length})</h3></div>
+      <p className="text-xs text-text-muted">Recurring ticket definitions are stored in config. They run on the cron schedule defined during creation.</p>
+      {defs.length === 0 && <p className="text-sm text-text-muted mt-2">No recurring tickets defined yet</p>}
+      {defs.map((d) => (<div key={d.id} className="hd-editor-row"><div className="flex-1"><div className="hd-editor-name">{d.template?.subject || d.id} {!d.enabled && <span className="text-xs text-text-muted">(Disabled)</span>}</div><div className="hd-editor-desc">Cron: {d.cron}{d.lastRun ? ` • Last: ${new Date(d.lastRun).toLocaleString()}` : ""}</div></div></div>))}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Notification Template Editor
+   ═══════════════════════════════════════════════════════════ */
+
+const ALL_NOTIF_EVENTS: HdNotificationEvent[] = ["ticket_created", "ticket_assigned", "status_changed", "comment_added", "sla_warning", "sla_breached", "escalated", "approval_requested", "approval_decided"];
+
+function NotificationTemplateEditor({ templates, post }: { templates: HdNotificationTemplate[]; post: (b: Record<string, unknown>) => Promise<void> }) {
+  const [editing, setEditing] = useState<HdNotificationTemplate | null>(null);
+  const [event, setEvent] = useState<HdNotificationEvent>("ticket_created");
+  const [subject, setSubject] = useState(""); const [htmlBody, setHtmlBody] = useState(""); const [enabled, setEnabled] = useState(true);
+
+  const startEdit = (t: HdNotificationTemplate | null) => { setEditing(t); setEvent(t?.event || "ticket_created"); setSubject(t?.subject || ""); setHtmlBody(t?.htmlBody || ""); setEnabled(t?.enabled !== false); };
+  const save = async () => {
+    const updated = [...templates];
+    const idx = updated.findIndex((t) => t.event === event);
+    const entry = { event, subject, htmlBody, enabled };
+    if (idx >= 0) updated[idx] = entry; else updated.push(entry);
+    await post({ action: "updateSettings", notificationTemplates: updated });
+    setEditing(null);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3"><h3 className="text-sm font-bold text-text-primary">Notification Templates ({templates.length})</h3><button className="cl-btn cl-btn--primary text-xs" onClick={() => startEdit(null)}><Plus className="w-3 h-3" /> New Template</button></div>
+      {editing !== null && (
+        <div className="cl-modal-overlay" onClick={() => setEditing(null)}><div className="cl-modal" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
+          <div className="cl-modal-header"><h2 className="cl-modal-title">Notification Template</h2></div>
+          <div className="cl-modal-body">
+            <div className="cl-field"><label className="cl-label">Event</label><select className="cl-input" value={event} onChange={(e) => setEvent(e.target.value as HdNotificationEvent)}>{ALL_NOTIF_EVENTS.map((ev) => <option key={ev} value={ev}>{ev.replace(/_/g, " ")}</option>)}</select></div>
+            <div className="cl-field mt-2"><label className="cl-label">Subject</label><input className="cl-input" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="[Helpdesk] {{event}}" /></div>
+            <div className="cl-field mt-2"><label className="cl-label">HTML Body</label><textarea className="cl-textarea" rows={5} value={htmlBody} onChange={(e) => setHtmlBody(e.target.value)} /></div>
+            <div className="flex items-center gap-2 mt-2"><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /><label className="text-sm text-text-secondary">Enabled</label></div>
+          </div>
+          <div className="cl-modal-footer"><button className="cl-btn cl-btn--primary" onClick={save}>Save</button><button className="cl-btn cl-btn--secondary" onClick={() => setEditing(null)}>Cancel</button></div>
+        </div></div>
+      )}
+      {templates.length === 0 && <p className="text-sm text-text-muted">No custom notification templates. Defaults will be used.</p>}
+      {templates.map((t) => (<div key={t.event} className="hd-editor-row"><div className="flex-1"><div className="hd-editor-name">{t.event.replace(/_/g, " ")} {!t.enabled && <span className="text-xs text-text-muted">(Disabled)</span>}</div><div className="hd-editor-desc">{t.subject}</div></div><div className="hd-editor-actions"><button className="hd-editor-btn" onClick={() => startEdit(t)}><Pencil className="w-3 h-3" /></button></div></div>))}
     </div>
   );
 }

@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { X, Clock, AlertTriangle, CheckCircle, Monitor, Paperclip, Lock, Tag, Pause, Zap, Circle } from "lucide-react";
+import { X, Clock, AlertTriangle, CheckCircle, Monitor, Paperclip, Lock, Tag, Pause, Zap, Circle, Link2, GitMerge, History, BookOpen, Star, ThumbsUp, ThumbsDown, Timer, Plus } from "lucide-react";
 import TicketCommentBox from "./TicketCommentBox";
 import TicketCertPanel from "./TicketCertPanel";
 import SlaPredictionPanel from "./SlaPredictionPanel";
 import TicketPresenceBar from "./TicketPresenceBar";
-import type { Ticket, HdGroup, HdCategory, HdFieldDef, TicketStatus, TicketPriority, ImpactLevel, UrgencyLevel } from "@/lib/helpdesk";
+import type { Ticket, HdGroup, HdCategory, HdFieldDef, TicketStatus, TicketPriority, ImpactLevel, UrgencyLevel, ReplyTemplate } from "@/lib/helpdesk";
 
 const STATUSES: TicketStatus[] = ["Open", "In Progress", "Waiting", "Resolved", "Closed"];
 const PRIORITIES: TicketPriority[] = ["Low", "Medium", "High", "Critical"];
@@ -18,6 +18,7 @@ interface TicketDetailPanelProps {
   groups: HdGroup[];
   categories: HdCategory[];
   fieldDefs: HdFieldDef[];
+  replyTemplates?: ReplyTemplate[];
   onClose: () => void;
   onUpdated: () => void;
 }
@@ -48,9 +49,26 @@ function SlaIndicator({ label, due, met }: { label: string; due?: string; met?: 
   );
 }
 
-export default function TicketDetailPanel({ ticketId, groups, categories, fieldDefs, onClose, onUpdated }: TicketDetailPanelProps) {
+export default function TicketDetailPanel({ ticketId, groups, categories, fieldDefs, replyTemplates, onClose, onUpdated }: TicketDetailPanelProps) {
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Work log form
+  const [showWorkLog, setShowWorkLog] = useState(false);
+  const [wlDuration, setWlDuration] = useState("");
+  const [wlNotes, setWlNotes] = useState("");
+  const [wlBillable, setWlBillable] = useState(false);
+
+  // Link ticket form
+  const [showLink, setShowLink] = useState(false);
+  const [linkTarget, setLinkTarget] = useState("");
+  const [linkRelation, setLinkRelation] = useState<string>("related");
+
+  // Root cause / workaround
+  const [editRootCause, setEditRootCause] = useState(false);
+  const [rootCauseVal, setRootCauseVal] = useState("");
+  const [editWorkaround, setEditWorkaround] = useState(false);
+  const [workaroundVal, setWorkaroundVal] = useState("");
 
   const fetchTicket = useCallback(async () => {
     if (!ticketId) return;
@@ -137,10 +155,120 @@ export default function TicketDetailPanel({ ticketId, groups, categories, fieldD
                 {/* SLA Prediction */}
                 <SlaPredictionPanel ticketId={ticket.id} />
 
+                {/* CSAT display */}
+                {ticket.csatRating !== undefined && (
+                  <div className="hd-detail-section">
+                    <h4 className="hd-detail-section-title"><Star className="w-3 h-3" /> Customer Satisfaction</h4>
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg font-bold">{ticket.csatRating}/5</span>
+                      <span className="flex gap-0.5">{Array.from({ length: 5 }, (_, i) => <Star key={i} className={`w-4 h-4 ${i < ticket.csatRating! ? "text-yellow-400 fill-yellow-400" : "text-gray-300"}`} />)}</span>
+                    </div>
+                    {ticket.csatComment && <p className="text-xs text-text-muted mt-1">{ticket.csatComment}</p>}
+                  </div>
+                )}
+
+                {/* Approvals */}
+                {ticket.approvals.length > 0 && (
+                  <div className="hd-detail-section">
+                    <h4 className="hd-detail-section-title"><ThumbsUp className="w-3 h-3" /> Approvals</h4>
+                    {ticket.approvals.map((a) => (
+                      <div key={a.id} className="flex items-center gap-2 py-1 text-xs border-b border-border">
+                        <span className="font-medium">{a.approver}</span>
+                        <span className={`cl-badge ${a.decision === "Approved" ? "hd-status--resolved" : a.decision === "Rejected" ? "hd-priority--critical" : "hd-status--waiting"}`}>{a.decision}</span>
+                        {a.comment && <span className="text-text-muted">— {a.comment}</span>}
+                        {a.decision === "Pending" && (
+                          <span className="flex gap-1 ml-auto">
+                            <button className="cl-btn cl-btn--primary" style={{ padding: "2px 8px", fontSize: 11 }} onClick={() => post({ action: "decideApproval", ticketId: ticket.id, decision: "Approved" })}><ThumbsUp className="w-3 h-3" /> Approve</button>
+                            <button className="cl-btn cl-btn--secondary" style={{ padding: "2px 8px", fontSize: 11, color: "#dc2626" }} onClick={() => post({ action: "decideApproval", ticketId: ticket.id, decision: "Rejected" })}><ThumbsDown className="w-3 h-3" /> Reject</button>
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {/* Description */}
                 {ticket.description && (
                   <div className="hd-detail-desc">{ticket.description}</div>
                 )}
+
+                {/* Root cause / Workaround (problem tickets) */}
+                {(ticket.ticketType === "problem" || ticket.rootCause || ticket.workaround) && (
+                  <div className="hd-detail-section">
+                    <h4 className="hd-detail-section-title">Problem Analysis</h4>
+                    <div className="mb-2">
+                      <label className="cl-label">Root Cause</label>
+                      {editRootCause ? (
+                        <div className="flex gap-1">
+                          <textarea className="cl-textarea flex-1" rows={2} value={rootCauseVal} onChange={(e) => setRootCauseVal(e.target.value)} />
+                          <button className="cl-btn cl-btn--primary text-xs" onClick={() => { post({ action: "updateTicket", id: ticket.id, rootCause: rootCauseVal }); setEditRootCause(false); }}>Save</button>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-text-secondary cursor-pointer" onClick={() => { setRootCauseVal(ticket.rootCause || ""); setEditRootCause(true); }}>{ticket.rootCause || <span className="text-text-muted italic">Click to add root cause…</span>}</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="cl-label">Workaround</label>
+                      {editWorkaround ? (
+                        <div className="flex gap-1">
+                          <textarea className="cl-textarea flex-1" rows={2} value={workaroundVal} onChange={(e) => setWorkaroundVal(e.target.value)} />
+                          <button className="cl-btn cl-btn--primary text-xs" onClick={() => { post({ action: "updateTicket", id: ticket.id, workaround: workaroundVal }); setEditWorkaround(false); }}>Save</button>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-text-secondary cursor-pointer" onClick={() => { setWorkaroundVal(ticket.workaround || ""); setEditWorkaround(true); }}>{ticket.workaround || <span className="text-text-muted italic">Click to add workaround…</span>}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Linked tickets */}
+                {(ticket.linkedTickets?.length > 0 || showLink) && (
+                  <div className="hd-detail-section">
+                    <h4 className="hd-detail-section-title"><Link2 className="w-3 h-3" /> Linked Tickets</h4>
+                    {(ticket.linkedTickets || []).map((l, i) => (
+                      <div key={i} className="flex items-center gap-2 text-xs py-0.5">
+                        <span className="capitalize text-text-muted">{l.relation}</span>
+                        <span className="font-mono font-medium text-accent">{l.ticketId}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {showLink && (
+                  <div className="flex gap-2 items-end mt-1">
+                    <div className="cl-field flex-1"><label className="cl-label">Ticket ID</label><input className="cl-input text-xs" value={linkTarget} onChange={(e) => setLinkTarget(e.target.value)} placeholder="INC-0001" /></div>
+                    <select className="cl-input text-xs" style={{ width: 100 }} value={linkRelation} onChange={(e) => setLinkRelation(e.target.value)}>
+                      <option value="related">Related</option><option value="parent">Parent</option><option value="child">Child</option><option value="duplicate">Duplicate</option>
+                    </select>
+                    <button className="cl-btn cl-btn--primary text-xs" onClick={async () => { await post({ action: "linkTickets", sourceId: ticket.id, targetId: linkTarget, relation: linkRelation }); setShowLink(false); setLinkTarget(""); }}>Link</button>
+                    <button className="cl-btn cl-btn--secondary text-xs" onClick={() => setShowLink(false)}>Cancel</button>
+                  </div>
+                )}
+
+                {/* Work logs */}
+                <div className="hd-detail-section">
+                  <div className="flex items-center justify-between">
+                    <h4 className="hd-detail-section-title"><Timer className="w-3 h-3" /> Work Log ({(ticket.workLogs || []).length})</h4>
+                    <button className="text-xs text-accent" onClick={() => setShowWorkLog((v) => !v)}><Plus className="w-3 h-3 inline" /> Add</button>
+                  </div>
+                  {showWorkLog && (
+                    <div className="flex gap-2 items-end mt-1 mb-2">
+                      <div className="cl-field"><label className="cl-label">Minutes</label><input className="cl-input text-xs" type="number" style={{ width: 70 }} value={wlDuration} onChange={(e) => setWlDuration(e.target.value)} /></div>
+                      <div className="cl-field flex-1"><label className="cl-label">Notes</label><input className="cl-input text-xs" value={wlNotes} onChange={(e) => setWlNotes(e.target.value)} /></div>
+                      <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={wlBillable} onChange={(e) => setWlBillable(e.target.checked)} />Billable</label>
+                      <button className="cl-btn cl-btn--primary text-xs" onClick={async () => { await post({ action: "addWorkLog", ticketId: ticket.id, durationMinutes: Number(wlDuration) || 0, notes: wlNotes, billable: wlBillable }); setShowWorkLog(false); setWlDuration(""); setWlNotes(""); setWlBillable(false); }}>Save</button>
+                    </div>
+                  )}
+                  {(ticket.workLogs || []).length === 0 && !showWorkLog && <p className="text-xs text-text-muted">No work logged</p>}
+                  {(ticket.workLogs || []).map((wl) => (
+                    <div key={wl.id} className="flex items-center gap-2 text-xs py-0.5 border-b border-border">
+                      <span className="font-medium">{wl.agent}</span>
+                      <span>{wl.durationMinutes}m</span>
+                      {wl.billable && <span className="cl-badge" style={{ fontSize: 9 }}>$</span>}
+                      <span className="text-text-muted flex-1">{wl.notes}</span>
+                      <span className="text-text-muted">{timeAgo(wl.startTime)}</span>
+                    </div>
+                  ))}
+                </div>
 
                 {/* Attachments */}
                 {ticket.attachments.length > 0 && (
@@ -177,6 +305,21 @@ export default function TicketDetailPanel({ ticketId, groups, categories, fieldD
                   </div>
                 )}
 
+                {/* Ticket history */}
+                {(ticket.history || []).length > 0 && (
+                  <div className="hd-detail-section">
+                    <h4 className="hd-detail-section-title"><History className="w-3 h-3" /> History</h4>
+                    {(ticket.history || []).slice().reverse().map((h, i) => (
+                      <div key={i} className="flex items-center gap-2 text-xs py-0.5 border-b border-border">
+                        <span className="font-medium">{h.changedBy}</span>
+                        <span>changed <strong>{h.field}</strong></span>
+                        <span className="text-text-muted">{String(h.oldValue || "—")} → {String(h.newValue || "—")}</span>
+                        <span className="ml-auto text-text-muted">{timeAgo(h.changedAt)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {/* Comment thread */}
                 <div className="hd-detail-section">
                   <h4 className="hd-detail-section-title">Comments ({ticket.comments.length})</h4>
@@ -204,7 +347,7 @@ export default function TicketDetailPanel({ ticketId, groups, categories, fieldD
                 )}
 
                 {/* Reply box */}
-                <TicketCommentBox ticketId={ticket.id} onCommentAdded={fetchTicket} />
+                <TicketCommentBox ticketId={ticket.id} replyTemplates={replyTemplates} onCommentAdded={fetchTicket} />
               </div>
 
               {/* Right sidebar: controls */}
@@ -249,11 +392,12 @@ export default function TicketDetailPanel({ ticketId, groups, categories, fieldD
                     <button
                       className="cl-btn cl-btn--secondary text-xs w-full"
                       onClick={async () => {
-                        const res = await fetch("/api/helpdesk/impact", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticketId: ticket.id, assetId: ticket.assetId }) });
-                        if (res.ok) { const d = await res.json(); alert(`Impact cascade: ${d.affectedAssets?.length || 0} assets affected`); }
+                        if (!confirm("Create child incidents for all downstream impacted assets?")) return;
+                        const res = await fetch("/api/helpdesk/impact", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "cascadeIncidents", ticketId: ticket.id }) });
+                        if (res.ok) { const d = await res.json(); alert(`Created ${d.count || 0} child incidents`); fetchTicket(); onUpdated(); }
                       }}
                     >
-                      <Zap className="w-3 h-3" /> Run Impact Cascade
+                      <Zap className="w-3 h-3" /> Impact Cascade
                     </button>
                   </div>
                 )}
@@ -297,6 +441,32 @@ export default function TicketDetailPanel({ ticketId, groups, categories, fieldD
                   <label className="cl-label">Updated</label>
                   <span className="text-xs text-text-muted">{new Date(ticket.updatedAt).toLocaleString()}</span>
                 </div>
+
+                {/* Link ticket */}
+                <button className="cl-btn cl-btn--secondary text-xs w-full" onClick={() => setShowLink((v) => !v)}>
+                  <Link2 className="w-3 h-3" /> Link Ticket
+                </button>
+
+                {/* Merge */}
+                <button className="cl-btn cl-btn--secondary text-xs w-full mt-1" onClick={async () => {
+                  const target = prompt("Merge INTO which ticket ID?");
+                  if (!target) return;
+                  await post({ action: "mergeTickets", sourceId: ticket.id, targetId: target });
+                }}>
+                  <GitMerge className="w-3 h-3" /> Merge Into…
+                </button>
+
+                {/* Convert to KB article */}
+                {(ticket.status === "Resolved" || ticket.status === "Closed") && (
+                  <button className="cl-btn cl-btn--secondary text-xs w-full mt-1" onClick={async () => {
+                    const title = prompt("KB article title:", `KB: ${ticket.subject}`);
+                    if (!title) return;
+                    const res = await fetch("/api/helpdesk/kb", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticketId: ticket.id, title }) });
+                    if (res.ok) { const d = await res.json(); alert(`Article created: ${d.article?.name}`); }
+                  }}>
+                    <BookOpen className="w-3 h-3" /> Convert to KB Article
+                  </button>
+                )}
 
                 {/* Delete */}
                 <button
