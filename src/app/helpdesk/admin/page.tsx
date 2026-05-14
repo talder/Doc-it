@@ -681,6 +681,15 @@ function ScheduledReportEditor({ reports, post }: { reports: ScheduledReport[]; 
    ═══════════════════════════════════════════════════════════ */
 
 function IntegrationsPanel({ config, post }: { config: HelpdeskConfig; post: (b: Record<string, unknown>) => Promise<void> }) {
+  // IMAP (email-to-ticket)
+  const [imapEnabled, setImapEnabled] = useState(config.imapConfig?.enabled || false);
+  const [imapHost, setImapHost] = useState(config.imapConfig?.host || "");
+  const [imapPort, setImapPort] = useState(config.imapConfig?.port || 993);
+  const [imapTls, setImapTls] = useState(config.imapConfig?.tls ?? true);
+  const [imapUser, setImapUser] = useState(config.imapConfig?.user || "");
+  const [imapPass, setImapPass] = useState("");
+  const [imapFolder, setImapFolder] = useState(config.imapConfig?.folder || "INBOX");
+  const [imapPoll, setImapPoll] = useState(config.imapConfig?.pollIntervalSec || 60);
   // Slack
   const [slackEnabled, setSlackEnabled] = useState(config.slackConfig?.enabled || false);
   const [slackWebhook, setSlackWebhook] = useState(config.slackConfig?.webhookUrl || "");
@@ -710,6 +719,7 @@ function IntegrationsPanel({ config, post }: { config: HelpdeskConfig; post: (b:
 
   const toggleSlackEvent = (ev: string) => setSlackEvents((prev) => prev.includes(ev) ? prev.filter((e) => e !== ev) : [...prev, ev]);
 
+  const saveImap = () => post({ action: "updateSettings", imapConfig: { enabled: imapEnabled, host: imapHost, port: imapPort, tls: imapTls, user: imapUser, passEncrypted: imapPass || config.imapConfig?.passEncrypted || "", folder: imapFolder, pollIntervalSec: imapPoll } });
   const saveSlack = () => post({ action: "updateSettings", slackConfig: { enabled: slackEnabled, webhookUrl: slackWebhook, channel: slackChannel || undefined, events: slackEvents } });
   const saveLdap = () => post({ action: "updateSettings", ldapConfig: { enabled: ldapEnabled, url: ldapUrl, bindDn: ldapBindDn, bindPasswordEncrypted: config.ldapConfig?.bindPasswordEncrypted || "", searchBase: ldapSearchBase, searchFilter: ldapSearchFilter, usernameAttr: ldapUsernameAttr, emailAttr: ldapEmailAttr, fullNameAttr: ldapFullNameAttr } });
   const saveCsat = () => post({ action: "updateSettings", csatEmailEnabled: csatEnabled });
@@ -721,6 +731,35 @@ function IntegrationsPanel({ config, post }: { config: HelpdeskConfig; post: (b:
 
   return (
     <div className="space-y-6">
+      {/* IMAP - Email-to-Ticket */}
+      <div>
+        <h3 className="text-sm font-bold text-text-primary mb-2">Email-to-Ticket (IMAP)</h3>
+        <p className="text-xs text-text-muted mb-2">Polls an IMAP mailbox for new emails and creates tickets automatically. Replies containing a ticket ID are added as comments.</p>
+        <div className="flex items-center gap-2 mb-2">
+          <input type="checkbox" checked={imapEnabled} onChange={(e) => setImapEnabled(e.target.checked)} id="int-imap" />
+          <label htmlFor="int-imap" className="text-sm text-text-secondary">Enable IMAP polling</label>
+        </div>
+        {imapEnabled && (
+          <>
+            <div className="cl-field"><label className="cl-label">IMAP Host</label><input className="cl-input" value={imapHost} onChange={(e) => setImapHost(e.target.value)} placeholder="imap.example.com" /></div>
+            <div className="flex gap-4 mt-2">
+              <div className="cl-field flex-1"><label className="cl-label">Port</label><input className="cl-input" type="number" value={imapPort} onChange={(e) => setImapPort(Number(e.target.value))} /></div>
+              <div className="cl-field flex items-end gap-2 pb-1">
+                <input type="checkbox" checked={imapTls} onChange={(e) => setImapTls(e.target.checked)} id="int-imap-tls" />
+                <label htmlFor="int-imap-tls" className="text-sm text-text-secondary">TLS</label>
+              </div>
+            </div>
+            <div className="cl-field mt-2"><label className="cl-label">Username</label><input className="cl-input" value={imapUser} onChange={(e) => setImapUser(e.target.value)} placeholder="helpdesk@example.com" /></div>
+            <div className="cl-field mt-2"><label className="cl-label">Password</label><input className="cl-input" type="password" value={imapPass} onChange={(e) => setImapPass(e.target.value)} placeholder={config.imapConfig?.passEncrypted ? "(encrypted — leave blank to keep)" : "Enter password"} /></div>
+            <div className="cl-field mt-2"><label className="cl-label">Folder</label><input className="cl-input" value={imapFolder} onChange={(e) => setImapFolder(e.target.value)} /></div>
+            <div className="cl-field mt-2"><label className="cl-label">Poll Interval (seconds)</label><input className="cl-input" type="number" min={10} value={imapPoll} onChange={(e) => setImapPoll(Number(e.target.value))} /></div>
+          </>
+        )}
+        <button className="cl-btn cl-btn--primary text-xs mt-2" onClick={saveImap}>Save IMAP</button>
+      </div>
+
+      <hr className="border-border" />
+
       {/* Slack */}
       <div>
         <h3 className="text-sm font-bold text-text-primary mb-2">Slack Integration</h3>

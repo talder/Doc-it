@@ -1291,9 +1291,11 @@ export async function updateTicket(id: string, updates: Partial<Omit<Ticket, "id
   if (cfg.csatEmailEnabled && !wasResolved && t.status === "Resolved" && t.requesterEmail && !t.csatSentAt) {
     t.csatSentAt = now;
     writeTickets(data).catch(() => {});
+    const csatLink = ticketUrl(t.id);
     sendMail(t.requesterEmail, `[Helpdesk] How did we do? Rate ticket ${t.id}`,
       `<p>Your ticket <strong>${t.id}: ${t.subject}</strong> has been resolved.</p>
        <p>We'd love to hear your feedback. Please reply with a rating from 1 (poor) to 5 (excellent) and any comments.</p>
+       <p><a href="${csatLink}">View ticket ${t.id}</a></p>
        <p>Thank you!</p>`).catch(() => {});
   }
 
@@ -1524,7 +1526,19 @@ export function getSlaStatus(ticket: Ticket): { response: "met" | "breached" | "
 //  Email Notifications (fire-and-forget)
 // ══════════════════════════════════════════════════════════════════════
 
+/** Base URL for links in email notifications (uses DOCIT_URL env var). */
+function getBaseUrl(): string {
+  if (process.env.DOCIT_URL) return process.env.DOCIT_URL.replace(/\/+$/, "");
+  const port = process.env.PORT || "3000";
+  return `http://localhost:${port}`;
+}
+
+function ticketUrl(ticketId: string): string {
+  return `${getBaseUrl()}/helpdesk?ticket=${encodeURIComponent(ticketId)}`;
+}
+
 async function notifyTicketCreated(ticket: Ticket, cfg: HelpdeskConfig): Promise<void> {
+  const link = ticketUrl(ticket.id);
   // Notify assigned person
   if (ticket.assignedTo) {
     const users = await getUsers();
@@ -1538,7 +1552,7 @@ async function notifyTicketCreated(ticket: Ticket, cfg: HelpdeskConfig): Promise
            <li><strong>Priority:</strong> ${ticket.priority}</li>
            <li><strong>Requester:</strong> ${ticket.requester}</li>
          </ul>
-         <p>Log in to the helpdesk to view and respond.</p>`);
+         <p><a href="${link}">View ticket ${ticket.id}</a></p>`);
     }
   }
   // Notify assigned group email
@@ -1551,12 +1565,14 @@ async function notifyTicketCreated(ticket: Ticket, cfg: HelpdeskConfig): Promise
            <li><strong>ID:</strong> ${ticket.id}</li>
            <li><strong>Subject:</strong> ${ticket.subject}</li>
            <li><strong>Priority:</strong> ${ticket.priority}</li>
-         </ul>`);
+         </ul>
+         <p><a href="${link}">View ticket ${ticket.id}</a></p>`);
     }
   }
 }
 
 async function notifyCommentAdded(ticket: Ticket, comment: TicketComment): Promise<void> {
+  const link = ticketUrl(ticket.id);
   // Notify requester
   if (ticket.requesterEmail) {
     await sendMail(ticket.requesterEmail, `[Helpdesk] Update on ${ticket.id}: ${ticket.subject}`,
@@ -1564,7 +1580,7 @@ async function notifyCommentAdded(ticket: Ticket, comment: TicketComment): Promi
        <blockquote style="border-left:3px solid #6366f1;padding-left:12px;color:#555">
          ${comment.content.slice(0, 500)}
        </blockquote>
-       <p>Log in to view the full response.</p>`);
+       <p><a href="${link}">View ticket ${ticket.id}</a></p>`);
   }
   // In-app notification for assignee
   pushHelpdeskNotif(
