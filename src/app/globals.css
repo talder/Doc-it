@@ -9380,11 +9380,24 @@ textarea.modal-input {
 .hd-stat--breached { border-left: 3px solid #dc2626; color: #dc2626; }
 
 /* ── Ticket table ── */
-.hd-ticket-table { font-size: 0.8125rem; }
+.hd-ticket-table { font-size: 0.8125rem; table-layout: fixed; }
+.hd-ticket-table th {
+  text-align: left; padding: 8px 10px;
+  font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--color-text-muted); background: var(--color-muted);
+  border-bottom: 1px solid var(--color-border); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.hd-ticket-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border-light, var(--color-border));
+  color: var(--color-text-primary); vertical-align: middle;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .hd-ticket-row { cursor: pointer; transition: background 0.08s; }
 .hd-ticket-row:hover { background: var(--color-muted); }
 .hd-ticket-id { font-weight: 600; color: var(--color-accent); white-space: nowrap; }
-.hd-ticket-subject { font-weight: 500; color: var(--color-text-primary); }
+.hd-ticket-subject { font-weight: 500; color: var(--color-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hd-ticket-requester { font-size: 0.6875rem; color: var(--color-text-muted); margin-top: 2px; }
 
 /* ── Status badges ── */

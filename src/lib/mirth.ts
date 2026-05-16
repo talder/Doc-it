@@ -112,6 +112,8 @@ export interface MirthNotificationConfig {
   alertStuck:  boolean;
   alertDown:   boolean;
   alertPaused: boolean;
+  quietHoursStart: string | null; // HH:MM or null (disabled)
+  quietHoursEnd:   string | null; // HH:MM or null (disabled)
 }
 
 export interface ConnectorMessageDetail {
@@ -269,13 +271,15 @@ function initHistoryTables(): void {
     CREATE INDEX IF NOT EXISTS idx_mhl_ts
       ON mirth_history_log(timestamp DESC);
     CREATE TABLE IF NOT EXISTS mirth_notification_config (
-      server_id    TEXT PRIMARY KEY,
-      recipients   TEXT NOT NULL DEFAULT '[]',
-      alert_error  INTEGER NOT NULL DEFAULT 1,
-      alert_stuck  INTEGER NOT NULL DEFAULT 1,
-      alert_down   INTEGER NOT NULL DEFAULT 1,
-      alert_paused INTEGER NOT NULL DEFAULT 0,
-      updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+      server_id          TEXT PRIMARY KEY,
+      recipients         TEXT NOT NULL DEFAULT '[]',
+      alert_error        INTEGER NOT NULL DEFAULT 1,
+      alert_stuck        INTEGER NOT NULL DEFAULT 1,
+      alert_down         INTEGER NOT NULL DEFAULT 1,
+      alert_paused       INTEGER NOT NULL DEFAULT 0,
+      quiet_hours_start  TEXT,
+      quiet_hours_end    TEXT,
+      updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
 }
@@ -658,36 +662,47 @@ export function getMirthHistory(limit = 300): MirthHistoryEntry[] {
 export function getMirthNotificationConfig(serverId: string): MirthNotificationConfig {
   try {
     initHistoryTables();
+    // Migrate: add quiet_hours columns if missing (existing DBs)
+    try { getDb().exec("ALTER TABLE mirth_notification_config ADD COLUMN quiet_hours_start TEXT"); } catch { /* already exists */ }
+    try { getDb().exec("ALTER TABLE mirth_notification_config ADD COLUMN quiet_hours_end TEXT"); } catch { /* already exists */ }
     const row = getDb().prepare(
-      "SELECT recipients, alert_error, alert_stuck, alert_down, alert_paused FROM mirth_notification_config WHERE server_id = ?"
+      "SELECT recipients, alert_error, alert_stuck, alert_down, alert_paused, quiet_hours_start, quiet_hours_end FROM mirth_notification_config WHERE server_id = ?"
     ).get(serverId) as {
       recipients: string; alert_error: number; alert_stuck: number;
       alert_down: number; alert_paused: number;
+      quiet_hours_start: string | null; quiet_hours_end: string | null;
     } | undefined;
-    if (!row) return { recipients: [], alertError: true, alertStuck: true, alertDown: true, alertPaused: false };
+    if (!row) return { recipients: [], alertError: true, alertStuck: true, alertDown: true, alertPaused: false, quietHoursStart: null, quietHoursEnd: null };
     return {
       recipients:  (() => { try { return JSON.parse(row.recipients) as string[]; } catch { return []; } })(),
       alertError:  row.alert_error  === 1,
       alertStuck:  row.alert_stuck  === 1,
       alertDown:   row.alert_down   === 1,
       alertPaused: row.alert_paused === 1,
+      quietHoursStart: row.quiet_hours_start ?? null,
+      quietHoursEnd:   row.quiet_hours_end   ?? null,
     };
-  } catch { return { recipients: [], alertError: true, alertStuck: true, alertDown: true, alertPaused: false }; }
+  } catch { return { recipients: [], alertError: true, alertStuck: true, alertDown: true, alertPaused: false, quietHoursStart: null, quietHoursEnd: null }; }
 }
 
 /** Upsert per-server notification config. */
 export function setMirthNotificationConfig(serverId: string, config: MirthNotificationConfig): void {
   initHistoryTables();
+  // Ensure columns exist for older DBs
+  try { getDb().exec("ALTER TABLE mirth_notification_config ADD COLUMN quiet_hours_start TEXT"); } catch { /* already exists */ }
+  try { getDb().exec("ALTER TABLE mirth_notification_config ADD COLUMN quiet_hours_end TEXT"); } catch { /* already exists */ }
   getDb().prepare(`
-    INSERT INTO mirth_notification_config (server_id, recipients, alert_error, alert_stuck, alert_down, alert_paused, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    INSERT INTO mirth_notification_config (server_id, recipients, alert_error, alert_stuck, alert_down, alert_paused, quiet_hours_start, quiet_hours_end, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(server_id) DO UPDATE SET
-      recipients   = excluded.recipients,
-      alert_error  = excluded.alert_error,
-      alert_stuck  = excluded.alert_stuck,
-      alert_down   = excluded.alert_down,
-      alert_paused = excluded.alert_paused,
-      updated_at   = excluded.updated_at
+      recipients        = excluded.recipients,
+      alert_error       = excluded.alert_error,
+      alert_stuck       = excluded.alert_stuck,
+      alert_down        = excluded.alert_down,
+      alert_paused      = excluded.alert_paused,
+      quiet_hours_start = excluded.quiet_hours_start,
+      quiet_hours_end   = excluded.quiet_hours_end,
+      updated_at        = excluded.updated_at
   `).run(
     serverId,
     JSON.stringify(config.recipients),
@@ -695,7 +710,24 @@ export function setMirthNotificationConfig(serverId: string, config: MirthNotifi
     config.alertStuck  ? 1 : 0,
     config.alertDown   ? 1 : 0,
     config.alertPaused ? 1 : 0,
+    config.quietHoursStart || null,
+    config.quietHoursEnd   || null,
   );
+}
+
+/** Returns true if current server time falls within the quiet hours window. */
+export function isWithinQuietHours(start: string | null, end: string | null): boolean {
+  if (!start || !end) return false;
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  if (isNaN(sh) || isNaN(sm) || isNaN(eh) || isNaN(em)) return false;
+  const now = new Date();
+  const cur = now.getHours() * 60 + now.getMinutes();
+  const s = sh * 60 + sm;
+  const e = eh * 60 + em;
+  // Handle overnight windows (e.g. 22:00 → 06:00)
+  if (s <= e) return cur >= s && cur < e;
+  return cur >= s || cur < e;
 }
 
 // ── Server CRUD ────────────────────────────────────────────────────────────────
@@ -1320,15 +1352,16 @@ export async function getMirthDashboard(): Promise<MirthDashboard> {
         }
 
         // Fire notifications + audit + history for calm→alert transitions (fire-and-forget)
+        const inQuietHours = isWithinQuietHours(notifCfg.quietHoursStart, notifCfg.quietHoursEnd);
         for (const ch of channels) {
           if (shouldNotify(prevHealthMap.get(ch.id), ch.health)) {
-            // Check per-server toggle before sending notification
+            // Check per-server toggle + quiet hours before sending notification
             const alertEnabled =
               (ch.health === "error"  && notifCfg.alertError)  ||
               (ch.health === "stuck"  && notifCfg.alertStuck)  ||
               (ch.health === "down"   && notifCfg.alertDown)   ||
               (ch.health === "paused" && notifCfg.alertPaused);
-            if (alertEnabled) {
+            if (alertEnabled && !inQuietHours) {
               notifyAdminsOfMirthAlert(
                 server.name, ch.name, ch.health,
                 { serverId: server.id, channelId: ch.id, serverName: server.name, channelName: ch.name, health: ch.health },

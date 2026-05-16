@@ -321,16 +321,16 @@ export default function HelpdeskPage() {
             <table className="cl-table hd-ticket-table">
               <thead>
                 <tr>
-                  <th style={{ width: 32 }}><input type="checkbox" checked={selectedIds.size === sorted.length && sorted.length > 0} onChange={toggleAll} /></th>
-                  <th onClick={() => toggleSort("id")} className="cursor-pointer">ID <SortIcon col="id" /></th>
+                  <th style={{ width: 36 }}><input type="checkbox" checked={selectedIds.size === sorted.length && sorted.length > 0} onChange={toggleAll} /></th>
+                  <th style={{ width: 90 }} onClick={() => toggleSort("id")} className="cursor-pointer">ID <SortIcon col="id" /></th>
                   <th onClick={() => toggleSort("subject")} className="cursor-pointer">Subject <SortIcon col="subject" /></th>
-                  <th onClick={() => toggleSort("status")} className="cursor-pointer">Status <SortIcon col="status" /></th>
-                  <th onClick={() => toggleSort("priority")} className="cursor-pointer">Priority <SortIcon col="priority" /></th>
-                  <th>Impact</th>
-                  <th>Urgency</th>
-                  <th onClick={() => toggleSort("category")} className="cursor-pointer">Category <SortIcon col="category" /></th>
-                  <th onClick={() => toggleSort("assignedTo")} className="cursor-pointer">Assignee <SortIcon col="assignedTo" /></th>
-                  <th onClick={() => toggleSort("updatedAt")} className="cursor-pointer">Updated <SortIcon col="updatedAt" /></th>
+                  <th style={{ width: 100 }} onClick={() => toggleSort("status")} className="cursor-pointer">Status <SortIcon col="status" /></th>
+                  <th style={{ width: 80 }} onClick={() => toggleSort("priority")} className="cursor-pointer">Priority <SortIcon col="priority" /></th>
+                  <th style={{ width: 72 }}>Impact</th>
+                  <th style={{ width: 72 }}>Urgency</th>
+                  <th style={{ width: 110 }} onClick={() => toggleSort("category")} className="cursor-pointer">Category <SortIcon col="category" /></th>
+                  <th style={{ width: 110 }} onClick={() => toggleSort("assignedTo")} className="cursor-pointer">Assignee <SortIcon col="assignedTo" /></th>
+                  <th style={{ width: 80 }} onClick={() => toggleSort("updatedAt")} className="cursor-pointer">Updated <SortIcon col="updatedAt" /></th>
                 </tr>
               </thead>
               <tbody>

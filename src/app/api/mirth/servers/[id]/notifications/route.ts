@@ -29,6 +29,8 @@ export async function PUT(req: NextRequest, { params }: { params: Params }) {
     alertStuck:  body.alertStuck  !== false,
     alertDown:   body.alertDown   !== false,
     alertPaused: body.alertPaused === true,
+    quietHoursStart: typeof body.quietHoursStart === "string" ? body.quietHoursStart : null,
+    quietHoursEnd:   typeof body.quietHoursEnd   === "string" ? body.quietHoursEnd   : null,
   });
   return NextResponse.json({ config: getMirthNotificationConfig(id) });
 }

@@ -84,6 +84,7 @@ interface MirthMessageDetail {
 interface MirthNotificationConfig {
   recipients: string[]; alertError: boolean; alertStuck: boolean;
   alertDown: boolean; alertPaused: boolean;
+  quietHoursStart: string | null; quietHoursEnd: string | null;
 }
 
 // ── Health styling ─────────────────────────────────────────────────────────────
@@ -417,6 +418,8 @@ function ServerFormModal({
   const [notifAlertStuck, setNotifAlertStuck] = useState(true);
   const [notifAlertDown, setNotifAlertDown] = useState(true);
   const [notifAlertPaused, setNotifAlertPaused] = useState(false);
+  const [notifQuietStart, setNotifQuietStart] = useState("");
+  const [notifQuietEnd, setNotifQuietEnd] = useState("");
   const [notifEmail, setNotifEmail] = useState("");
   const [notifSaving, setNotifSaving] = useState(false);
   const [notifSaved, setNotifSaved] = useState(false);
@@ -433,6 +436,8 @@ function ServerFormModal({
         setNotifAlertStuck(d.config.alertStuck !== false);
         setNotifAlertDown(d.config.alertDown !== false);
         setNotifAlertPaused(d.config.alertPaused === true);
+        setNotifQuietStart(d.config.quietHoursStart ?? "");
+        setNotifQuietEnd(d.config.quietHoursEnd ?? "");
       }
     }
     setNotifLoaded(true);
@@ -451,6 +456,8 @@ function ServerFormModal({
         alertStuck:  notifAlertStuck,
         alertDown:   notifAlertDown,
         alertPaused: notifAlertPaused,
+        quietHoursStart: notifQuietStart || null,
+        quietHoursEnd:   notifQuietEnd   || null,
       }),
     }).catch(() => {});
     setNotifSaving(false);
@@ -581,6 +588,29 @@ function ServerFormModal({
                       </label>
                     ))}
                   </div>
+                </div>
+                {/* Quiet hours */}
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1 flex items-center gap-1">
+                    <Clock className="w-3 h-3" /> Quiet hours
+                  </label>
+                  <p className="text-[11px] text-text-muted mb-2">Suppress all notifications during this window (e.g. overnight). Leave empty to disable.</p>
+                  <div className="flex items-center gap-2">
+                    <input type="time" value={notifQuietStart} onChange={e => setNotifQuietStart(e.target.value)}
+                      className="px-2 py-1.5 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent" />
+                    <span className="text-xs text-text-muted">to</span>
+                    <input type="time" value={notifQuietEnd} onChange={e => setNotifQuietEnd(e.target.value)}
+                      className="px-2 py-1.5 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:border-accent" />
+                    {(notifQuietStart || notifQuietEnd) && (
+                      <button onClick={() => { setNotifQuietStart(""); setNotifQuietEnd(""); }}
+                        className="text-xs text-text-muted hover:text-red-500 ml-1">Clear</button>
+                    )}
+                  </div>
+                  {notifQuietStart && notifQuietEnd && (
+                    <p className="text-[10px] text-text-muted mt-1">
+                      Notifications suppressed from {notifQuietStart} to {notifQuietEnd}{Number(notifQuietStart.replace(":", "")) > Number(notifQuietEnd.replace(":", "")) ? " (overnight)" : ""}
+                    </p>
+                  )}
                 </div>
                 {/* Email recipients */}
                 <div>
