@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Plus, Trash2, Shield, ShieldCheck, Users, Layout, Settings, Key, Copy, Check, ClipboardList, ChevronLeft, ChevronRight, Download, Lock, LockOpen, ChevronDown, ChevronUp, ShieldOff, HardDrive, RefreshCw, PlayCircle, RotateCcw, Eye, EyeOff, UsersRound, X, Network, AlertTriangle, GitBranch, Wifi, Mail, Server, Monitor, Laptop, Printer, Box, Database, Cpu, Smartphone, Cloud, Globe } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Shield, ShieldCheck, Users, Layout, Settings, Key, Copy, Check, ClipboardList, ChevronLeft, ChevronRight, Download, Lock, LockOpen, ChevronDown, ChevronUp, ShieldOff, HardDrive, RefreshCw, PlayCircle, RotateCcw, Eye, EyeOff, UsersRound, X, Network, AlertTriangle, GitBranch, Wifi, Mail, Server, Monitor, Laptop, Printer, Box, Database, Cpu, Smartphone, Cloud, Globe, Clock } from "lucide-react";
 import PasswordStrengthMeter from "@/components/PasswordStrengthMeter";
 import TagPicker from "@/components/TagPicker";
 import { isPasswordValid } from "@/lib/password-policy";
@@ -268,7 +268,7 @@ function AdminContent() {
   const [editingMirthId, setEditingMirthId] = useState<string | null>(null);
   const emptyMirthForm = () => ({ name: "", url: "", username: "", password: "", ignoreSslErrors: true, enabled: true, sortOrder: 0 });
   const [mirthForm, setMirthForm] = useState(emptyMirthForm());
-  const emptyMirthNotif = () => ({ recipients: [] as string[], alertError: true, alertStuck: true, alertDown: true, alertPaused: false });
+  const emptyMirthNotif = () => ({ recipients: [] as string[], alertError: true, alertStuck: true, alertDown: true, alertPaused: false, quietHoursStart: "" as string, quietHoursEnd: "" as string });
   const [mirthNotif, setMirthNotif] = useState(emptyMirthNotif());
   const [mirthNotifLoaded, setMirthNotifLoaded] = useState(false);
   const [mirthNotifEmail, setMirthNotifEmail] = useState("");
@@ -284,6 +284,8 @@ function AdminContent() {
         alertStuck:  d.config.alertStuck  !== false,
         alertDown:   d.config.alertDown   !== false,
         alertPaused: d.config.alertPaused === true,
+        quietHoursStart: d.config.quietHoursStart ?? "",
+        quietHoursEnd:   d.config.quietHoursEnd   ?? "",
       });
     }
     setMirthNotifLoaded(true);
@@ -3773,6 +3775,31 @@ function AdminContent() {
                               {label}
                             </label>
                           ))}
+                        </div>
+                        {/* Quiet hours */}
+                        <div className="mb-4">
+                          <p className="text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
+                            <Clock className="w-3 h-3" /> Quiet hours
+                          </p>
+                          <p className="text-xs text-text-muted mb-2">Suppress all notifications during this window (e.g. overnight). Leave empty to disable.</p>
+                          <div className="flex items-center gap-2">
+                            <input type="time" value={mirthNotif.quietHoursStart}
+                              onChange={e => setMirthNotif(p => ({ ...p, quietHoursStart: e.target.value }))}
+                              className="px-2 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            <span className="text-xs text-text-muted">to</span>
+                            <input type="time" value={mirthNotif.quietHoursEnd}
+                              onChange={e => setMirthNotif(p => ({ ...p, quietHoursEnd: e.target.value }))}
+                              className="px-2 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            {(mirthNotif.quietHoursStart || mirthNotif.quietHoursEnd) && (
+                              <button type="button" onClick={() => setMirthNotif(p => ({ ...p, quietHoursStart: "", quietHoursEnd: "" }))}
+                                className="text-xs text-text-muted hover:text-red-500 ml-1">Clear</button>
+                            )}
+                          </div>
+                          {mirthNotif.quietHoursStart && mirthNotif.quietHoursEnd && (
+                            <p className="text-[10px] text-text-muted mt-1">
+                              Notifications suppressed from {mirthNotif.quietHoursStart} to {mirthNotif.quietHoursEnd}{Number(mirthNotif.quietHoursStart.replace(":", "")) > Number(mirthNotif.quietHoursEnd.replace(":", "")) ? " (overnight)" : ""}
+                            </p>
+                          )}
                         </div>
                         <p className="text-xs text-text-muted mb-1">Email recipients (leave empty to use default admin addresses):</p>
                         <div className="flex gap-2 mb-2">
