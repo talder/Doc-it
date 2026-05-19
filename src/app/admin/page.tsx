@@ -3851,8 +3851,21 @@ function AdminContent() {
                               body: JSON.stringify(mirthNotif),
                             }).catch(() => null);
                             setMirthNotifSaving(false);
-                            if (r?.ok) flash("Notification settings saved", "success");
-                            else {
+                            if (r?.ok) {
+                              const d = await r.json().catch(() => null);
+                              if (d?.config) {
+                                setMirthNotif({
+                                  recipients: d.config.recipients ?? [],
+                                  alertError:  d.config.alertError  !== false,
+                                  alertStuck:  d.config.alertStuck  !== false,
+                                  alertDown:   d.config.alertDown   !== false,
+                                  alertPaused: d.config.alertPaused === true,
+                                  quietHoursStart: d.config.quietHoursStart ?? "",
+                                  quietHoursEnd:   d.config.quietHoursEnd   ?? "",
+                                });
+                              }
+                              flash("Notification settings saved", "success");
+                            } else {
                               const d = r ? await r.json().catch(() => ({})) : {};
                               flash(d.error || "Failed to save notification settings", "error");
                             }
@@ -3885,6 +3898,14 @@ function AdminContent() {
                           : await fetch("/api/mirth/servers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
                         setMirthSaving(false);
                         if (res?.ok) {
+                          // Also save notification settings when editing an existing server
+                          if (editingMirthId && mirthNotifLoaded) {
+                            await fetch(`/api/mirth/servers/${editingMirthId}/notifications`, {
+                              method: "PUT",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify(mirthNotif),
+                            }).catch(() => {});
+                          }
                           setShowMirthForm(false);
                           setEditingMirthId(null);
                           setMirthForm(emptyMirthForm());

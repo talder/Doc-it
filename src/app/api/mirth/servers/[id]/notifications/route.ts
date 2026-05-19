@@ -21,16 +21,21 @@ export async function PUT(req: NextRequest, { params }: { params: Params }) {
   if (!server) return NextResponse.json({ error: "Server not found" }, { status: 404 });
 
   const body = await req.json().catch(() => ({}));
-  setMirthNotificationConfig(id, {
-    recipients:  Array.isArray(body.recipients)
-      ? (body.recipients as unknown[]).filter((r): r is string => typeof r === "string")
-      : [],
-    alertError:  body.alertError  !== false,
-    alertStuck:  body.alertStuck  !== false,
-    alertDown:   body.alertDown   !== false,
-    alertPaused: body.alertPaused === true,
-    quietHoursStart: typeof body.quietHoursStart === "string" ? body.quietHoursStart : null,
-    quietHoursEnd:   typeof body.quietHoursEnd   === "string" ? body.quietHoursEnd   : null,
-  });
+  try {
+    setMirthNotificationConfig(id, {
+      recipients:  Array.isArray(body.recipients)
+        ? (body.recipients as unknown[]).filter((r): r is string => typeof r === "string")
+        : [],
+      alertError:  body.alertError  !== false,
+      alertStuck:  body.alertStuck  !== false,
+      alertDown:   body.alertDown   !== false,
+      alertPaused: body.alertPaused === true,
+      quietHoursStart: typeof body.quietHoursStart === "string" ? body.quietHoursStart : null,
+      quietHoursEnd:   typeof body.quietHoursEnd   === "string" ? body.quietHoursEnd   : null,
+    });
+  } catch (err) {
+    console.error("[mirth] Failed to save notification config:", err);
+    return NextResponse.json({ error: "Failed to save notification config" }, { status: 500 });
+  }
   return NextResponse.json({ config: getMirthNotificationConfig(id) });
 }
